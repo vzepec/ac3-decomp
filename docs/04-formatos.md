@@ -64,7 +64,25 @@ bytes**; la extensión en el pack es ese valor redondeado a sector. Se cumple
 en **127/127** entradas del disco europeo y **127/127** del americano.
 
 En `ACE.SPB` la regla **no** se cumple (0/72, 0/88): allí el tag significa
-otra cosa. `SIN RESOLVER`.
+otra cosa, y está **resuelto leyendo el código** que arranca el streaming
+(`0x8002A34C` en `ACE.BIN` EU; ver `09-codigo.md`):
+
+| Bits | Campo |
+|---|---|
+| 31 | siempre 1 (si no, el juego rechaza la entrada) |
+| 27-28 | modo: 2 = audio XA, 3 = audio XA / vídeo (0 y 1: datos) |
+| 24-26 | desplazamiento |
+| 19-23 | **canal XA** |
+| 0-18 | longitud; extensión en sectores = longitud << desplazamiento |
+
+Validado con `python3 tools/acepack.py <imagen> spbtags`: en **72/72** (EU) y
+**88/88** (US) el canal del tag está presente en las subcabeceras XA de la
+entrada y la extensión cabe en el pack.
+
+**Consecuencia:** en el SPB las entradas de audio **están entrelazadas**: cada
+una es un canal de un flujo de 8 (canales 4, 8, …, 28) y varias comparten los
+mismos sectores. El "tamaño" deducido ordenando por sector (`extents()`) solo
+vale para el BPB.
 
 ## Categorías observadas (byte alto de `tag`)
 
@@ -147,7 +165,7 @@ Hallazgos notables:
   conocida y traen punteros precalculados. Eso **revela el mapa de memoria en
   tiempo de ejecución** y es muy valioso para la etapa 3.
 
-#### Compresión: las secciones van en ULZ ✅ RESUELTO
+#### Compresión: las secciones van en ULZ ✅ RESUELTO (variantes 0 y 2)
 
 Reproducible con `make ulz-check`. Implementado en `tools/ulz.py`.
 
@@ -171,6 +189,16 @@ referencias: `distancia = (v & ((1<<nbits)-1)) + 1`, `longitud = (v >> nbits) + 
 cada flujo es siempre 4 bytes (flags: una palabra terminadora), 0-3
 (literales: alineación) y 0 o 2 (referencias: alineación a `u32`), en las
 **659 de 659** secciones ULZ. Ninguna referencia apunta fuera de la ventana.
+
+**Variantes** (byte alto de `0x04`), según el descompresor del juego
+(`FUN_800AE118` de `ACE.BIN` EU):
+
+- **2**: la descrita. Todas las secciones de primer nivel.
+- **0**: mismos flujos, pero cada palabra de flags lleva un **bit centinela**
+  (el 1 más bajo no es un token) y una palabra 0 termina el flujo. Las 604
+  entradas anidadas del tipo 13; válidas 604/604 con tamaño exacto.
+- **1**: como la 0 en unidades de 16 bits. Está en el código, pero no en los
+  datos: sin validar.
 
 #### Las texturas SÍ son TIM, dentro del ULZ ✅
 
@@ -344,9 +372,17 @@ ninguno de formato conocido: ver "Lo que queda sin resolver".
 #### Tipo 13 — interfaz (1 registro, 0072)
 
 12 secciones sin comprimir; dentro, **cada entrada de tabla es un ULZ
-independiente de variante 0** (604 en total). Las entradas empiezan por
-cabecera TIM: son imágenes de interfaz/menú. La sección 8 es un banco de
-sonido. La variante 0 de ULZ no está resuelta del todo (ver `tools/ulz.py`).
+independiente de variante 0** (604 en total, todas válidas con
+`make ulz-check`). Casi todo son TIM de interfaz:
+
+| Sec | Contenido |
+|---|---|
+| 0 | **21 vistas cenitales de los aviones seleccionables** (hangar) |
+| 1 | **21 rótulos con sus nombres**: EF2000E Typhoon II, MiG-33 Fulcrum SS, F/A-18U Hornet ADV, F-16XFU Gyrfalcon, R-101/102/103 Delphinus, R-201 Asterozoa, F-16XA Sakerfalcon, F-15S/MT Eagle+, F-22C Raptor II, F/A-32C Erne, Su-37 Super Flanker, R-211 Orcinus, Su-43 Berkut, XFA-36A Game, RF-12A2 Blackbird, R-352 Sepia, XR-900 Geopelia, X-49 Night Raven, UI-4054 Aurora |
+| 3, 4, 9 | iconos y piezas de interfaz (110, 98 y 350 TIM) |
+| 5 | 4 TIM |
+| 8 | banco de sonido |
+| 2, 6 | `SIN RESOLVER` |
 
 #### Tipo 1 grandes (16 registros, 0111-0126)
 
@@ -364,15 +400,14 @@ entradas por idioma. La sección 3 contiene TIM.
 
 1. **Dónde está el modelo 3D del avión del jugador.** Descartados: tipo 4
    (piel + icono + sonido), tipo 17 s02/s03 (aviones de la misión, que no
-   usan la textura del jugador), SPB (audio/vídeo). Candidatos: los 16
-   registros grandes de tipo 1 y las entradas de variante 0 del tipo 13.
-   Si no aparece en los datos, puede vivir dentro de `ACE.BIN` (etapa 2).
-2. **ULZ variante 0** (tipo 13).
+   usan la textura del jugador), SPB (audio/vídeo), tipo 13 (imágenes 2D del
+   hangar) y `ACE.BIN`. Candidato que queda: los 16 registros grandes de
+   tipo 1.
 3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
    teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
 4. Secciones 5, 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.
-5. **El `tag` del SPB**, el campo `unk` del BPH y los sectores de datos
-   intercalados en el audio XA.
+5. El campo `unk` del BPH (no lo usa la rutina de apertura) y los sectores de
+   datos intercalados en el audio XA.
 
 ## Cómo seguir
 

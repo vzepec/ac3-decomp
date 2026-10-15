@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — El código resuelve el tag del SPB y la variante 0 de ULZ
+
+Localizados en `ACE.BIN` el sistema de packs (`0x8002A9E4`: valida `AC3E`, suma
+la LBA del pack y exige los códigos de build `0x1019`/`0x19991019`), el
+arranque de streaming (`0x8002A34C`) y el descompresor ULZ (`0x800AE118`).
+
+- **Tag del SPB:** bit 31, modo (bits 27-28), desplazamiento (24-26), canal XA
+  (19-23), longitud (0-18). Validado 72/72 EU y 88/88 US contra las
+  subcabeceras XA. Las entradas de audio están entrelazadas (un canal cada
+  una) y se solapan.
+- **ULZ variante 0:** bit centinela en cada palabra de flags y palabra 0 como
+  terminador. 604/604 entradas del tipo 13 válidas.
+- **Tipo 13:** vistas cenitales y nombres de los 21 aviones seleccionables.
+
+Reproducir: `make ulz-check`; `python3 tools/acepack.py <imagen> spbtags`;
+`python3 tools/mipsref.py data/exe/ace_eu.bin 0x80010000 --addr 0x800ae7a0 --tsv data/ghidra/stats_eu_funcs.tsv`
+
 ## 2026-10-15 — Etapa 3: Ghidra, cifras de funciones, módulos y bucle principal
 
 Ghidra 12.1.4 + `ghidra_psx_ldr` (en `~/tools`). `ACE.BIN` EU: 1.853

@@ -104,12 +104,31 @@ LIBSND 1 · otros 5.
 
 El papel de cada una de las funciones de actualización está `SIN RESOLVER`.
 
-## 5. Lo que queda (etapa 3, siguientes pasos)
+## 5. Sistema de packs y descompresión en `ACE.BIN` ✅
+
+Localizado con `tools/mipsref.py` (referencias `lui`/`addiu` y tablas de
+punteros) y decompilado con `tools/ghidra/decomp.sh`:
+
+| Dirección (EU) | Función | Qué hace |
+|---|---|---|
+| `0x800AE7A0` | (datos) | tabla de punteros a `\ACE.BPH;1`, `\ACE.SPH;1`, `\ACE.BPB;1`, `\ACE.SPB;1` |
+| `0x8002A8AC` | búsqueda | `CdSearchFile` de los 4 archivos; `"ERR : File Not Found.[%s]"` |
+| `0x8002A9E4` | apertura de packs | lee BPH y SPH, comprueba `AC3E`, suma la LBA del pack a cada `sector`, y exige `SBCODE` = `0x1019` (BPH) y `SPCODE` = `0x19991019` (SPH): el ejecutable EU solo acepta packs EU |
+| `0x8002AC0C` | inicialización | prepara el estado del CD y espera a la apertura |
+| `0x80029E8C` | máquina de estados del CD | la llama `FUN_8002C0B4`, del bucle principal |
+| `0x8002A34C` | arranque de streaming | descodifica el `tag` del SPB (modo, canal XA, longitud): ver `04-formatos.md` |
+| `0x800AE118` | **descompresor ULZ** | variantes 0, 1 y 2; lo llama `FUN_80026E50` |
+
+Esto confirma desde el código el formato de índice de la etapa 1 (magic,
+contador en `0x10`, entradas desde `0x14`, sector relativo al pack) y ha
+resuelto el `tag` del SPB y la variante 0 de ULZ.
+
+## 6. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Localizar el código que lee `ACE.BPB` y relacionarlo con los formatos ya
-   resueltos (`ULZ`, tablas de offsets, modelos): debería confirmar la
-   semántica de campos `SIN RESOLVER` de `04-formatos.md`.
+2. Seguir desde `FUN_80026E50` (quien llama al descompresor ULZ) hasta los
+   consumidores de las secciones del tipo 17 (modelos, mapa de teselas) para
+   resolver los campos `SIN RESOLVER` de `04-formatos.md`.
 3. Repetir la medición en la versión US.
 4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra.

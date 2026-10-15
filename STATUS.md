@@ -40,6 +40,10 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
   **≤ 1.106 propias (420 KB)**, 1.939 COP2. Mapa de módulos (no hay overlays
   de código; `ACE.EXE` = pantalla anticopia). Bucle principal en `main`
   `0x80025D08` — `make ghidra-import ghidra-stats`
+- ✅ **Sistema de packs localizado en `ACE.BIN`**: apertura (`0x8002A9E4`),
+  streaming (`0x8002A34C`), descompresor ULZ (`0x800AE118`). Con ellos:
+  **tag del SPB resuelto** (72/72, 88/88) y **ULZ variante 0 resuelta**
+  (604/604; tipo 13 = hangar: vistas y nombres de los 21 aviones)
 - ✅ Formato de `ACE.BIN` confirmado contra el descompresor real de
   `SCES_020.66`; resueltos los campos `0x04`, `0x14` y `0x5C`
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
@@ -47,28 +51,26 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-**Etapa 3: localizar el código que lee `ACE.BPB` y nombrar su árbol.** Es la
-unión entre lo resuelto en la etapa 1 y el código, y valida ambos lados.
+**Etapa 3: seguir el consumo de las secciones del tipo 17 desde el código.**
 
 ```bash
 make acebin ghidra-import      # si data/ghidra no existe
+tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026e50
 ```
 
-1. Partir de las funciones que referencian las cadenas `\ACE.BPB;1` /
-   `\ACE.BPH;1` (mismo método que en `docs/09-codigo.md` §2: buscar el par
-   `lui`/`addiu` de la dirección de la cadena) y de las llamadas a `CdRead`.
-2. Encontrar el descompresor ULZ dentro de `ACE.BIN` (debería ser un bucle
-   con el magic `0x1A7A6C55` y tres punteros de flujo). Si aparece, resolver
-   con él la **variante 0** de ULZ (tipo 13), igual que se hizo con `ACE.BIN`.
-3. Seguir quién consume las secciones del tipo 17 y ver si explica campos
-   `SIN RESOLVER` (`h0/h1/e0/e1` de primitivas, bits altos del mapa de
-   teselas). Ojo: la estructura descompuesta debe coincidir con la
-   herramienta; si no, la herramienta manda (AGENTS.md §2.3).
-4. Nombrar en Ghidra (con un script que lo deje reproducible en
-   `tools/ghidra/`) las funciones de `main` a medida que se entiendan.
+1. Partir de `FUN_80026E50`, que llama al descompresor ULZ (`0x800AE118`), y
+   subir por quién la llama hasta encontrar el código que recorre la tabla de
+   secciones de un registro de tipo 17.
+2. Identificar qué función consume cada sección (modelos s01/s04, LOD
+   s02/s03, mapa de teselas s00, textos s06) y nombrarlas.
+3. Con eso, resolver campos `SIN RESOLVER`: `h0/h1/e0/e1` de primitivas, bits
+   altos del mapa de teselas, campos de los bancos de sonido.
+4. Dejar el nombrado reproducible: un script en `tools/ghidra/` que aplique
+   nombres a direcciones desde un `.tsv` versionado (solo direcciones y
+   nombres nuestros: no es código del juego).
 
-Pendientes abiertos: modelo del avión del jugador (registros de tipo 1);
-ULZ variante 0; campos sin resolver de sonido; medición de la versión US.
+Pendientes abiertos: el avión del jugador (último candidato: registros de
+tipo 1 grandes); medición de la versión US; valorar `rea`.
 
 ## Bloqueos conocidos
 

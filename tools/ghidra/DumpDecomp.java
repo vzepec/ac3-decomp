@@ -28,6 +28,12 @@ public class DumpDecomp extends GhidraScript {
                 if (f == null) { out.println("// no encontrada: " + args[i]); continue; }
                 DecompileResults r = di.decompileFunction(f, 60, monitor);
                 out.println("// ==== " + f.getName() + " @ " + f.getEntryPoint());
+                StringBuilder callers = new StringBuilder();
+                for (Function c : f.getCallingFunctions(monitor)) callers.append(" ").append(c.getName());
+                StringBuilder callees = new StringBuilder();
+                for (Function c : f.getCalledFunctions(monitor)) callees.append(" ").append(c.getName());
+                out.println("// llamada desde:" + callers);
+                out.println("// llama a:" + callees);
                 out.println(r.decompileCompleted() ? r.getDecompiledFunction().getC() : "// fallo: " + r.getErrorMessage());
             }
         }

@@ -84,6 +84,7 @@ tools/
   acesnd.py          bancos de sonido del SPU (ADPCM a WAV)
   acedat.py          demuestra que ACE.DAT es relleno
   acebin.py          descompresor de ACE.BIN (modulo principal)
+  mipsref.py         referencias lui/addiu en codigo MIPS
   ghidra/            scripts de Ghidra y analisis de firmas (etapa 3)
   README.md          que hace cada herramienta y como usarla
 notes/
