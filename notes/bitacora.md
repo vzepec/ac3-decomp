@@ -5,6 +5,14 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Etapa 4: criterio de salida cumplido; qué es del juego y qué no
+
+El usuario confirma que la 0.3 funciona en la Retroid. Aclarado lo que no es
+del juego: la estela del misil (el "cuadrado blanco"), las explosiones, el
+cielo, la niebla y la luz del avión son aproximaciones propias; terreno,
+modelos, pieles y el modelo del misil sí vienen del disco. Se cierra la etapa
+4 como medición y se retoma la etapa 3.
+
 ## 2026-10-15 — APK 0.3: misiles, enemigos, HUD de fps y controles invertidos
 
 Confirmado por el usuario que la 0.2 funciona en la Retroid. La 0.3 añade:

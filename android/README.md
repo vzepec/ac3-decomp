@@ -91,6 +91,18 @@ cc -O2 -Isrc test/test_desktop.c src/ace.c src/scene.c -lm -o build/test_desktop
 build/test_desktop <imagen.bin> 6 55
 ```
 
+## Qué es del juego y qué no
+
+| Elemento | Origen |
+|---|---|
+| Terreno, texturas, mapa de teselas | disco del usuario (registro de misión) |
+| Avión del jugador y enemigos: modelos, pieles, colores | disco del usuario |
+| Modelo del misil | disco del usuario (s3, entrada 3); mide ~13 unidades |
+| Estela del misil (cuadrado claro detrás) | **propio**, provisional |
+| Explosiones | **propias** (cuadrados de color); las del juego no están localizadas |
+| Cielo, niebla, luz del avión del jugador | **propios** (aproximación); los parámetros de entorno del juego están en el preludio de la misión, sin descifrar campo a campo |
+| Texto del HUD | fuente propia 5×7 |
+
 ## Limitaciones conocidas
 
 - Vuelo arcade simple, sin física real del juego, sin IA, HUD ni misiones.

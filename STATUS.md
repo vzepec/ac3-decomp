@@ -7,9 +7,9 @@
 
 ## Etapa actual
 
-**Etapa 4 — rebanada vertical en Android: primer APK listo** (rama
-`etapa-4`), abierta a petición del usuario con la etapa 3 aún en curso (sus
-pendientes siguen abajo). Ver `android/README.md`.
+**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). La etapa 4
+(rebanada vertical) cumplió su criterio de salida: el APK corre en la Retroid
+(ver `android/README.md` y `docs/05-hoja-de-ruta.md`).
 
 ## Hecho
 
@@ -65,18 +65,14 @@ pendientes siguen abajo). Ver `android/README.md`.
 
 ## Siguiente tarea concreta
 
-**Probar el APK en la Retroid Pocket Flip 2** (lo hace el usuario):
-instalar `android/build/ac3slice.apk`, poner el `.bin` del disco donde lo
-busca la app, conceder "Acceso a todos los archivos" y medir los fps con
-`adb logcat -s AC3Slice`. Con el resultado:
+Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
 
-- si va a 60 fps y se ve bien: medir el esfuerzo de la etapa 4 (era el
-  objetivo) y decidir con el usuario los siguientes pasos (objetos de s4,
-  aviones de la misión, superficies móviles, HUD mínimo…)
-- si falla: corregir con lo que diga el logcat
-
-Pendientes de la etapa 3 (aparcados): callbacks de estados de pieza,
-overlays 3-5, `h0`, demos, `names.tsv`.
+1. **Efectos**: localizar en el código cómo se dibujan explosiones, estelas
+   de misil y humo (texturas de efecto en VRAM, primitivas `SPRT`/`POLY_FT4`
+   semitransparentes) y sus datos.
+2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
+3. **Callbacks de estado de pieza** (superficies móviles del avión).
+4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.
 
 ## Bloqueos conocidos
 
