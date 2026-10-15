@@ -47,3 +47,6 @@
 0x8008A874	f	engine_exhaust_draw	callback de pieza: efecto de motores en los puntos de tobera (t04 s0)
 0x800B09B8	d	part_callbacks_a	callbacks por pieza, indice por tipo de avion (0x3D->3, 0x32->4, 0x33->5)
 0x800B09D0	d	part_callbacks_b	callbacks por pieza (1 = motores; 0x13 -> 2)
+0x8008DD10	f	clouds_draw	campo de nubes (s13 TIM 1, CLUT 315)
+0x8008A310	f	sun_flare_draw	sol y destello (s13 TIM 2, CLUT 316/317)
+0x8008C1C8	f	haze_layers_draw	capas de nubes/bruma (s13 TIM 0; parametros en s8)

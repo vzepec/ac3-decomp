@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Efectos del entorno: nubes, sol y bruma (las explosiones, no)
+
+Buscando las explosiones por sus CLUT constantes en el código: s13 TIM 1 es
+el campo de nubes (`FUN_8008DD10`), s13 TIM 2 el sol y su destello
+(`FUN_8008A310`, no una bola de fuego como sugería su aspecto) y s13 TIM 0 las
+capas de nubes/bruma (`FUN_8008C1C8`, con parámetros en la sección 8). La
+sección 8 y el preludio son, pues, parámetros de entorno. Explosiones sin
+localizar.
+
+Reproducir: búsqueda de `0x4F16`, `0x4F56`, `0x4E56`, `0x4ED6` en
+`data/ghidra/all_ace_eu.c` (DumpAll) y exportar s12-s14 con `tools/tim2png.py`.
+
 ## 2026-10-15 — Etapa 4: criterio de salida cumplido; qué es del juego y qué no
 
 El usuario confirma que la 0.3 funciona en la Retroid. Aclarado lo que no es

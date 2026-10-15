@@ -67,9 +67,10 @@
 
 Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
 
-1. **Efectos**: localizar en el código cómo se dibujan explosiones, estelas
-   de misil y humo (texturas de efecto en VRAM, primitivas `SPRT`/`POLY_FT4`
-   semitransparentes) y sus datos.
+1. **Efectos**: ✅ nubes, sol/destello y bruma localizados (s13 + s8 +
+   preludio). Faltan **explosiones y estelas de misil**: buscar quién crea
+   efectos al destruir un objetivo (desde el código de impacto de misil) o
+   las texturas de s12.
 2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
 3. **Callbacks de estado de pieza** (superficies móviles del avión).
 4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.

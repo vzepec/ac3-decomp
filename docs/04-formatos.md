@@ -256,10 +256,25 @@ Reproducible con `make sections` y `make models`.
 | 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
 | 5 | sí | **Tabla de normales de cara** (`SVECTOR` unitarios en 4.12) | sí | ✅ ver primitivas |
 | 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
-| 7-9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
+| 7, 9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
+| 8 | sí | 40 B: **capas de nubes/bruma** (2 niveles), ver efectos | sí | parcial |
 | 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
-| 11-14 | sí | **Texturas**: avión, radar, fuente, iconos | sí | ✅ |
+| 11-14 | sí | **Texturas**: avión, radar, fuente, iconos, efectos (ver abajo) | sí | ✅ |
 | 15 | no | **Banco de sonido del SPU** (ver abajo) | **no** | ✅ |
+
+**Efectos del entorno (texturas de s13 y parámetros), desde el código:**
+
+| Textura | Uso | Función | Datos |
+|---|---|---|---|
+| s13 TIM 1 (CLUT 315) | **campo de nubes**: rejilla de sprites alrededor de la cámara (vuelta cada `0x4000`), altura fija `0x2400`, POLY_FT4 semitransparentes (`0x2E`, tpage `0x39` aditivo), cuadrante de 64 px al azar | `FUN_8008DD10` | — |
+| s13 TIM 2 (CLUT 316 naranja / 317 gris) | **sol y destello** (lens flare): disco y halo; intensidad según lo centrado que esté el sol en pantalla | `FUN_8008A310` | preludio `+0x6C`… |
+| s13 TIM 0 (CLUT 313 + i) | **capas de nubes/bruma** (2 niveles, color con semitransparencia) | `FUN_8008C1C8` | sección 8 (`g_mission + 0x3C`) |
+| s12 | tiras de 8×8; una parece un misil | `SIN RESOLVER` | |
+
+Corrección: la TIM 2 se tomó primero, por su aspecto, como "bola de fuego"
+de explosión; el código muestra que es el sol. **Las explosiones no están
+localizadas.** Nota: `g_render + 0x244` = `g_mission + 0x18` (preludio) y
+`g_render + 0x268` = `g_mission + 0x3C` (sección 8).
 
 **Sección 0 = mapa de teselas.** 65.536 celdas `u16`; los 9 bits bajos son un
 índice de tesela y `max(v & 0x1FF)` coincide **exactamente** con el número de
