@@ -5,6 +5,53 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Bits altos del mapa de teselas: no reutilizar vértices vecinos
+
+`FUN_8005CDA4` construye la lista de celdas visibles desde el mapa y copia la
+celda entera en la palabra de control; el render anula con los bits 9-11 de la
+celda los bits 25-27 ("reutilizar vértices de la vecina"). Contraste: bordes
+izquierdos que no casan, 0,7 % con el bit a 0 frente a 60 % / 47 % / 28 % con
+los bits 11 / 9 / 10 a 1. Explica el 0,6 % residual de la etapa 1.
+
+Reproducir: `python3 tools/acemodel.py tilemap data/bpb`
+
+## 2026-10-15 — Render de terreno y objetos localizado
+
+`0x8005FF9C` (pasada de vértices con `RTPT`, que confirma el grupo de 20 bytes
+desde el código), `0x80060214`/`0x80060470` (FT4/GT4 con `NCLIP`, `DPCS` y
+tabla de orden) y `0x80060DC0` (subdivisión, que usa los bytes 8-15 de la
+primitiva como offsets GTE). Se encontró buscando funciones que copian las
+palabras `0x14`-`0x2C` desde el mismo registro base (las palabras del paquete
+GPU que ya trae cada primitiva). `h0` no aparece en estas rutas.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/r.c 0x8005ff9c 0x80060214 0x80060dc0`
+
+## 2026-10-15 — Geometría del mapa de teselas confirmada desde el código
+
+`FUN_80098B80`: celda = `(coord >> 23) + 128` (celdas de 2048 unidades, origen
+en la celda 128,128), mapa por filas de Z, `& 0x1FF` = índice, 0 = sin tesela.
+Coincide con lo deducido de los datos (tamaño de tesela, base 1). Los 3 bits
+altos no se usan en la colisión.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/t.c 0x80098b80`
+
+## 2026-10-15 — Primitivas resueltas: h1, e0/e1 y la sección 5 (normales)
+
+Leyendo el código de intersección con el terreno de `ACE.BIN` (`0x80097EDC`):
+`e0`/`e1` son offsets a normales de cara en la sección 5 del registro de
+tipo 17; `h1` = 0 cuadrilátero plano, 1 triángulo, 2 cuadrilátero partido en
+dos triángulos con una normal cada uno.
+
+Validado en los 41 registros: 119.003 `e` dentro de s5 y `máx(e)+8 = len(s5)`
+en 41/41; clases de `h1` sin excepciones; 77.831/77.831 normales
+antiparalelas al producto vectorial de la cara; partición de `h1 = 2` en el
+99,7 %.
+
+Dos falsos candidatos antes de dar con ella (efectos con `RTPT`). La pista
+buena: funciones con mucho `lwc2` y `NCLIP` y sin `RTPT`.
+
+Reproducir: `python3 tools/acemodel.py normals data/bpb`
+
 ## 2026-10-15 — La "inicialización" de modelos es una recolocación
 
 `FUN_80026EE0` suma la base del modelo a `n` offsets de su cabecera; `n` = 4

@@ -45,6 +45,10 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
   streaming (`0x8002A34C`), descompresor ULZ (`0x800AE118`). Con ellos:
   **tag del SPB resuelto** (72/72, 88/88) y **ULZ variante 0 resuelta**
   (604/604; tipo 13 = hangar: vistas y nombres de los 21 aviones)
+- ✅ **Primitivas resueltas desde el código** (intersección con el terreno,
+  `0x80097EDC`): `h1` = plano/triángulo/partido, `e0/e1` = offsets a normales
+  de cara, **sección 5 = tabla de normales**. 77.831/77.831 normales
+  coherentes — `make models`
 - ✅ **Cargador de misión** (`0x80035730`) localizado: confirma desde el
   código el mapa de secciones del tipo 17, y revela que s2 y s3 forman una
   sola tabla de modelos
@@ -63,13 +67,12 @@ tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
 ```
 
 1. ✅ Hecho: `FUN_80026EE0` recoloca 4 offsets (`Model`) o 6 (`LodModel`).
-2. Buscar la función que dibuja modelos (debe leer las primitivas de 36/48 B y
-   usar `RTPT`): ahí deberían verse `h0/h1/e0/e1`. Por huella salieron falsos
-   candidatos (`0x8008FE38`, `0x8008A874`: efectos); seguir el flujo desde los
-   32 accesos a `lw rX, 0x2CC($gp)` (estructura de misión, `$gp = 0x800BA9F4`)
-   y desde las tablas guardadas en `+0x1C..+0x40`.
-3. Buscar quién lee el mapa de teselas (puntero guardado en `+0x1C` de la
-   estructura de misión) para los 3 bits altos de cada celda.
+2. ✅ Hecho: `h1`, `e0`, `e1`, sección 5, y el render de terreno/objetos
+   (`0x8005FF9C`, `0x80060214`, `0x80060470`, `0x80060DC0`), que confirma el
+   layout de vértices y los offsets GTE. ✅ Bits altos del mapa de teselas:
+   anulan la reutilización de vértices de la vecina (contraste 60 % frente a
+   0,7 %). Queda `h0`.
+3. ✅ Hecho (`0x8005CDA4` + `0x8005FF9C`).
 4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,
    para que el nombrado sea reproducible.
 

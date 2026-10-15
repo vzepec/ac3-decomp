@@ -169,12 +169,69 @@ Datos útiles para seguir: `$gp = 0x800BA9F4` (se fija en el arranque), así que
 la estructura de misión `0x800BACC0` se lee como `lw rX, 0x2CC($gp)`, en 32
 sitios del código.
 
-## 7. Lo que queda (etapa 3, siguientes pasos)
+## 7. Intersección con el terreno: resuelve las primitivas ✅
+
+`FUN_80097EDC` (y su gemela `FUN_80098EF4`) prueba un rayo contra las caras
+de las teselas: 39 `lwc2`, 26 `NCLIP` y ningún `RTPT` (trabaja con vértices ya
+transformados). Para cada primitiva:
+
+- toma `e0` (y `e1`) como offset a un `SVECTOR` de una tabla de normales
+  (la sección 5 del registro), carga la normal negada en la matriz de luz y
+  hace `LL` para el producto escalar
+- el bit `0x200` de la primera palabra (`h1 = 2`) parte el cuadrilátero en
+  dos triángulos con una normal cada uno; el `0x100` (`h1 = 1`) es triángulo
+- usa los índices de vértice de los bytes 16-19 para leer posiciones ya
+  transformadas (8 bytes por vértice)
+- busca la tesela con `índice & 0x1FF`, los 9 bits del mapa de teselas
+
+Validado contra los datos con `tools/acemodel.py normals` (ver
+`04-formatos.md`). Se encontró tras descartar candidatos por huella: la clave
+fue buscar funciones con mucho `lwc2` en lugar de `RTPT`.
+
+Sus llamadores (`FUN_80098A34`, `FUN_80098B80`, `FUN_80098DB0`) convierten
+posiciones del mundo en celdas del mapa de teselas: `celda = (coord >> 23) +
+128`, `mapa[z·256 + x] & 0x1FF`, con 0 = sin tesela (ver `04-formatos.md`).
+Los usan funciones de lógica (`FUN_8006894C`, `FUN_80069D34`, `FUN_8006F670`…),
+probablemente colisión de aviones y proyectiles con el suelo.
+
+## 8. Render de terreno y objetos ✅ (confirma vértices y offsets GTE)
+
+| Dirección (EU) | Qué hace |
+|---|---|
+| `0x8005FF9C` | recorre una **lista de colocación** (`SVECTOR` posición + palabra de control: modelo = bits 0-8, fin = bit 21, bit 22 y bits 16-20 `SIN RESOLVER`); por modelo hace la pasada de vértices y llama a los renders de primitivas. `0x80060F14` es otra entrada al mismo render |
+| `0x80060214` | render del bloque POLY_FT4 (36 B): `NCLIP`, profundidad = máx Z >> 3, POLY_FT4 directo con `DPCS` si está lejos; si está cerca, subdivide |
+| `0x80060470` | ídem para el bloque POLY_GT4 |
+| `0x80060DC0` | subdivisión de caras cercanas (las convierte en GT4) |
+
+Dos confirmaciones del formato de la etapa 1, ahora desde el código:
+
+- **Pasada de vértices:** carga `VXY0`, `VXY1`, `VXY2` de tres palabras
+  seguidas, `VZ0`/`VZ1` de la mitad baja y alta de la cuarta y `VZ2` de la
+  quinta, hace `RTPT` y avanza 20 bytes: el grupo
+  `x0,y0,x1,y1,x2,y2,z0,z1,z2,pad`.
+- **Bytes 8-15 de la primitiva:** la subdivisión los usa como offsets en
+  bytes dentro del bloque de vértices para leer `xy` y `z` de cada vértice.
+  No eran redundantes: los usa el camino cercano.
+
+`h0` no se usa en estas rutas: sigue `SIN RESOLVER`.
+
+**De dónde sale la lista de colocación:** `FUN_8005CDA4` la construye a partir
+del **mapa de teselas** (`+0x248` de la estructura de render en `*(0x2D0($gp))`;
+la tabla de teselas está en `+0x24C`). Recorre una ventana visible de celdas y
+por cada celda con tesela escribe su posición y una palabra de control:
+bits 0-15 = la celda entera, 16-20 = columna, 21 = fin, 22 = primera de la
+fila, 25-27 = reutilizar vértices de las vecinas ya transformadas. El render
+hace `flags ^= flags & (flags << 16)`: los bits 9, 10 y 11 de la celda anulan
+los bits 25, 26 y 27. Así se resolvieron (con contraste estadístico) los bits
+altos del mapa.
+
+## 9. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Localizar el render de modelos para resolver `h0/h1/e0/e1` de las
-   primitivas, y el consumidor del mapa de teselas para sus 3 bits altos.
+2. `h0` de las primitivas; qué vecino exacto corresponde a cada bit alto del
+   mapa; qué dibuja los objetos de s4 y los aviones de s2/s3 (otra lista de
+   colocación, probablemente de las secciones 7-9).
    Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
    candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
    seguir el flujo desde los 32 accesos a `0x2CC($gp)`.

@@ -48,10 +48,14 @@ PRIMITIVAS (verificadas en 14.095/14.095 modelos):
     primitiva; en los objetos (s04) no hay relleno.
 
     off  tipo     campo
-    0    u8       h0 (0..6)                                  SIN RESOLVER
-    1    u8       h1 (0..2)                                  SIN RESOLVER
+    0    u8       h0 (0..4)                                  SIN RESOLVER
+    1    u8       h1: 0 = cuadrilatero plano, 1 = triangulo, 2 = cuadrilatero
+                  no plano partido en (i0,i1,i2) + (i1,i3,i2)
     2    u16      0
-    4    u16 x2   e0, e1                                     SIN RESOLVER
+    4    u16 x2   e0, e1: offsets en bytes a la NORMAL de la cara en la
+                  seccion 5 del registro (SVECTOR, unitaria en 4.12, sentido
+                  opuesto a (v1-v0)x(v2-v0)). e0 == e1 salvo con h1 = 2, en
+                  que cada triangulo tiene la suya. Ver comando `normals`.
     8    u8[8]    por vertice: (offset xy, offset z) en bytes dentro del
                   bloque de vertices, listos para el GTE (redundantes con
                   los indices)
@@ -69,6 +73,7 @@ Uso:
     python3 tools/acemodel.py obj <seccion.bin> <i> <out>   # .obj con caras
     python3 tools/acemodel.py check <dir_bpb>               # validacion global
     python3 tools/acemodel.py tilemap <dir_bpb>             # base del indice del mapa
+    python3 tools/acemodel.py normals <dir_bpb>             # h1/e0/e1 y normales (s5)
 """
 import os
 import struct
@@ -285,15 +290,110 @@ def edge_continuity(tilemap, tiles, base):
 
 
 def cmd_tilemap(directory):
-    """Indice de tesela del mapa (seccion 0): base 0 o base 1."""
+    """Indice de tesela del mapa (seccion 0) y significado de los bits altos.
+
+    1. Base del indice: continuidad de bordes con base 0 y con base 1.
+    2. Bits 9-11 de la celda: el render (0x8005FF9C) los usa para anular la
+       reutilizacion de vertices ya transformados de la tesela vecina. Aqui se
+       mide, para el borde izquierdo de cada celda, cuantos bordes no casan con
+       la vecina segun cada bit este a 0 o a 1.
+    """
+    import collections
     from acerec import Record
+    bits = collections.Counter()
     for name in sorted(os.listdir(directory)):
         rec = Record.from_file(os.path.join(directory, name))
         if rec is None or rec.type != 17:
             continue
+        tm = rec.section(0)
         tiles = dict(models(rec.section(1)))
-        res = [edge_continuity(rec.section(0), tiles, base) for base in (0, 1)]
+        res = [edge_continuity(tm, tiles, base) for base in (0, 1)]
         print(f"{name[:4]}: base0 {res[0][0]}/{res[0][1]}  base1 {res[1][0]}/{res[1][1]}")
+        for gz in range(256):
+            for gx in range(1, 256):
+                a = struct.unpack_from("<H", tm, (gz * 256 + gx - 1) * 2)[0]
+                b = struct.unpack_from("<H", tm, (gz * 256 + gx) * 2)[0]
+                ta, tb = tiles.get((a & 0x1FF) - 1), tiles.get((b & 0x1FF) - 1)
+                if not (a & 0x1FF) or not (b & 0x1FF) or ta is None or tb is None:
+                    continue
+                ea = {v[2]: v[1] for v in ta.vertices if v[0] == 1024}
+                eb = {v[2]: v[1] for v in tb.vertices if v[0] == -1024}
+                common = ea.keys() & eb.keys()
+                if not common:
+                    continue
+                ok = all(ea[k] == eb[k] for k in common)
+                for bit in (9, 10, 11):
+                    bits[(bit, (b >> bit) & 1, ok)] += 1
+    print("bordes izquierdos que NO casan con la vecina, segun los bits altos de la celda:")
+    for bit in (9, 10, 11):
+        for v in (0, 1):
+            good, bad = bits[(bit, v, True)], bits[(bit, v, False)]
+            print(f"  bit {bit} = {v}: {bad}/{good + bad} ({100 * bad / max(1, good + bad):.1f} %)")
+    return 0
+
+
+def cmd_normals(directory):
+    """Valida h1/e0/e1 contra la tabla de normales (seccion 5) de cada registro.
+
+    Semantica sacada del codigo de interseccion con el terreno de ACE.BIN
+    (0x80097EDC, EU): e0/e1 son offsets a SVECTOR de normal; el bit 0x100
+    (h1 = 1) es triangulo y el 0x200 (h1 = 2) cuadrilatero partido.
+    """
+    import collections
+    import math
+    from acerec import Record
+
+    def cross(a, b):
+        return (a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+    def sub(a, b):
+        return tuple(x - y for x, y in zip(a, b))
+
+    def cos(n, m):
+        ln = math.sqrt(sum(x * x for x in n))
+        lm = math.sqrt(sum(x * x for x in m))
+        return sum(x * y for x, y in zip(n, m)) / (ln * lm) if ln and lm else 0.0
+
+    c = collections.Counter()
+    for name in sorted(os.listdir(directory)):
+        rec = Record.from_file(os.path.join(directory, name))
+        if rec is None or rec.type != 17:
+            continue
+        s5 = rec.section(5)
+        top = 0
+        for k in (1, 4):
+            for _, m in models(rec.section(k)):
+                if not isinstance(m, Model):
+                    continue
+                raw, v = m.raw, m.vertices
+                for blk, size in ((m.off_prims, 36), (m.off_end, 48)):
+                    for j in range(struct.unpack_from("<I", raw, blk)[0]):
+                        a = blk + 4 + size * j
+                        h1 = raw[a + 1]
+                        e0, e1 = struct.unpack_from("<HH", raw, a + 4)
+                        i0, i1, i2, i3 = raw[a + 16:a + 20]
+                        c["primitivas"] += 1
+                        c["e multiplo de 8 y dentro de s5"] += int(e0 % 8 == 0 and e1 % 8 == 0 and max(e0, e1) + 8 <= len(s5))
+                        top = max(top, e0, e1)
+                        tri = i3 == i2
+                        c[f"h1={h1} {'triangulo' if tri else 'cuadrilatero'}"] += 1
+                        if h1 != 2:
+                            c["h1!=2 con e0==e1"] += int(e0 == e1)
+                            n0 = struct.unpack_from("<3h", s5, e0)
+                            cr = cross(sub(v[i1], v[i0]), sub(v[i2], v[i0]))
+                            if any(cr):
+                                c["caras planas comprobadas"] += 1
+                                c["  normal antiparalela (cos < -0.99)"] += int(cos(n0, cr) < -0.99)
+                        elif not tri:
+                            n0 = struct.unpack_from("<3h", s5, e0)
+                            n1 = struct.unpack_from("<3h", s5, e1)
+                            ok = (cos(n0, cross(sub(v[i1], v[i0]), sub(v[i2], v[i0]))) < -0.98 and
+                                  cos(n1, cross(sub(v[i3], v[i1]), sub(v[i2], v[i1]))) < -0.98)
+                            c["h1=2: particion (i0,i1,i2)+(i1,i3,i2) casa"] += int(ok)
+        c["registros"] += 1
+        c["max(e)+8 == len(s5)"] += int(top + 8 == len(s5))
+    for key, n in c.items():
+        print(f"{key}: {n}")
     return 0
 
 
@@ -341,6 +441,8 @@ def cmd_check(directory):
 def main(argv):
     if len(argv) >= 3 and argv[1] == "check":
         return cmd_check(argv[2])
+    if len(argv) >= 3 and argv[1] == "normals":
+        return cmd_normals(argv[2])
     if len(argv) >= 3 and argv[1] == "tilemap":
         return cmd_tilemap(argv[2])
     if len(argv) >= 3 and argv[1] == "list":
