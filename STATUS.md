@@ -64,9 +64,9 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 1. Ensamblado del avión del jugador: ✅ mecanismo general (tabla de 12
    piezas en el hueco id 0 / nivel 3; el render elige entradas/estados).
    Queda la lógica que elige cada estado de pieza.
-2. **Preludios sin explorar:** tipo 13 (149 KB) y tipo 17 (116-284 B en ULZ,
-   parámetros de misión; el cargador los guarda en `g_mission + 0x18` y los
-   pasa a `FUN_8005D490`).
+2. ✅ Preludios: tipo 17 = parámetros de entorno y animación de paletas;
+   tipo 13 = imágenes de las 36 misiones. Queda el del tipo 5 y el detalle
+   campo a campo del tipo 17.
 3. Confirmar el papel de cada overlay; `h0`; formato de las demos; seguir
    ampliando `tools/ghidra/names.tsv`.
 

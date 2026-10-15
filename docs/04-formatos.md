@@ -119,9 +119,15 @@ estructura de registro y es legible.
 > `u32 tipo; u32 offset[n+1]` con `offset[0] = 4 + 4·(n+1)`. Se mantiene la
 > numeración histórica (sección 0 = la primera tras el preludio);
 > `tools/acerec.py` expone el preludio con `prelude_bounds()`. Preludios:
-> tipo 17 = 116-284 B en ULZ (parámetros de misión, `SIN RESOLVER`); tipo 4 =
-> **modelos del avión del jugador** (ver abajo); tipo 13 = 149 KB `SIN
-> RESOLVER`; tipo 5 = 4-33.156 B.
+> - **tipo 17**: ULZ que descomprime a **312 B fijos de parámetros de entorno**
+>   (muchos tripletes RGB y valores 4.12). El cargador los guarda en
+>   `g_mission + 0x18` y `FUN_8005D490` usa `+8` para generar 16 paletas
+>   animadas (interpolación con `rsin`, subidas a VRAM desde (320,384)):
+>   animación de paletas por misión. Campo a campo, `SIN RESOLVER`.
+> - **tipo 4**: los **modelos del avión del jugador** (ver abajo).
+> - **tipo 13**: tabla de **36 TIM** en ULZ (56×84, 8 bpp): las **imágenes de
+>   las 36 misiones** (ciudades, cañones, la Tierra desde el espacio…).
+> - tipo 5: de 4 a 33.156 B, `SIN RESOLVER`.
 
 Reproducible con `make records`. Válida en **122 de los 127** registros:
 

@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Preludios de los tipos 17 y 13
+
+Tipo 17: 312 B de parámetros de entorno (colores; `FUN_8005D490` genera con
+ellos 16 paletas animadas). Tipo 13: 36 TIM de 56×84 = las imágenes de las 36
+misiones.
+
+Reproducir: `Record.prelude_bounds()` de `tools/acerec.py` + `tools/ulz.py` +
+`tools/tim2png.py` (ver `docs/04-formatos.md`).
+
 ## 2026-10-15 — Escalas ×1/×2/×4 confirmadas en el código; ensamblado del jugador
 
 `scene_objects_sort` elige el bloque de vértices por distancia (×1 lejos, ×2
