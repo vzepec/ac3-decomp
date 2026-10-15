@@ -188,6 +188,12 @@ Validado contra los datos con `tools/acemodel.py normals` (ver
 `04-formatos.md`). Se encontró tras descartar candidatos por huella: la clave
 fue buscar funciones con mucho `lwc2` en lugar de `RTPT`.
 
+Sus llamadores (`FUN_80098A34`, `FUN_80098B80`, `FUN_80098DB0`) convierten
+posiciones del mundo en celdas del mapa de teselas: `celda = (coord >> 23) +
+128`, `mapa[z·256 + x] & 0x1FF`, con 0 = sin tesela (ver `04-formatos.md`).
+Los usan funciones de lógica (`FUN_8006894C`, `FUN_80069D34`, `FUN_8006F670`…),
+probablemente colisión de aviones y proyectiles con el suelo.
+
 ## 8. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre

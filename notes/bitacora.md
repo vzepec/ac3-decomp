@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Geometría del mapa de teselas confirmada desde el código
+
+`FUN_80098B80`: celda = `(coord >> 23) + 128` (celdas de 2048 unidades, origen
+en la celda 128,128), mapa por filas de Z, `& 0x1FF` = índice, 0 = sin tesela.
+Coincide con lo deducido de los datos (tamaño de tesela, base 1). Los 3 bits
+altos no se usan en la colisión.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/t.c 0x80098b80`
+
 ## 2026-10-15 — Primitivas resueltas: h1, e0/e1 y la sección 5 (normales)
 
 Leyendo el código de intersección con el terreno de `ACE.BIN` (`0x80097EDC`):

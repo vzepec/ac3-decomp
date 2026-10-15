@@ -250,6 +250,14 @@ frente al 74,6 % con base 0 (`python3 tools/acemodel.py tilemap data/bpb`).
 Qué codifican los 3 bits altos (≈0,5 % de las celdas; probablemente giro o
 espejo, que explicaría el residuo) sigue `SIN RESOLVER`.
 
+**Confirmado desde el código** (`FUN_80098B80`, consulta de terreno de
+`ACE.BIN`): la celda de una posición del mundo (punto fijo 20.12) es
+`(coord >> 23) + 128`, es decir, celdas de **2048 unidades** con la celda
+(128,128) en el origen; el mapa se indexa `mapa[z·256 + x]`; `celda & 0x1FF`
+es el índice y **0 significa "sin tesela"**, lo que cuadra con la base 1
+(la entrada 0 de la tabla de offsets es el contador). La consulta de
+colisión no usa los 3 bits altos.
+
 **Comparación EU/US:** las secciones 0-5 y 7-14 son **idénticas byte a byte**
 en los 41 registros. Solo cambian la 6 (textos) y la 15. Terreno, modelos y
 texturas son comunes a las dos versiones. La 15 difiere porque es el banco de
