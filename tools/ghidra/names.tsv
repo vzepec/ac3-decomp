@@ -75,3 +75,5 @@
 0x800931B8	f	sky_bands	alturas y distancias de los anillos
 0x800936FC	f	sky_bands_draw	bandas planas y Gouraud
 0x8005D5FC	f	fog_color_set	color lejano GTE = preludio +0x08
+0x80038818	f	mission_start	toma s6 (guion) e inicializa la mision
+0x8004BBB8	f	mission_script_init	cabecera del guion: contadores y subtablas

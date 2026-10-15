@@ -255,7 +255,7 @@ Reproducible con `make sections` y `make models`.
 | 3 | sí | **Modelos pequeños con LOD** (¿armas?): 4 o 16 huecos | sí | ✅ geometría |
 | 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
 | 5 | sí | **Tabla de normales de cara** (`SVECTOR` unitarios en 4.12) | sí | ✅ ver primitivas |
-| 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
+| 6 | sí | **Guion de misión** (6 subentradas; ver abajo). Antes descrito como "textos" | **no** | parcial |
 | 7, 9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
 | 8 | sí | 40 B: **capas de nubes/bruma** (2 niveles), ver efectos | sí | parcial |
 | 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
@@ -275,6 +275,32 @@ Corrección: la TIM 2 se tomó primero, por su aspecto, como "bola de fuego"
 de explosión; el código muestra que es el sol. **Las explosiones no están
 localizadas.** Nota: `g_render + 0x244` = `g_mission + 0x18` (preludio) y
 `g_render + 0x268` = `g_mission + 0x3C` (sección 8).
+
+### Sección 6 del tipo 17: guion de misión (parcial)
+
+Al arrancar la misión, `mission_start` (`FUN_80038818`) toma s6
+(`g_render + 0x260`) como `DAT_800BADC0`; si su tabla tiene 3 entradas elige
+una al azar (variantes de la misión). Las subentradas las consumen:
+`+4` → `FUN_8004BBB8`, `+8` → `FUN_8004B760`, `+0xC` → `DAT_800BAD28`
+(`FUN_800527C8`), `+0x10` → `DAT_800BAD20` (`FUN_80052574`), `+0x14` →
+`FUN_80054B54`.
+
+La subentrada `+4` empieza con 4 contadores (bytes 0, 4, 8, 0xC) y 14
+offsets en palabras a subtablas (`DAT_800BAD5C`, `…AD7C`, `…AD70`, `…AD9C`,
+`…ADB8`, `…ADB4`, `…ADA8`, `…ADB0`, `…AD74`, `…AD98`, `…ADA0`, `…AD90` y dos
+tablas de punteros). La subtabla `DAT_800BAD70` tiene tantos registros de
+44 B como el contador del byte 8 y contiene **posiciones de mundo en coma
+fija** (<<12). En la misión 6 (11 registros): el 0 tiene byte 0 = 0 y está
+a 7.500 de altura en (48000, −48000) (¿jugador?); los demás tienen byte 0 =
+1 y van **por parejas en formación** (p. ej. (4000, 4000) y (−4000, −4000)),
+con byte 1 = `0x18`, `0x20` o `0x1F`. Apunta a la tabla de aparición de
+entidades (byte 0 = bando, byte 1 = tipo/modelo): `SIN RESOLVER` hasta
+casarlo con el código que la lee. Volcado:
+`python3 tools/acescript.py data/bpb/0006_*.bin`.
+
+Mapa de punteros del cargador (`mission_load`): `ulz_decompress` devuelve el
+final de lo escrito, así que `g_mission + 0x18` = preludio, `+0x1C` = s0 …
+`+0x3C` = s8, `+0x40` = s9; y `g_mission + k` se copia a `g_render + 0x22C + k`.
 
 ### Preludio del tipo 17: cielo y niebla (desde el código)
 

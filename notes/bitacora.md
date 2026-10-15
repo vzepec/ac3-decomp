@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — La sección 6 de la misión es el guion, no textos
+
+`mission_start` (`FUN_80038818`) toma s6 como guion (`DAT_800BADC0`), con
+variantes elegidas al azar si hay 3. La subtabla `DAT_800BAD70` de la
+subentrada 0 tiene registros de 44 B con posiciones en coma fija: en la
+misión 6, un registro de bando 0 a 7.500 de altura y 10 de bando 1 por
+parejas en formación. Pista fuerte de la tabla de aparición de entidades;
+sin confirmar con el código que la consume. También aclarado el mapa de
+punteros de `mission_load`.
+
+Reproducir: `python3 tools/acescript.py data/bpb/0006_*.bin`.
+
 ## 2026-10-15 — Preludio de misión: cielo por bandas y color de niebla
 
 El preludio de 312 B del tipo 17 está comprimido con ULZ (no se había visto

@@ -65,16 +65,23 @@
 
 ## Siguiente tarea concreta
 
-Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
+Etapa 3, juntando material para un **APK 0.4 "con aspecto del juego"** (el
+usuario pidió avisar cuando haya bastante; ver lista en `android/README.md`
+y abajo).
 
-1. **Efectos**: ✅ nubes, sol/destello y bruma (s13 + s8 + preludio);
-   ✅ explosiones, humo, restos y estelas de proyectil (registro 0000 +
-   sistema de partículas, ver `docs/04-formatos.md`). Pendiente menor: qué
-   lista de proyectil es el misil estándar.
-2. **Preludio del tipo 17**: ✅ cielo por bandas y niebla (`tools/acesky.py`).
-   Pendiente: dirección de la luz de los modelos, unidad de la mezcla del sol.
-3. **Callbacks de estado de pieza** (superficies móviles del avión).
-4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.
+Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
+proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
+sol/destello y bruma (s13 + s8).
+
+1. **Guion de misión (s6)**: confirmar la tabla de aparición
+   (`DAT_800BAD70`, `tools/acescript.py`) leyendo quién la consume; casar el
+   byte 1 con los modelos (¿índice de LOD `id·4`, o sea s3 desde el 0x18?).
+   Daría la colocación real de enemigos (y quizá de unidades de tierra).
+2. **Objetos de tierra**: si están en el guion, su modelo (s4) y posición.
+3. **Superficies móviles**: callbacks de estado de pieza (`0x8008BCBC`,
+   `0x8008BE4C`, `0x8008B914`, `0x8008BA18`, `0x8008BB1C`, `0x8008B1A8`).
+4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
+   overlays 3-5.
 
 ## Bloqueos conocidos
 
