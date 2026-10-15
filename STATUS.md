@@ -66,8 +66,8 @@
 ## Siguiente tarea concreta
 
 Etapa 3, juntando material para un **APK 0.4 "con aspecto del juego"** (el
-usuario pidió avisar cuando haya bastante; ver lista en `android/README.md`
-y abajo).
+usuario pidió avisar cuando haya bastante; ver lista
+abajo).
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
