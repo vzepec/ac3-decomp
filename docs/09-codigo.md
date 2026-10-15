@@ -194,12 +194,34 @@ posiciones del mundo en celdas del mapa de teselas: `celda = (coord >> 23) +
 Los usan funciones de lógica (`FUN_8006894C`, `FUN_80069D34`, `FUN_8006F670`…),
 probablemente colisión de aviones y proyectiles con el suelo.
 
-## 8. Lo que queda (etapa 3, siguientes pasos)
+## 8. Render de terreno y objetos ✅ (confirma vértices y offsets GTE)
+
+| Dirección (EU) | Qué hace |
+|---|---|
+| `0x8005FF9C` | recorre una **lista de colocación** (`SVECTOR` posición + palabra de control: modelo = bits 0-8, fin = bit 21, bit 22 y bits 16-20 `SIN RESOLVER`); por modelo hace la pasada de vértices y llama a los renders de primitivas. `0x80060F14` es otra entrada al mismo render |
+| `0x80060214` | render del bloque POLY_FT4 (36 B): `NCLIP`, profundidad = máx Z >> 3, POLY_FT4 directo con `DPCS` si está lejos; si está cerca, subdivide |
+| `0x80060470` | ídem para el bloque POLY_GT4 |
+| `0x80060DC0` | subdivisión de caras cercanas (las convierte en GT4) |
+
+Dos confirmaciones del formato de la etapa 1, ahora desde el código:
+
+- **Pasada de vértices:** carga `VXY0`, `VXY1`, `VXY2` de tres palabras
+  seguidas, `VZ0`/`VZ1` de la mitad baja y alta de la cuarta y `VZ2` de la
+  quinta, hace `RTPT` y avanza 20 bytes: el grupo
+  `x0,y0,x1,y1,x2,y2,z0,z1,z2,pad`.
+- **Bytes 8-15 de la primitiva:** la subdivisión los usa como offsets en
+  bytes dentro del bloque de vértices para leer `xy` y `z` de cada vértice.
+  No eran redundantes: los usa el camino cercano.
+
+`h0` no se usa en estas rutas: sigue `SIN RESOLVER`.
+
+## 9. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Localizar el render de modelos (para `h0`) y el consumidor del mapa de
-   teselas (para sus 3 bits altos).
+2. Averiguar de dónde sale la lista de colocación de `0x8005FF9C` (¿el mapa
+   de teselas transformado? ¿la sección 7-9?) y qué son sus bits 16-22;
+   seguir buscando `h0` y los 3 bits altos del mapa de teselas.
    Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
    candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
    seguir el flujo desde los 32 accesos a `0x2CC($gp)`.

@@ -301,7 +301,7 @@ Las teselas miden 2048×2048 unidades.
 | 1 | `u8` | `h1`: 0 = cuadrilátero plano, 1 = triángulo, 2 = cuadrilátero no plano partido en `(i0,i1,i2)` + `(i1,i3,i2)` |
 | 2 | `u16` | 0 |
 | 4 | `u16`×2 | `e0`, `e1`: offsets en bytes a la **normal de la cara** en la sección 5; `e0 = e1` salvo con `h1 = 2` (una normal por triángulo) |
-| 8 | `u8[8]` | por vértice, offset en bytes de su `xy` y su `z` en el bloque de vértices (listos para el GTE; redundantes con los índices) |
+| 8 | `u8[8]` | por vértice, offset en bytes de su `xy` y su `z` en el bloque de vértices (listos para el GTE; los usa la subdivisión de caras cercanas, `0x80060DC0`) |
 | 16 | `u8[4]` | índices `i0..i3`; orden de tira: cara `i0,i1,i3,i2`; triángulo si `i3 == i2` |
 | 20 | | `uv0`, CLUT (`x=(c&63)*16`, `y=c>>6`), `uv1`, tpage, `uv2`, `uv3` |
 | 32 | | FT4 (36 B): `rgb` + `0x2C` · GT4 (48 B): 4 × (`rgb` + `0x3C`) |

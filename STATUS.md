@@ -67,10 +67,10 @@ tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
 ```
 
 1. ✅ Hecho: `FUN_80026EE0` recoloca 4 offsets (`Model`) o 6 (`LodModel`).
-2. ✅ Hecho: `h1`, `e0`, `e1` y la sección 5, vía `0x80097EDC`. Queda `h0`:
-   buscar el render de modelos real (debe escribir paquetes POLY_FT4/GT4 en
-   una tabla de orden, `0x2C`/`0x3C`), probablemente entre las funciones con
-   muchos `lwc2`.
+2. ✅ Hecho: `h1`, `e0`, `e1`, sección 5, y el render de terreno/objetos
+   (`0x8005FF9C`, `0x80060214`, `0x80060470`, `0x80060DC0`), que confirma el
+   layout de vértices y los offsets GTE. Queda `h0`, que no usan estas rutas,
+   y averiguar de dónde sale la lista de colocación de `0x8005FF9C`.
 3. Buscar quién lee el mapa de teselas (puntero guardado en `+0x1C` de la
    estructura de misión) para los 3 bits altos de cada celda.
 4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,

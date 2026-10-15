@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Render de terreno y objetos localizado
+
+`0x8005FF9C` (pasada de vértices con `RTPT`, que confirma el grupo de 20 bytes
+desde el código), `0x80060214`/`0x80060470` (FT4/GT4 con `NCLIP`, `DPCS` y
+tabla de orden) y `0x80060DC0` (subdivisión, que usa los bytes 8-15 de la
+primitiva como offsets GTE). Se encontró buscando funciones que copian las
+palabras `0x14`-`0x2C` desde el mismo registro base (las palabras del paquete
+GPU que ya trae cada primitiva). `h0` no aparece en estas rutas.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/r.c 0x8005ff9c 0x80060214 0x80060dc0`
+
 ## 2026-10-15 — Geometría del mapa de teselas confirmada desde el código
 
 `FUN_80098B80`: celda = `(coord >> 23) + 128` (celdas de 2048 unidades, origen
