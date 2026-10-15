@@ -117,7 +117,15 @@ despachador de modos identificados. Queda nombrar el árbol de llamadas.
 
 ---
 
-## Etapa 4 — Rebanada vertical en Android ⬅️ LA PRUEBA DE LA VERDAD
+## Etapa 4 — Rebanada vertical en Android ⬅️ LA PRUEBA DE LA VERDAD 🔄 EN CURSO
+
+**Estado (2026-10-15):** primera versión en `android/` (ver su README):
+NativeActivity en C + GLES3, VRAM del PS1 simulada en el shader, terreno de
+una misión y avión del jugador leídos del disco del usuario, vuelo arcade
+con el mando, sin tope de fps (objetivo 60). APK de 40 KB sin datos del
+juego, librería alineada a 16 KB. Render verificado en el PC (Mesa);
+**pendiente de probar en la Retroid Pocket Flip 2.** Se abrió antes de cerrar
+la etapa 3, a petición del usuario.
 
 **Objetivo:** una cosa, pequeña y nativa, corriendo en el Flip 2:
 

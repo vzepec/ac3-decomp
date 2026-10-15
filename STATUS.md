@@ -1,15 +1,15 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-3`; integración en `develop`)
+**Última actualización:** 2026-10-15 (rama `etapa-4`; integración en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). Las etapas 1 y 2
-están fusionadas en `develop`. Primer corte de los tres criterios de salida
-cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
+**Etapa 4 — rebanada vertical en Android: primer APK listo** (rama
+`etapa-4`), abierta a petición del usuario con la etapa 3 aún en curso (sus
+pendientes siguen abajo). Ver `android/README.md`.
 
 ## Hecho
 
@@ -65,20 +65,18 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-Etapa 3 en curso. Pendientes, por orden de valor para la etapa 4:
+**Probar el APK en la Retroid Pocket Flip 2** (lo hace el usuario):
+instalar `android/build/ac3slice.apk`, poner el `.bin` del disco donde lo
+busca la app, conceder "Acceso a todos los archivos" y medir los fps con
+`adb logcat -s AC3Slice`. Con el resultado:
 
-1. **Estados de pieza**: callbacks localizados (tablas `0x800B09B8` y
-   `0x800B09D0`); el 1 es el efecto de motores. Quedan por leer los demás
-   (`0x8008BCBC`, `0x8008BE4C`, `0x8008B914`, `0x8008BA18`, `0x8008BB1C`,
-   `0x8008B1A8`) para ver cuál elige/interpola estados de pieza.
-2. Overlays: ✅ 1 = menú principal, 2 = interfaz de campaña (probable, con
-   evidencia de código); quedan las subpantallas y los overlays 3-5.
-3. `h0` de las primitivas; formato de las demos; detalle del preludio del
-   tipo 17; seguir ampliando `tools/ghidra/names.tsv`.
+- si va a 60 fps y se ve bien: medir el esfuerzo de la etapa 4 (era el
+  objetivo) y decidir con el usuario los siguientes pasos (objetos de s4,
+  aviones de la misión, superficies móviles, HUD mínimo…)
+- si falla: corregir con lo que diga el logcat
 
-Cuando estos estén razonablemente cerrados, valorar con el usuario el paso a
-la etapa 4 (rebanada vertical en Android: ya hay un avión exportable con
-texturas).
+Pendientes de la etapa 3 (aparcados): callbacks de estados de pieza,
+overlays 3-5, `h0`, demos, `names.tsv`.
 
 ## Bloqueos conocidos
 

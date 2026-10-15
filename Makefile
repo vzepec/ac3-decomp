@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays ghidra-import ghidra-stats check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -25,6 +25,7 @@ help:
 	@echo "make textures   - vuelca a data/png/ las TIM del registro REC (def. 0006)"
 	@echo "make acebin     - descomprime ACE.BIN (EU y US) a data/exe/"
 	@echo "make overlays   - lista y extrae los overlays de codigo a data/exe/ovl/"
+	@echo "make apk        - compila la rebanada vertical de Android (android/build/ac3slice.apk)"
 	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
 	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"
@@ -79,6 +80,9 @@ acebin:
 	@mkdir -p data/exe
 	@$(PY) tools/acebin.py "$(EU)" data/exe/ace_eu.exe --psexe
 	@$(PY) tools/acebin.py "$(US)" data/exe/ace_us.exe --psexe
+
+apk:
+	@android/build.sh
 
 overlays:
 	@$(PY) tools/aceovl.py extract data/exe/ace_eu.bin data/bpb data/exe/ovl

@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Etapa 4: primer APK de la rebanada vertical
+
+`android/`: app nativa (NativeActivity, C, GLES3) que lee la imagen de disco
+del usuario y vuela un avión del jugador sobre el terreno de una misión. El
+port a C de las herramientas coincide con Python (misión 6: 432 teselas, 5042
+triángulos, 291 TIM; F-15: 454 triángulos). El render (VRAM simulada en
+textura R16UI y CLUT en el shader) se verificó en el PC con Mesa: ciudad,
+bahía y el avión con su piel. Sin tope de fps, vsync nativo.
+
+Reproducir: `make apk`; `android/test/test_render.c` (ver `android/README.md`).
+
 ## 2026-10-15 — Callbacks por pieza; t04 s0 = parámetros del avión (motores)
 
 Las piezas de `lod_parts_draw` llevan un callback tomado de dos tablas
