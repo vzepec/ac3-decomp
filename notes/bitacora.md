@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Papel de los overlays 1 y 2 desde el código
+
+Su primer paso de modo inicializa una máquina de subpantallas de menú según
+banderas del estado y restaura la última misión y avión elegidos. Con sus
+cadenas: overlay 1 = menú principal; overlay 2 = interfaz de campaña entre
+misiones. Estados de pieza del avión: el repartidor prepara los bloques de
+vértices de todas las entradas; la elección/interpolación debe estar en el
+callback por pieza (sin localizar).
+
 ## 2026-10-15 — Correspondencia registro → avión, por silueta
 
 Silueta cenital de cada avión del jugador frente a las 21 vistas del hangar:

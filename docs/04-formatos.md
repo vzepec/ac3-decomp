@@ -436,8 +436,11 @@ modelo 0 de la tabla LOD (huecos 0-3, vacíos en los datos de misión).
 la tabla LOD (`*(tabla + 0xC)`, en `FUN_80032514`), y el render compone el
 avión tomando entradas concretas (vistas: e1, e6, e8), con el mismo nivel de
 precisión para todas. Varias entradas son estados alternativos de una pieza
-(e3-e6 de e2, e8 de e7, e10-e11 de e9). La lógica que elige cada estado
-(aerofrenos, timones, tren…) está `SIN RESOLVER`.
+(e3-e6 de e2, e8 de e7, e10-e11 de e9). El repartidor recoge, para la
+precisión elegida, los punteros a los bloques de vértices de las 10 entradas
+siguientes; la elección o interpolación del estado de cada pieza
+(aerofrenos, timones, tren…) la hará el callback por pieza de
+`lod_parts_draw`. Detalle `SIN RESOLVER`.
 
 Validación (`python3 tools/acemodel.py player data/bpb`): **264/264**
 entradas en los 22 aviones; **7.895/7.895** primitivas texturizan desde la

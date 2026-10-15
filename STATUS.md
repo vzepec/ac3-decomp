@@ -67,11 +67,11 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 Etapa 3 en curso. Pendientes, por orden de valor para la etapa 4:
 
-1. **Lógica de los estados de pieza del avión del jugador** (qué decide e6
-   frente a e2, e8 frente a e7…): leer el render de piezas y quién rellena la
-   lista de `lod_parts_draw`.
-2. **Papel de cada overlay**: leer el primer paso de cada modo
-   (`data/ghidra/all_overlay*.c` tras `DumpAll`).
+1. **Estados de pieza del avión del jugador**: localizar los callbacks por
+   pieza de `lod_parts_draw` (campo `+0x34` de cada entrada de 0x38 B), que
+   deben elegir/interpolar los estados alternativos.
+2. Overlays: ✅ 1 = menú principal, 2 = interfaz de campaña (probable, con
+   evidencia de código); quedan las subpantallas y los overlays 3-5.
 3. `h0` de las primitivas; formato de las demos; detalle del preludio del
    tipo 17; seguir ampliando `tools/ghidra/names.tsv`.
 
