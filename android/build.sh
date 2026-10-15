@@ -22,9 +22,15 @@ $CC -O2 -fPIC -shared -Wall -Wextra -Wno-unused-parameter \
     -u ANativeActivity_onCreate \
     -o build/apk/lib/arm64-v8a/libac3slice.so
 
+# puente Java (selector de archivos): javac + d8 -> classes.dex
+rm -rf build/classes && mkdir -p build/classes build/dex
+"$JDK/bin/javac" --release 11 -nowarn -classpath "$PLAT" -d build/classes java/com/vzepec/ac3slice/*.java
+JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8" --min-api 26 --lib "$PLAT" --output build/dex build/classes/com/vzepec/ac3slice/*.class
+cp build/dex/classes.dex build/apk/
+
 "$BT/aapt2" link -o build/base.apk --manifest AndroidManifest.xml -I "$PLAT" \
     --min-sdk-version 26 --target-sdk-version 36
-(cd build/apk && zip -q -r ../base.apk lib)
+(cd build/apk && zip -q -r ../base.apk lib classes.dex)
 "$BT/zipalign" -P 16 -f 4 build/base.apk build/aligned.apk
 
 if [ ! -f "$KS" ]; then

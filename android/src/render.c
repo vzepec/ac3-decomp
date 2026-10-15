@@ -224,7 +224,6 @@ void update(App *a, float dt) {
 void draw(App *a) {
     if (a->status != 1) {
         float c[3] = {0.05f, 0.05f, 0.25f};
-        if (a->status == -1) { c[0] = 0.6f; c[1] = 0.0f; c[2] = 0.6f; }
         if (a->status == -2) { c[0] = 0.6f; c[1] = 0.0f; c[2] = 0.0f; }
         glClearColor(c[0], c[1], c[2], 1);
         glClear(GL_COLOR_BUFFER_BIT);

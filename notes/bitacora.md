@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — APK 0.2: la imagen de disco se elige con el selector del sistema
+
+En la Retroid la versión 0.1 se quedaba en magenta: no encontraba la imagen
+(falta de permiso o carpeta no prevista). Ahora una actividad Java mínima
+abre el selector de archivos (Storage Access Framework), guarda el URI con
+permiso persistente y pasa el descriptor al código nativo por JNI. Sin
+permisos de almacenamiento. Si el archivo no es un disco de AC3, se vuelve a
+pedir; Select + Start permite cambiarlo.
+
 ## 2026-10-15 — Etapa 4: primer APK de la rebanada vertical
 
 `android/`: app nativa (NativeActivity, C, GLES3) que lee la imagen de disco

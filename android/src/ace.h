@@ -22,6 +22,8 @@ typedef struct {
 } DiscFile;
 
 int disc_open(Disc *d, const char *path);
+/* Abre la imagen desde un descriptor (selector de archivos de Android). */
+int disc_open_fd(Disc *d, int fd);
 void disc_close(Disc *d);
 int disc_read(Disc *d, uint32_t lba, void *buf, uint32_t nbytes);
 int disc_find(Disc *d, const char *name, DiscFile *out);

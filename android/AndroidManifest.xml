@@ -2,26 +2,23 @@
 <!-- AC3 Slice: rebanada vertical de la etapa 4. No contiene datos del juego. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3slice"
-    android:versionCode="1"
-    android:versionName="0.1">
+    android:versionCode="2"
+    android:versionName="0.2">
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
-    <!-- Para leer la imagen de disco del usuario fuera de la carpeta de la app.
-         En Android 11+ hay que concederlo a mano: Ajustes > Apps > AC3 Slice >
-         Acceso a todos los archivos. -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Sin permisos de almacenamiento: la imagen de disco se elige con el
+         selector de archivos del sistema (MainActivity.java). -->
 
     <application
         android:label="AC3 Slice"
-        android:hasCode="false"
+        android:hasCode="true"
         android:extractNativeLibs="true"
         android:isGame="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
         <activity
-            android:name="android.app.NativeActivity"
+            android:name=".MainActivity"
             android:exported="true"
             android:screenOrientation="sensorLandscape"
             android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">

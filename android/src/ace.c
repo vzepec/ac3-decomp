@@ -9,10 +9,22 @@ static const uint8_t SYNC[12] = {0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x
 
 static uint32_t rd32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
 
+static int disc_detect(Disc *d);
+
 int disc_open(Disc *d, const char *path) {
-    uint8_t head[16];
     d->f = fopen(path, "rb");
     if (!d->f) return -1;
+    return disc_detect(d);
+}
+
+int disc_open_fd(Disc *d, int fd) {
+    d->f = fdopen(fd, "rb");
+    if (!d->f) return -1;
+    return disc_detect(d);
+}
+
+static int disc_detect(Disc *d) {
+    uint8_t head[16];
     if (fread(head, 1, 16, d->f) != 16) { fclose(d->f); d->f = NULL; return -1; }
     if (memcmp(head, SYNC, 12) == 0) {
         d->sector_size = 2352;

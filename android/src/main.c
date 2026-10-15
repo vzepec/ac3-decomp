@@ -10,15 +10,16 @@
  * y fisica por delta-time.
  *
  * Colores de pantalla de estado (no hay texto todavia):
- *   azul oscuro  = cargando
- *   magenta      = no se encuentra la imagen de disco (ver android/README.md)
- *   rojo         = la imagen no es de Ace Combat 3 o fallo al leerla
+ *   azul oscuro  = esperando la imagen de disco (selector de archivos) o cargando
+ *   rojo         = fallo al cargar una mision o un avion (ver logcat)
  */
 #include <EGL/egl.h>
 #include <GLES3/gl3.h>
 #include <android/log.h>
 #include <android/window.h>
 #include <android_native_app_glue.h>
+#include <jni.h>
+#include <unistd.h>
 #include <dirent.h>
 #include <math.h>
 #include <stdlib.h>
@@ -50,59 +51,48 @@ static double now(void) {
 
 /* ------------------------------------------------------------------ disco */
 
-static int try_disc(App *a, const char *path) {
-    struct stat st;
-    if (stat(path, &st) || !S_ISREG(st.st_mode) || st.st_size < 300 * 1024 * 1024) return 0;
+/* Imagen de disco: la elige el usuario con el selector de archivos del sistema
+ * (MainActivity.java), que entrega aqui un descriptor abierto. Sin permisos. */
+static volatile int g_disc_fd = -1;
+
+JNIEXPORT void JNICALL Java_com_vzepec_ac3slice_MainActivity_nativeSetDisc(JNIEnv *env, jclass cls, jint fd) {
+    (void)env; (void)cls;
+    int old = __atomic_exchange_n(&g_disc_fd, fd, __ATOMIC_SEQ_CST);
+    if (old >= 0) close(old);  /* uno anterior que no llego a usarse */
+}
+
+/* Pide a la actividad Java que abra el selector de archivos. */
+static void request_picker(void) {
+    ANativeActivity *act = P.app->activity;
+    JNIEnv *env;
+    if ((*act->vm)->AttachCurrentThread(act->vm, &env, NULL) != JNI_OK) return;
+    jclass c = (*env)->GetObjectClass(env, act->clazz);
+    jmethodID m = (*env)->GetMethodID(env, c, "pickDisc", "()V");
+    if (m) (*env)->CallVoidMethod(env, act->clazz, m);
+    (*env)->DeleteLocalRef(env, c);
+    (*act->vm)->DetachCurrentThread(act->vm);
+}
+
+/* Si ha llegado un descriptor nuevo, abre esa imagen y la valida. */
+static int take_disc(App *a) {
+    int fd = __atomic_exchange_n(&g_disc_fd, -1, __ATOMIC_SEQ_CST);
+    if (fd < 0) return 0;
     Disc d;
-    if (disc_open(&d, path)) return 0;
-    if (!disc_volume_is_ac3(&d)) { disc_close(&d); return 0; }
+    if (disc_open_fd(&d, fd)) { close(fd); LOG("no se puede leer el archivo elegido"); request_picker(); return 0; }
+    if (!disc_volume_is_ac3(&d)) {
+        disc_close(&d);
+        LOG("el archivo elegido no es una imagen .bin de Ace Combat 3");
+        request_picker();
+        return 0;
+    }
+    AcePack p;
+    if (pack_open(&d, &p)) { disc_close(&d); LOG("no se puede abrir ACE.BPB"); request_picker(); return 0; }
+    if (a->disc.f) { pack_free(&a->pack); disc_close(&a->disc); }
     a->disc = d;
-    LOG("disco encontrado: %s", path);
+    a->pack = p;
+    a->reload_mission = 1;
+    LOG("imagen de disco valida");
     return 1;
-}
-
-static int scan_dir(App *a, const char *dir, int depth) {
-    DIR *dd = opendir(dir);
-    if (!dd) return 0;
-    struct dirent *e;
-    char path[1024];
-    int found = 0;
-    while (!found && (e = readdir(dd))) {
-        if (e->d_name[0] == '.') continue;
-        snprintf(path, sizeof path, "%s/%s", dir, e->d_name);
-        size_t n = strlen(e->d_name);
-        if (n > 4 && (strcasecmp(e->d_name + n - 4, ".bin") == 0 || strcasecmp(e->d_name + n - 4, ".iso") == 0)) {
-            found = try_disc(a, path);
-        } else if (depth > 0 && e->d_type == DT_DIR) {
-            found = scan_dir(a, path, depth - 1);
-        }
-    }
-    closedir(dd);
-    return found;
-}
-
-static int find_disc(App *a) {
-    const char *ext = P.app->activity->externalDataPath;
-    if (ext && scan_dir(a, ext, 1)) return 1;
-    const char *roots[] = {"/storage/emulated/0/ROMs", "/storage/emulated/0/roms", "/storage/emulated/0/Roms",
-                           "/storage/emulated/0/Download", "/storage/emulated/0/PSX", "/storage/emulated/0/psx",
-                           "/storage/emulated/0/AC3", "/storage/emulated/0"};
-    for (unsigned i = 0; i < sizeof roots / sizeof roots[0]; i++) {
-        if (scan_dir(a, roots[i], i + 1 == sizeof roots / sizeof roots[0] ? 0 : 3)) return 1;
-    }
-    /* tarjetas SD: /storage/XXXX-XXXX */
-    DIR *dd = opendir("/storage");
-    if (dd) {
-        struct dirent *e;
-        char path[512];
-        while ((e = readdir(dd))) {
-            if (e->d_name[0] == '.' || !strcmp(e->d_name, "emulated") || !strcmp(e->d_name, "self")) continue;
-            snprintf(path, sizeof path, "/storage/%s", e->d_name);
-            if (scan_dir(a, path, 3)) { closedir(dd); return 1; }
-        }
-        closedir(dd);
-    }
-    return 0;
 }
 
 /* ------------------------------------------------------------------ carga */
@@ -111,10 +101,6 @@ static void load_data(App *a) {
     if (!a->scene) {
         a->scene = calloc(1, sizeof(Scene));
         scene_init(a->scene);
-    }
-    if (a->status == 0) {
-        if (!find_disc(a)) { a->status = -1; LOG("no se encuentra la imagen de disco"); return; }
-        if (pack_open(&a->disc, &a->pack)) { a->status = -2; LOG("no se puede abrir ACE.BPB"); return; }
     }
     double t0 = now();
     if (a->reload_mission) {
@@ -212,6 +198,9 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         case AKEYCODE_DPAD_RIGHT: a->lx = down ? 1.0f : 0; return 1;
         default: break;
         }
+        if (k == AKEYCODE_BUTTON_SELECT) a->sel = down;
+        if (k == AKEYCODE_BUTTON_START) a->start = down;
+        if (down && a->sel && a->start) { request_picker(); return 1; }
         if (!down || AKeyEvent_getRepeatCount(e)) return 1;
         if (a->status != 1) return 1;
         switch (k) {
@@ -279,7 +268,8 @@ void android_main(struct android_app *app) {
         float dt = (float)(t - a.last);
         a.last = t;
         if (dt > 0.05f) dt = 0.05f;
-        if (!first_frame && (a.status == 0 || a.reload_mission || a.reload_plane) && a.status >= 0) {
+        if (take_disc(&a)) a.status = 0;
+        if (!first_frame && a.disc.f && (a.status == 0 || a.reload_mission || a.reload_plane)) {
             load_data(&a);
             a.last = now();
         }

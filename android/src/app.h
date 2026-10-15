@@ -36,7 +36,7 @@ typedef struct {
     float speed;
     /* mando */
     float lx, ly, rx, ry, lt, rt;
-    int l1, r1;
+    int l1, r1, sel, start;
     float cam_yaw, cam_pitch;
     /* tiempo */
     double last, fps_t;
