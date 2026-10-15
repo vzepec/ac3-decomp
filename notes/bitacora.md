@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Avión del jugador exportado con texturas (UV validadas)
+
+`acemodel.py export-player` saca `.obj` + `.mtl` + texturas. Rasterizados en
+vista cenital, el 0047 (ala volante blanca y roja) y el 0055 (F-15 azul)
+salen perfectos. Corrección: las 8 filas de CLUT de la piel son paletas por
+zona, no esquemas de color.
+
+Reproducir: `python3 tools/acemodel.py export-player data/bpb/0055_*_t04.bin data/obj/p55`
+
 ## 2026-10-15 — Preludios de los tipos 17 y 13
 
 Tipo 17: 312 B de parámetros de entorno (colores; `FUN_8005D490` genera con

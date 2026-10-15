@@ -33,6 +33,8 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
+- ✅ **Avión del jugador exportable con texturas** (`acemodel.py
+  export-player`): validado a ojo (F-15 del registro 0055)
 - ✅ **Avión del jugador encontrado**: en el preludio del registro de tipo 4
   (sección inicial que el modelo de registro ignoraba). 22 aviones, 264/264
   modelos, 7.895/7.895 primitivas validadas — `acemodel.py player`. Los

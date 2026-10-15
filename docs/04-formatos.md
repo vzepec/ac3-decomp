@@ -418,7 +418,7 @@ PCM: 15 millones de muestras sin un solo recorte en EU.
 | Sec | ULZ | Contenido |
 |---|---|---|
 | 0 | sí | 168-220 B: puntos de referencia del avión (vectores `x,y,z,0`; varios en la cola, probablemente toberas) — `SIN RESOLVER` en detalle |
-| 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
+| 1 | sí | 2 TIM: **piel 256×256** con 8 filas de CLUT e **icono 40×40**. Corrección: las 8 filas **no** son esquemas de color; cada primitiva usa la fila de la zona de la piel que pinta |
 | 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 
 **Modelos del avión del jugador ✅** — en el **preludio** del registro
@@ -442,7 +442,12 @@ precisión para todas. Varias entradas son estados alternativos de una pieza
 Validación (`python3 tools/acemodel.py player data/bpb`): **264/264**
 entradas en los 22 aviones; **7.895/7.895** primitivas texturizan desde la
 página de la piel del jugador (704,256) con su CLUT (336, 312-319).
-Renderizado, el registro 0047 es un ala volante coherente.
+Renderizado con textura (`python3 tools/acemodel.py export-player
+<registro> <dir>` produce `.obj` + `.mtl` + una PNG por fila de CLUT), el
+registro 0047 es un ala volante blanca y roja (igual que una de las vistas del
+hangar) y el 0055 un F-15 azul con todos sus detalles en su sitio: geometría,
+UV, CLUT y piel validados de extremo a extremo. La correspondencia registro →
+nombre del avión está `SIN RESOLVER`.
 
 #### Tipo 13 — interfaz (1 registro, 0072)
 

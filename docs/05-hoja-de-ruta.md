@@ -43,7 +43,7 @@ japonesa. Ver `03-versiones.md`.
 | Aviones de misión con LOD (tipo 17 s02/s03) | ✅ 578/578 |
 | Bancos de sonido del SPU | ✅ `tools/acesnd.py`, 63/63 |
 | `ACE.SPB`: qué es | ✅ audio XA + vídeo (subcabeceras) |
-| Modelo del avión del jugador | ⬜ no localizado (siguiente) |
+| Modelo del avión del jugador | ✅ preludio del tipo 4; exportable con texturas |
 | ULZ variante 0 (tipo 13, interfaz) | ✅ con el descompresor del juego |
 
 **Criterio de salida:** poder extraer de `ACE.BPB` una textura y verla como
