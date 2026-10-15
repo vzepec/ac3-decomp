@@ -36,14 +36,18 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ⚠️ El **modelo del avión del jugador no está localizado**: tampoco está en
   `ACE.BIN`. Candidatos: registros de tipo 1 grandes y ULZ variante 0
 - ✅ **Etapa 3, primer corte** (`docs/09-codigo.md`): Ghidra 12.1.4 +
-  `ghidra_psx_ldr` en `~/tools`. `ACE.BIN`: 1.853 funciones, 747 PsyQ,
-  **≤ 1.106 propias (420 KB)**, 1.939 COP2. Mapa de módulos (no hay overlays
+  `ghidra_psx_ldr` en `~/tools`. `ACE.BIN`: 2.011 funciones, ~749 PsyQ,
+  **~1.262 propias (473 KB)**, 1.939 COP2 (incluye 155 funciones que Ghidra
+  no veía por invocarse solo por puntero). Mapa de módulos (no hay overlays
   de código; `ACE.EXE` = pantalla anticopia). Bucle principal en `main`
   `0x80025D08` — `make ghidra-import ghidra-stats`
 - ✅ **Sistema de packs localizado en `ACE.BIN`**: apertura (`0x8002A9E4`),
   streaming (`0x8002A34C`), descompresor ULZ (`0x800AE118`). Con ellos:
   **tag del SPB resuelto** (72/72, 88/88) y **ULZ variante 0 resuelta**
   (604/604; tipo 13 = hangar: vistas y nombres de los 21 aviones)
+- ✅ **Cargador de misión** (`0x80035730`) localizado: confirma desde el
+  código el mapa de secciones del tipo 17, y revela que s2 y s3 forman una
+  sola tabla de modelos
 - ✅ Formato de `ACE.BIN` confirmado contra el descompresor real de
   `SCES_020.66`; resueltos los campos `0x04`, `0x14` y `0x5C`
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
@@ -51,26 +55,25 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-**Etapa 3: seguir el consumo de las secciones del tipo 17 desde el código.**
+**Etapa 3: resolver campos de los modelos leyendo su código.**
 
 ```bash
-make acebin ghidra-import      # si data/ghidra no existe
-tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026e50
+make acebin ghidra-import      # si data/ghidra no existe (incluye CreateMissingFunctions)
+tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
 ```
 
-1. Partir de `FUN_80026E50`, que llama al descompresor ULZ (`0x800AE118`), y
-   subir por quién la llama hasta encontrar el código que recorre la tabla de
-   secciones de un registro de tipo 17.
-2. Identificar qué función consume cada sección (modelos s01/s04, LOD
-   s02/s03, mapa de teselas s00, textos s06) y nombrarlas.
-3. Con eso, resolver campos `SIN RESOLVER`: `h0/h1/e0/e1` de primitivas, bits
-   altos del mapa de teselas, campos de los bancos de sonido.
-4. Dejar el nombrado reproducible: un script en `tools/ghidra/` que aplique
-   nombres a direcciones desde un `.tsv` versionado (solo direcciones y
-   nombres nuestros: no es código del juego).
+1. `FUN_80026EE0`: inicialización de cada modelo (la llama el cargador de
+   misión `0x80035730` para s1, s2, s3 y s4). Ver qué campos de la cabecera de
+   modelo toca y qué hace el parámetro `6` de los modelos con LOD.
+2. Buscar la función que dibuja modelos (debe leer las primitivas de 36/48 B y
+   usar `RTPT`): ahí deberían verse `h0/h1/e0/e1`.
+3. Buscar quién lee el mapa de teselas (puntero guardado en `+0x1C` de la
+   estructura de misión) para los 3 bits altos de cada celda.
+4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,
+   para que el nombrado sea reproducible.
 
-Pendientes abiertos: el avión del jugador (último candidato: registros de
-tipo 1 grandes); medición de la versión US; valorar `rea`.
+Pendientes abiertos: el avión del jugador (registros de tipo 1); medición de
+la versión US; valorar `rea`.
 
 ## Bloqueos conocidos
 

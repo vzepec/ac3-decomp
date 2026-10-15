@@ -80,7 +80,9 @@ acebin:
 
 ghidra-import:
 	@mkdir -p data/ghidra
-	@$(HEADLESS) data/ghidra ac3 -import data/exe/ace_eu.exe -overwrite -max-cpu 4 > data/ghidra/import_eu.log 2>&1
+	@$(HEADLESS) data/ghidra ac3 -import data/exe/ace_eu.exe -overwrite -max-cpu 4 \
+		-scriptPath tools/ghidra -postScript CreateMissingFunctions.java > data/ghidra/import_eu.log 2>&1
+	@grep -E "funciones creadas" data/ghidra/import_eu.log | sed 's/.*> //' 
 	@grep -E "REPORT" data/ghidra/import_eu.log | tail -3
 
 ghidra-stats:

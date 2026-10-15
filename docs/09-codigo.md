@@ -59,15 +59,23 @@ Medido sobre el bloque que contiene el punto de entrada (el segmento
 
 | Módulo | Funciones | Reconocidas (PsyQ) | Propias | Bytes propios | COP2 |
 |---|---|---|---|---|---|
-| `ACE.BIN` (EU) | 1.853 | 747 (77 KB) | **1.106** | **420 KB** | 1.939 |
+| `ACE.BIN` (EU) | 2.011 | 749 (78 KB) | **1.262** | **473 KB** | 1.939 |
 | `SCES_020.66` | 701 | 665 (95 %) | 36 | 4,5 KB | 0 en `.text` |
 | `ACE.EXE` | 221 | 213 | 8 | 0,6 KB | 0 |
 
 "Propias" = funciones sin nombre (`FUN_`) más `main`. Es una **cota
-superior**: cualquier función de librería cuya firma no casara cuenta como
-propia.
+superior** en un sentido (cualquier función de librería cuya firma no casara
+cuenta como propia) y **aproximada** en el otro: las funciones hoja sin
+prólogo que solo se invocan por puntero no se detectan.
 
-Desglose de las 747 de `ACE.BIN` por librería (`tools/ghidra/libsplit.py`):
+**Corrección importante:** el análisis automático de Ghidra dejaba fuera 158
+prólogos `addiu sp,sp,-N`: funciones que solo se llaman por puntero
+(callbacks del CD, el propio cargador de misión). `tools/ghidra/
+CreateMissingFunctions.java` las crea (155; las otras 3 caían dentro de las
+nuevas) y forma parte de `make ghidra-import`. Antes de esa corrección la
+cifra era 1.853 funciones y 1.106 propias.
+
+Desglose de las ~747 de `ACE.BIN` por librería (medido antes de la corrección; no cambia: las funciones nuevas son todas propias) (`tools/ghidra/libsplit.py`):
 LIBCD 164 · LIBPAD 125 · LIBSPU 124 · LIBC2 75 · LIBGTE 66 · LIBAPI 52 ·
 LIBGPU 42 · LIBETC 37 · LIBCARD 22 · LIBC 19 · LIBSN 11 · LIBPRESS 4 ·
 LIBSND 1 · otros 5.
@@ -117,18 +125,40 @@ punteros) y decompilado con `tools/ghidra/decomp.sh`:
 | `0x8002AC0C` | inicialización | prepara el estado del CD y espera a la apertura |
 | `0x80029E8C` | máquina de estados del CD | la llama `FUN_8002C0B4`, del bucle principal |
 | `0x8002A34C` | arranque de streaming | descodifica el `tag` del SPB (modo, canal XA, longitud): ver `04-formatos.md` |
-| `0x800AE118` | **descompresor ULZ** | variantes 0, 1 y 2; lo llama `FUN_80026E50` |
+| `0x800AE118` | **descompresor ULZ** | variantes 0, 1 y 2 |
+| `0x80026E50` | descomprimir + cargar TIM | ULZ y luego `FUN_80026D8C` (la de `"Can't open TIM"`) |
+| `0x80035730` | **cargador de registro de misión** (tipo 17) | ver §6; `0x80035C90` es una variante |
 
 Esto confirma desde el código el formato de índice de la etapa 1 (magic,
 contador en `0x10`, entradas desde `0x14`, sector relativo al pack) y ha
 resuelto el `tag` del SPB y la variante 0 de ULZ.
 
-## 6. Lo que queda (etapa 3, siguientes pasos)
+## 6. El cargador de misión confirma el formato de tipo 17 ✅
+
+`FUN_80035730` recorre el registro de tipo 17 en memoria. Con el puntero al
+registro desplazado 4 bytes (palabra `k+1` = offset de la sección `k`):
+
+| Sección | Qué hace el cargador | Coincide con la etapa 1 |
+|---|---|---|
+| 14, 13, 12, 11, 10 | `FUN_80026E50(sección, siguiente)`: descomprime y sube las TIM a VRAM, con `DrawSync` entre cada una | ✅ las 5 secciones de texturas |
+| 15 | `FUN_8002D544` sin descomprimir | ✅ el banco de sonido, la única sin ULZ |
+| 0-10 | se copian los offsets a un área temporal bajo `0x801FB700`, se recolocan y se descomprimen las 11 con `FUN_800AE118` | ✅ |
+| 0 | se guarda el puntero | mapa de teselas |
+| 1 | cada entrada pasa por `FUN_80026EE0` (índices 1..n) | ✅ tabla de teselas |
+| 4 | cada entrada pasa por `FUN_80026EE0` | ✅ tabla de objetos |
+| 2, 3 | cada entrada pasa por `FUN_80026EE0(…, 6)` | ✅ la otra familia de modelos (con LOD) |
+| 3 → 2 | las entradas de s3 se copian en los huecos 96+ de la tabla de s2 | nuevo: s2 y s3 son **una sola tabla** de modelos |
+
+Que el cargador trate distinto a s1/s4 y a s2/s3 coincide con las dos
+familias de cabecera de modelo (`Model` y `LodModel` en `tools/acemodel.py`)
+que se dedujeron solo con los datos.
+
+## 7. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Seguir desde `FUN_80026E50` (quien llama al descompresor ULZ) hasta los
-   consumidores de las secciones del tipo 17 (modelos, mapa de teselas) para
-   resolver los campos `SIN RESOLVER` de `04-formatos.md`.
+2. Decompilar `FUN_80026EE0` (inicialización de modelos) y el render de
+   modelos para resolver `h0/h1/e0/e1` de las primitivas; y el consumidor del
+   mapa de teselas para sus 3 bits altos.
 3. Repetir la medición en la versión US.
 4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra.

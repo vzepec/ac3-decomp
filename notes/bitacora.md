@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Cargador de misión localizado; Ghidra se dejaba 155 funciones
+
+El análisis automático de Ghidra no creaba las funciones que solo se invocan
+por puntero: 158 prólogos huérfanos. `tools/ghidra/CreateMissingFunctions.java`
+crea 155 (las otras 3 caen dentro de las nuevas). Nueva cifra de `ACE.BIN`:
+2.011 funciones, ~1.262 propias (473 KB).
+
+Entre ellas, el **cargador de registros de tipo 17** (`0x80035730`): sube las
+TIM de s10-s14, manda s15 (sonido) sin descomprimir, descomprime s0-s10 e
+inicializa las tablas de modelos (s1, s4 por un lado; s2, s3 con un
+parámetro distinto) y fusiona s3 en los huecos 96+ de s2. Confirma desde el
+código el mapa de secciones de la etapa 1.
+
+Se encontró al ver que la cifra de llamadas `jal` al descompresor ULZ no
+cuadraba con los llamadores que listaba Ghidra.
+
+Reproducir: `make ghidra-import ghidra-stats`;
+`tools/ghidra/decomp.sh ace_eu.exe data/ghidra/m.c 0x80035730`
+
 ## 2026-10-15 — El código resuelve el tag del SPB y la variante 0 de ULZ
 
 Localizados en `ACE.BIN` el sistema de packs (`0x8002A9E4`: valida `AC3E`, suma
