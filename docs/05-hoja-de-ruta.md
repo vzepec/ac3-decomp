@@ -108,9 +108,10 @@ atajo al objetivo.
 mapa de overlays y el bucle principal identificado.
 
 **Estado (2026-10-15):** `docs/09-codigo.md`. Ghidra 12.1.4 + `ghidra_psx_ldr`
-instalados. `ACE.BIN`: 1.853 funciones, 747 de PsyQ y **≤ 1.106 propias
-(420 KB)**. No hay overlays de código (mapa de módulos resuelto). Bucle
-principal en `main` (`0x80025D08`). Queda nombrar el árbol de llamadas.
+instalados. `ACE.BIN`: 2.011 funciones (~1.262 propias, 473 KB) más 5
+overlays de código (~580 funciones propias, 219 KB): **unas 1.840 funciones
+propias, ~690 KB**. Mapa de módulos y de modos resuelto; bucle principal y
+despachador de modos identificados. Queda nombrar el árbol de llamadas.
 
 **Esfuerzo:** meses. **Riesgo:** medio.
 

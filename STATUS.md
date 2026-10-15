@@ -64,11 +64,9 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 **Etapa 3: analizar los overlays en Ghidra** (ya extraídos y validados con
 `make overlays`; ver `docs/09-codigo.md` §2).
 
-1. Importar `data/exe/ovl/overlay2.exe` (el mayor, modo 3) y `overlay1.exe`
-   en el proyecto Ghidra (base `0x800C9DC0`), con `CreateMissingFunctions` y
-   firmas PsyQ; medir funciones propias y sumarlas a las de `ACE.BIN`.
-2. Averiguar qué modo es cada uno (título, hangar, menú, tarjeta, final…)
-   por sus cadenas y llamadas.
+1. ✅ Importados y medidos: ~580 funciones propias; total del juego ~1.840.
+2. Papeles probables por cadenas (menú, interfaz entre misiones, BGM…):
+   confirmarlos leyendo sus pasos de modo.
 3. Avión del jugador: el índice elegido llega a `+0x48` del objeto del
    jugador (`*0x800BACCC`); seguir quién lo usa para elegir modelo. Si no sale
    por estático, análisis dinámico (aparcado hasta decisión del usuario).

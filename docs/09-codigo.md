@@ -72,6 +72,20 @@ contiene las cadenas de la tarjeta de memoria. Ninguno contiene modelos,
 TIM (salvo uno en el 5) ni ULZ. `make overlays` los extrae como PS-X EXE a
 `data/exe/ovl/`.
 
+Importados en Ghidra (base `0x800C9DC0`, con `CreateMissingFunctions`):
+
+| Overlay | Modo | Funciones | Propias | Bytes propios | COP2 | Papel probable (por sus cadenas, `SIN VERIFICAR`) |
+|---|---|---|---|---|---|---|
+| 1 | 4 | 141 | 140 | 39 KB | 0 | menú principal / carga de partida (tarjeta, "LOG OUT", "Now Loading") |
+| 2 | 3 | 401 | 401 | 152 KB | 66 | interfaz entre misiones ("DEBRIEFING", "CONNECTION LOST") |
+| 3 | 7 | 21 | 21 | 14 KB | 0 | casi todo datos gráficos |
+| 4 | 8 | 10 | 10 | 12 KB | 0 | nombres de pistas BGM (¿reproductor?) |
+| 5 | 9 | 8 | 8 | 4 KB | 0 | títulos de los temas (¿modo de sonido / créditos?) |
+
+Solo `CdMix` (libcd) aparece como librería; el resto es código de Namco.
+**Total del juego: unas 1.840 funciones propias (~690 KB)**: ~1.262 en
+`ACE.BIN` y ~580 en los overlays.
+
 ## 3. Cifras de funciones ✅
 
 Medido sobre el bloque que contiene el punto de entrada (el segmento

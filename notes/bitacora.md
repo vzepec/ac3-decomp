@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Overlays en Ghidra: ~580 funciones propias más
+
+Overlays 1-5: 141, 401, 21, 10 y 8 funciones; solo `CdMix` es de librería.
+Total de código propio del juego: unas 1.840 funciones (~690 KB). Papeles
+probables por cadenas: menú/carga (1), interfaz entre misiones (2), datos
+gráficos (3), BGM (4), títulos de temas (5).
+
+Reproducir: `make overlays` e importar `data/exe/ovl/overlayN.exe` con
+`CreateMissingFunctions.java` y `AceStats.java` (ver `docs/09-codigo.md`).
+
 ## 2026-10-15 — Overlays confirmados: las entradas 1-5 del BPB son código
 
 La tabla de modos de `ACE.BIN` (`0x800AE544`) lista 10 modos; los 3, 4, 7, 8 y
