@@ -71,7 +71,8 @@ Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
    ✅ explosiones, humo, restos y estelas de proyectil (registro 0000 +
    sistema de partículas, ver `docs/04-formatos.md`). Pendiente menor: qué
    lista de proyectil es el misil estándar.
-2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
+2. **Preludio del tipo 17**: ✅ cielo por bandas y niebla (`tools/acesky.py`).
+   Pendiente: dirección de la luz de los modelos, unidad de la mezcla del sol.
 3. **Callbacks de estado de pieza** (superficies móviles del avión).
 4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.
 

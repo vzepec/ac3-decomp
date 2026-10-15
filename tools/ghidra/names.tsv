@@ -70,3 +70,8 @@
 0x8008F204	f	tracer_draw	lineas Gouraud semitransparentes
 0x8008F388	f	projectile_streak_draw	sprite estirado, estela de 0000 s1
 0x800684BC	f	weapon_end_0	final de proyectil: impacto o fallo
+0x80093E2C	f	sky_draw	cielo por bandas (preludio de mision)
+0x800933CC	f	sky_colors	colores de banda segun rumbo y sol
+0x800931B8	f	sky_bands	alturas y distancias de los anillos
+0x800936FC	f	sky_bands_draw	bandas planas y Gouraud
+0x8005D5FC	f	fog_color_set	color lejano GTE = preludio +0x08

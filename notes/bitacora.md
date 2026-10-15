@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Preludio de misión: cielo por bandas y color de niebla
+
+El preludio de 312 B del tipo 17 está comprimido con ULZ (no se había visto
+porque el tamaño citado era ya el descomprimido). Campos localizados en el
+código: niebla `+0x08` (color lejano de la GTE), cenit, cielo alto/bajo en
+dos versiones (mirando al sol / de espaldas), color bajo el horizonte,
+alturas de 4 bandas, rumbo del sol, sol/bruma/clima. El cielo se dibuja
+como bandas de polígonos Gouraud a pantalla completa, no con textura.
+Validación: alturas de banda decrecientes en todas las misiones probadas;
+la 10 sale nocturna y la 40 sin sol, coherentes con su aspecto.
+
+Reproducir: `python3 tools/acesky.py data/bpb/00{06,10,40}_*.bin`.
+
 ## 2026-10-15 — Explosiones, humo y estelas: texturas y sistema de partículas
 
 El registro común 0000 contiene las texturas de efectos de combate (s0:

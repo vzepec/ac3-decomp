@@ -276,6 +276,39 @@ de explosión; el código muestra que es el sol. **Las explosiones no están
 localizadas.** Nota: `g_render + 0x244` = `g_mission + 0x18` (preludio) y
 `g_render + 0x268` = `g_mission + 0x3C` (sección 8).
 
+### Preludio del tipo 17: cielo y niebla (desde el código)
+
+El preludio está **comprimido con ULZ** (empieza por `Ulz\x1a`) y
+descomprime a 312 B. El juego lo apunta desde `g_mission + 0x18`
+(`g_render + 0x244`). Volcado: `python3 tools/acesky.py data/bpb/0006_*.bin`.
+
+| Offset | Tipo | Uso | Función |
+|---|---|---|---|
+| `+0x02` | u16 | banderas: `0x100` → `FUN_80094300` (usa la sección 8), `0x200` → `FUN_80093FB8` (textura de nubes, CLUT 315), `0x400` `SIN RESOLVER` | `FUN_800936FC`, `FUN_80093E2C` |
+| `+0x04` | RGB | color bajo el horizonte (mar/suelo lejano) | `FUN_800933CC` |
+| `+0x08` | RGB | **niebla**: color lejano de la GTE (`ldfc` ×16) y color del horizonte | `FUN_8005D5FC`, `FUN_800933CC` |
+| `+0x10` | s16 | altura de las bandas 2 y 3 del cielo (−2·v y −v/2) | `FUN_800931B8` |
+| `+0x14` / `+0x18` | RGB | cielo alto, mirando al sol / de espaldas | `FUN_800933CC` |
+| `+0x1C` | RGB | **cenit** (OR `0x030303`) | `FUN_800933CC` |
+| `+0x20` / `+0x22` | s16 | altura de las bandas 1 y 0 (−2·v) | `FUN_800931B8` |
+| `+0x24` / `+0x28` | RGB | cielo bajo, mirando al sol / de espaldas | `FUN_800933CC` |
+| `+0x3E` | s16 | rumbo del sol (mezcla de los colores de sol/espaldas según el rumbo de la cámara) | `FUN_800933CC` |
+| `+0x6C` | s16 | ≠ 0: hay sol (`FUN_8008A310`) | `FUN_80083B78` |
+| `+0x6E` | u8 | ≠ 0: capas de bruma (`FUN_8008C1C8`) | `FUN_80083B78` |
+| `+0x6F` | u8 | clima: 1-5 = entrada de la tabla `0x800B2208` (5 = campo de nubes) | `FUN_80083B78` |
+
+**Cómo se dibuja el cielo** (`FUN_80093E2C`): no es una textura sino
+polígonos planos y Gouraud a pantalla completa, en bandas separadas por
+anillos alrededor de la cámara. Anillo k = puntos a altura `h_k` sobre el mar
+y a distancia horizontal `D_k`: banda 0 (`+0x22`, D = 65534), banda 1
+(`+0x20`, 65534), banda 2 (`+0x10`·2, 61440), banda 3 (`+0x10`/2, 30720) y el
+horizonte (altura 0, en el borde del mundo: `sqrt(0x6800² − altura²)`, radio
+0x6800 = 26.624). Colores de arriba abajo: cenit → cielo alto → cielo bajo
+→ niebla (banda plana hasta el horizonte); bajo el horizonte, `+0x04`.
+Los colores alto/bajo se mezclan una vez por fotograma según el rumbo de la
+cámara respecto a `+0x3E`. `SIN RESOLVER`: la unidad exacta de esa mezcla
+(el código hace `(2·sol − rumbo/2) & 0x1FFF`, plegado a 0..0x1000).
+
 ### Efectos de combate (registro común 0000), desde el código
 
 El registro **0000** (tipo 5) trae dos TIM fijos en VRAM con todos los efectos
