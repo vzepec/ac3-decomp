@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Bits altos del mapa de teselas: no reutilizar vértices vecinos
+
+`FUN_8005CDA4` construye la lista de celdas visibles desde el mapa y copia la
+celda entera en la palabra de control; el render anula con los bits 9-11 de la
+celda los bits 25-27 ("reutilizar vértices de la vecina"). Contraste: bordes
+izquierdos que no casan, 0,7 % con el bit a 0 frente a 60 % / 47 % / 28 % con
+los bits 11 / 9 / 10 a 1. Explica el 0,6 % residual de la etapa 1.
+
+Reproducir: `python3 tools/acemodel.py tilemap data/bpb`
+
 ## 2026-10-15 — Render de terreno y objetos localizado
 
 `0x8005FF9C` (pasada de vértices con `RTPT`, que confirma el grupo de 20 bytes

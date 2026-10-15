@@ -290,15 +290,45 @@ def edge_continuity(tilemap, tiles, base):
 
 
 def cmd_tilemap(directory):
-    """Indice de tesela del mapa (seccion 0): base 0 o base 1."""
+    """Indice de tesela del mapa (seccion 0) y significado de los bits altos.
+
+    1. Base del indice: continuidad de bordes con base 0 y con base 1.
+    2. Bits 9-11 de la celda: el render (0x8005FF9C) los usa para anular la
+       reutilizacion de vertices ya transformados de la tesela vecina. Aqui se
+       mide, para el borde izquierdo de cada celda, cuantos bordes no casan con
+       la vecina segun cada bit este a 0 o a 1.
+    """
+    import collections
     from acerec import Record
+    bits = collections.Counter()
     for name in sorted(os.listdir(directory)):
         rec = Record.from_file(os.path.join(directory, name))
         if rec is None or rec.type != 17:
             continue
+        tm = rec.section(0)
         tiles = dict(models(rec.section(1)))
-        res = [edge_continuity(rec.section(0), tiles, base) for base in (0, 1)]
+        res = [edge_continuity(tm, tiles, base) for base in (0, 1)]
         print(f"{name[:4]}: base0 {res[0][0]}/{res[0][1]}  base1 {res[1][0]}/{res[1][1]}")
+        for gz in range(256):
+            for gx in range(1, 256):
+                a = struct.unpack_from("<H", tm, (gz * 256 + gx - 1) * 2)[0]
+                b = struct.unpack_from("<H", tm, (gz * 256 + gx) * 2)[0]
+                ta, tb = tiles.get((a & 0x1FF) - 1), tiles.get((b & 0x1FF) - 1)
+                if not (a & 0x1FF) or not (b & 0x1FF) or ta is None or tb is None:
+                    continue
+                ea = {v[2]: v[1] for v in ta.vertices if v[0] == 1024}
+                eb = {v[2]: v[1] for v in tb.vertices if v[0] == -1024}
+                common = ea.keys() & eb.keys()
+                if not common:
+                    continue
+                ok = all(ea[k] == eb[k] for k in common)
+                for bit in (9, 10, 11):
+                    bits[(bit, (b >> bit) & 1, ok)] += 1
+    print("bordes izquierdos que NO casan con la vecina, segun los bits altos de la celda:")
+    for bit in (9, 10, 11):
+        for v in (0, 1):
+            good, bad = bits[(bit, v, True)], bits[(bit, v, False)]
+            print(f"  bit {bit} = {v}: {bad}/{good + bad} ({100 * bad / max(1, good + bad):.1f} %)")
     return 0
 
 

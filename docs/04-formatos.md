@@ -247,8 +247,16 @@ que su textura de radar. **El índice es base 1** (`tesela = s01[(v & 0x1FF) - 1
 con base 1 los vértices de bordes compartidos entre teselas vecinas coinciden
 en altura en el **99,4 %** de los casos (4.707.247/4.734.343, 41 registros),
 frente al 74,6 % con base 0 (`python3 tools/acemodel.py tilemap data/bpb`).
-Qué codifican los 3 bits altos (≈0,5 % de las celdas; probablemente giro o
-espejo, que explicaría el residuo) sigue `SIN RESOLVER`.
+**Los 3 bits altos (9-11)** los interpreta el render (`0x8005FF9C` y el
+constructor de la lista de celdas `0x8005CDA4`, ver `09-codigo.md`): cada
+uno **anula la reutilización de vértices ya transformados de una tesela
+vecina** (`flags ^= flags & (flags << 16)` sobre la palabra de control).
+Contraste con los datos (`python3 tools/acemodel.py tilemap data/bpb`): los
+bordes izquierdos que no casan con la vecina son el 0,7 % con el bit a 0, y
+el 60 % (bit 11), 47 % (bit 9) y 28 % (bit 10) con el bit a 1. Explica el
+residuo de la continuidad de bordes. Qué vecino exacto corresponde a cada bit
+sigue `SIN RESOLVER` (no basta con alturas iguales: también debe coincidir la
+posición del vértice en el bloque).
 
 **Confirmado desde el código** (`FUN_80098B80`, consulta de terreno de
 `ACE.BIN`): la celda de una posición del mundo (punto fijo 20.12) es

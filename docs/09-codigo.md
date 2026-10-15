@@ -215,13 +215,23 @@ Dos confirmaciones del formato de la etapa 1, ahora desde el código:
 
 `h0` no se usa en estas rutas: sigue `SIN RESOLVER`.
 
+**De dónde sale la lista de colocación:** `FUN_8005CDA4` la construye a partir
+del **mapa de teselas** (`+0x248` de la estructura de render en `*(0x2D0($gp))`;
+la tabla de teselas está en `+0x24C`). Recorre una ventana visible de celdas y
+por cada celda con tesela escribe su posición y una palabra de control:
+bits 0-15 = la celda entera, 16-20 = columna, 21 = fin, 22 = primera de la
+fila, 25-27 = reutilizar vértices de las vecinas ya transformadas. El render
+hace `flags ^= flags & (flags << 16)`: los bits 9, 10 y 11 de la celda anulan
+los bits 25, 26 y 27. Así se resolvieron (con contraste estadístico) los bits
+altos del mapa.
+
 ## 9. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Averiguar de dónde sale la lista de colocación de `0x8005FF9C` (¿el mapa
-   de teselas transformado? ¿la sección 7-9?) y qué son sus bits 16-22;
-   seguir buscando `h0` y los 3 bits altos del mapa de teselas.
+2. `h0` de las primitivas; qué vecino exacto corresponde a cada bit alto del
+   mapa; qué dibuja los objetos de s4 y los aviones de s2/s3 (otra lista de
+   colocación, probablemente de las secciones 7-9).
    Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
    candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
    seguir el flujo desde los 32 accesos a `0x2CC($gp)`.
