@@ -14,8 +14,8 @@ CABECERA DE MODELO (verificada en 14.095 modelos de los 41 registros):
     u16 extent;             // teselas: 4387 (constante); objetos: >= max|coord|
     u32 off_vertices;       // 0x18 en teselas (s01), 0x24 en objetos (s04)
     u32 off_unk;            // 0 en todos los vistos             SIN RESOLVER
-    u32 off_prims;          // bloque de primitivas               SIN RESOLVER
-    u32 off_end;            // tercer bloque / final              SIN RESOLVER
+    u32 off_prims;          // bloque 1: primitivas planas (POLY_FT4)
+    u32 off_end;            // bloque 2: primitivas Gouraud (POLY_GT4)
     [s04: u32 0 ; s16 bbox[6] = xmax,xmin, ymax,ymin, zmax,zmin]
     [s01: s16 ymin?, ymax?                                        SIN RESOLVER]
 
@@ -37,11 +37,35 @@ Pruebas de que la lectura es correcta:
     minimo/maximo de los vertices decodificados (421/421)
   - la tesela de mar (plana) da las cuatro esquinas (+-1024, -1126, +-1024)
 
+PRIMITIVAS (verificadas en 14.095/14.095 modelos):
+
+    bloque 1 en off_prims: u32 n ; n x 36 bytes, POLY_FT4 (codigo GPU 0x2C)
+    bloque 2 en off_end:   u32 n2; n2 x 48 bytes, POLY_GT4 (codigo GPU 0x3C)
+    En las teselas (s01) cada bloque va seguido de 12 bytes de ceros por
+    primitiva; en los objetos (s04) no hay relleno.
+
+    off  tipo     campo
+    0    u8       h0 (0..6)                                  SIN RESOLVER
+    1    u8       h1 (0..2)                                  SIN RESOLVER
+    2    u16      0
+    4    u16 x2   e0, e1                                     SIN RESOLVER
+    8    u8[8]    por vertice: (offset xy, offset z) en bytes dentro del
+                  bloque de vertices, listos para el GTE (redundantes con
+                  los indices)
+    16   u8[4]    indices de vertice i0..i3 (orden de tira: cara i0,i1,i3,i2;
+                  triangulo si i3 == i2)
+    20   u8,u8    u0,v0      22 u16 CLUT (x=(c&63)*16, y=c>>6)
+    24   u8,u8    u1,v1      26 u16 tpage
+    28   u8,u8    u2,v2      30 u8,u8 u3,v3
+    32   FT4: u8[3] rgb + u8 0x2C
+         GT4: 4 x (u8[3] rgb + u8 0x3C), un color por vertice
+
 Uso:
     python3 tools/acemodel.py list <seccion.bin>            # modelos de la seccion
     python3 tools/acemodel.py verts <seccion.bin> <i>       # vertices del modelo i
-    python3 tools/acemodel.py obj <seccion.bin> <i> <out>   # nube de puntos .obj
+    python3 tools/acemodel.py obj <seccion.bin> <i> <out>   # .obj con caras
     python3 tools/acemodel.py check <dir_bpb>               # validacion global
+    python3 tools/acemodel.py tilemap <dir_bpb>             # base del indice del mapa
 """
 import os
 import struct
@@ -84,6 +108,41 @@ class Model:
             x0, y0, x1, y1, x2, y2, z0, z1, z2, _ = struct.unpack_from("<10h", raw, base + 20 * g)
             verts += [(x0, y0, z0), (x1, y1, z1), (x2, y2, z2)]
         self.vertices = verts[:n]
+        pad = 12 if self.off_vertices == 0x18 else 0
+        self.prims = []
+        p1 = self._prims(self.off_prims, 36, 0x2C)
+        if self.off_prims + 4 + (36 + pad) * len(p1) != self.off_end:
+            raise ValueError("bloque 1 de primitivas incoherente con off_end")
+        p2 = self._prims(self.off_end, 48, 0x3C)
+        if self.off_end + 4 + (48 + pad) * len(p2) != len(raw):
+            raise ValueError("bloque 2 de primitivas incoherente con el final")
+        self.prims = p1 + p2
+
+    def _prims(self, off, size, code):
+        raw = self.raw
+        n = struct.unpack_from("<I", raw, off)[0]
+        out = []
+        for k in range(n):
+            a = off + 4 + size * k
+            idx = tuple(raw[a + 16:a + 20])
+            if raw[a + 35] != code or max(idx) >= len(self.vertices):
+                raise ValueError("primitiva incoherente")
+            for v, (oxy, oz) in zip(idx, zip(raw[a + 8:a + 16:2], raw[a + 9:a + 16:2])):
+                if (oxy, oz) != (4 * (v % 3) + 20 * (v // 3), 12 + 2 * (v % 3) + 20 * (v // 3)):
+                    raise ValueError("offsets GTE incoherentes con los indices")
+            clut, tpage = struct.unpack_from("<H", raw, a + 22)[0], struct.unpack_from("<H", raw, a + 26)[0]
+            uv = (raw[a + 20:a + 22], raw[a + 24:a + 26], raw[a + 28:a + 30], raw[a + 30:a + 32])
+            out.append({"idx": idx, "clut": clut, "tpage": tpage, "uv": [tuple(t) for t in uv],
+                        "gouraud": code == 0x3C, "h": (raw[a], raw[a + 1])})
+        return out
+
+    def faces(self):
+        """Caras como tuplas de indices (quads en orden de contorno)."""
+        out = []
+        for p in self.prims:
+            i0, i1, i2, i3 = p["idx"]
+            out.append((i0, i1, i2) if i3 == i2 else (i0, i1, i3, i2))
+        return out
 
     def real_bbox(self):
         xs, ys, zs = zip(*self.vertices)
@@ -103,10 +162,49 @@ def models(buf):
 
 def write_obj(path, model):
     with open(path, "w") as fh:
-        fh.write("# vertices de un modelo de Ace Combat 3 (sin caras: primitivas SIN RESOLVER)\n")
+        fh.write("# modelo de Ace Combat 3 (vertices y caras; sin UV todavia)\n")
         fh.write("# eje Y de PS1 hacia abajo: se invierte para visores estandar\n")
         for x, y, z in model.vertices:
             fh.write(f"v {x} {-y} {z}\n")
+        for f in model.faces():
+            fh.write("f " + " ".join(str(i + 1) for i in f) + "\n")
+
+
+def edge_continuity(tilemap, tiles, base):
+    """Mide si las teselas vecinas casan en sus bordes con indice `base`.
+
+    Para cada par de celdas vecinas en horizontal, compara los vertices del
+    borde derecho de una (x=1024) con los del borde izquierdo de la otra
+    (x=-1024) que comparten z. Devuelve (coinciden, comparados).
+    """
+    def edge(m, x):
+        return {v[2]: v[1] for v in m.vertices if v[0] == x}
+    same = total = 0
+    for gy in range(256):
+        for gx in range(255):
+            a = struct.unpack_from("<H", tilemap, (gy * 256 + gx) * 2)[0] & 0x1FF
+            b = struct.unpack_from("<H", tilemap, (gy * 256 + gx + 1) * 2)[0] & 0x1FF
+            ta, tb = tiles.get(a - base), tiles.get(b - base)
+            if ta is None or tb is None or a == b:
+                continue
+            ea, eb = edge(ta, 1024), edge(tb, -1024)
+            for z in ea.keys() & eb.keys():
+                total += 1
+                same += int(ea[z] == eb[z])
+    return same, total
+
+
+def cmd_tilemap(directory):
+    """Indice de tesela del mapa (seccion 0): base 0 o base 1."""
+    from acerec import Record
+    for name in sorted(os.listdir(directory)):
+        rec = Record.from_file(os.path.join(directory, name))
+        if rec is None or rec.type != 17:
+            continue
+        tiles = dict(models(rec.section(1)))
+        res = [edge_continuity(rec.section(0), tiles, base) for base in (0, 1)]
+        print(f"{name[:4]}: base0 {res[0][0]}/{res[0][1]}  base1 {res[1][0]}/{res[1][1]}")
+    return 0
 
 
 def cmd_check(directory):
@@ -134,7 +232,8 @@ def cmd_check(directory):
                     bbox_n += 1
                     bbox_ok += int(m.bbox == m.real_bbox())
     print(f"modelos candidatos: {total}")
-    print(f"bloque de vertices coherente con off_prims: {size_ok}/{total}")
+    print(f"vertices + primitivas coherentes (bloques consumidos exactos,")
+    print(f"  codigos GPU, indices y offsets GTE): {size_ok}/{total}")
     print(f"bbox de cabecera == bbox de vertices (objetos): {bbox_ok}/{bbox_n}")
     return 0 if size_ok == total and bbox_ok == bbox_n else 1
 
@@ -142,11 +241,13 @@ def cmd_check(directory):
 def main(argv):
     if len(argv) >= 3 and argv[1] == "check":
         return cmd_check(argv[2])
+    if len(argv) >= 3 and argv[1] == "tilemap":
+        return cmd_tilemap(argv[2])
     if len(argv) >= 3 and argv[1] == "list":
         buf = open(argv[2], "rb").read()
         for i, m in models(buf):
             extra = f" bbox={m.bbox}" if m.bbox else ""
-            print(f"{i:4d} extent={m.extent:5d} vertices={len(m.vertices):4d}{extra}")
+            print(f"{i:4d} extent={m.extent:5d} vertices={len(m.vertices):4d} prims={len(m.prims):4d}{extra}")
         return 0
     if len(argv) >= 4 and argv[1] in ("verts", "obj"):
         buf = open(argv[2], "rb").read()
@@ -159,7 +260,7 @@ def main(argv):
                 print(f"  v{j:<4d} x={v[0]:6d} y={v[1]:6d} z={v[2]:6d}")
         else:
             write_obj(argv[4], m)
-            print(f"{argv[4]}: {len(m.vertices)} vertices")
+            print(f"{argv[4]}: {len(m.vertices)} vertices, {len(m.faces())} caras")
         return 0
     print(__doc__)
     return 2

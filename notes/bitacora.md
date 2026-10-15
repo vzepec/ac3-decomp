@@ -5,6 +5,80 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Primitivas de los modelos y base del mapa de teselas
+
+Bloque 1: `u32 n` + POLY_FT4 de 36 B (código `0x2C`); bloque 2: `u32 n` +
+POLY_GT4 de 48 B (`0x3C`, 4 colores). Índices `u8` en orden de tira, UV, CLUT
+y tpage en el orden del paquete GPU. Validado en 14.095/14.095 modelos (bloques
+exactos, códigos, índices, offsets GTE). Lo descifró un sub-agente; se
+re-verificó integrándolo en `tools/acemodel.py`.
+
+El índice del mapa de teselas es base 1: continuidad de bordes 99,4 % frente a
+74,6 % con base 0.
+
+Reproducir: `make models`; `python3 tools/acemodel.py tilemap data/bpb`;
+`python3 tools/acemodel.py obj data/sec/0006_tage0028567_t17_s04.bin 0 data/obj/o.obj`
+
+## 2026-10-15 — ACE.DAT es relleno (corrige una interpretación anterior)
+
+De sus 20.672 sectores solo 40 (0,19 %) tienen algún byte distinto de cero,
+con dos patrones de 108 bytes. Está al final del disco. No contiene assets.
+La hipótesis de `docs/01-disco.md` ("la EU sacó contenido del SPB a ACE.DAT")
+era **falsa** y se ha corregido.
+
+Reproducir: `python3 tools/acedat.py <imagen EU>`
+
+## 2026-10-15 — EU y US comparten terreno, modelos y texturas
+
+Comparando sección a sección (descomprimida) los 127 registros: en los 41 de
+tipo 17 las secciones 0-5 y 7-14 son idénticas byte a byte. Solo cambian la 6
+(textos de misión: la EU lleva 5 idiomas) y la 15. En el tipo 4 cambia solo la
+sección 2, en valores tipo `0x043C90`/`0x0496D0` dentro del rango de
+`ACE.BIN`: hipótesis de punteros a código (`SIN RESOLVER`).
+
+Reproducir: extraer el BPB americano a `data/bpb_us/` y comparar con
+`tools/acerec.py` (ver `docs/04-formatos.md`, tipo 17).
+
+## 2026-10-15 — Vértices de modelos resueltos (criterio de salida de la etapa 1)
+
+Las secciones 1 (teselas de terreno) y 4 (objetos) del tipo 17 son tablas de
+modelos. Vértices en grupos de 3: `x0,y0,x1,y1,x2,y2,z0,z1,z2,pad` (`s16`), el
+layout que necesita el GTE para `RTPT`. Validación: tamaño del bloque
+coherente en 14.095/14.095 modelos y bbox de cabecera == bbox real en 421/421
+objetos.
+
+La sección 0 es un mapa de teselas 256×256: `max(v & 0x1FF)` == número de
+teselas de la sección 1 en los 41 registros, y pintado muestra mar, costa y
+ciudad, igual que la textura de radar.
+
+Reproducir: `make models`; `python3 tools/acemodel.py verts data/sec/0006_tage0028567_t17_s04.bin 0`
+
+## 2026-10-15 — Primera textura en PNG (criterio de salida de la etapa 1)
+
+Las texturas **sí** son TIM estándar, pero dentro de secciones ULZ. El
+"resultado negativo" anterior (cero TIM) se debió a buscar sobre datos
+comprimidos: lección para la próxima vez, medir la entropía antes de buscar
+magics. 9.288 TIM solo en la sección 10 de los 41 registros de tipo 17.
+Verificado a ojo: fuente con acentos, piel de avión, mapa de radar.
+
+Reproducir: `make textures REC=0006` → `data/png/`
+
+## 2026-10-15 — Compresión ULZ de Namco resuelta
+
+Las secciones de los registros empiezan por `Ulz\x1a`. Cabecera de 16 bytes
+y tres flujos (flags `u32` MSB primero, literales `u8`, referencias `u16` con
+`nbits` de distancia). Validación: holgura de flujos 4 / 0-3 / 0-2 bytes en
+659/659 secciones.
+
+Reproducir: `make ulz-check`
+
+## 2026-10-15 — El tag del BPB es el tamaño del registro
+
+`(tag & 0xFFFFFF) * 4` == tamaño del registro en 127/127 (EU) y 127/127 (US).
+En el SPB no (0/72, 0/88).
+
+Reproducir: `make tags`
+
 ## 2026-10-15 — Cabecera común de registro resuelta, y las texturas NO son TIM
 
 Los registros de `ACE.BPB` comparten layout:

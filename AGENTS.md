@@ -46,6 +46,10 @@ make index             # cabeceras de los indices de assets (rapido)
 make records           # tipos de registro y tablas de seccion
 make inventory         # inventario completo de los 199 recursos
 make info              # cabeceras PS-EXE de los binarios del juego
+make extract-bpb       # extrae ACE.BPB a data/bpb/ (necesario para lo siguiente)
+make ulz-check         # valida el descompresor ULZ
+make models            # valida el formato de vertices
+make textures REC=0006 # TIM de un registro a PNG
 ```
 
 Las herramientas no necesitan dependencias: **Python 3 estándar, nada más**.
@@ -72,6 +76,11 @@ tools/
   psxiso.py          lectura de imagenes de disco PSX (libreria + CLI)
   acepack.py         indices y contenedores ACE.SPH/SPB y ACE.BPH/BPB
   psexe.py           cabeceras PS-EXE y la variante no estandar de ACE.BIN
+  ulz.py             descompresor ULZ de Namco (secciones de los registros)
+  acerec.py          secciones de los registros de ACE.BPB
+  tim2png.py         TIM a PNG
+  acemodel.py        modelos 3D (vertices) del tipo 17
+  acedat.py          demuestra que ACE.DAT es relleno
   README.md          que hace cada herramienta y como usarla
 notes/
   bitacora.md        registro append-only de hallazgos con fecha
