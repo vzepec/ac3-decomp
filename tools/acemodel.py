@@ -75,6 +75,7 @@ Uso:
     python3 tools/acemodel.py tilemap <dir_bpb>             # base del indice del mapa
     python3 tools/acemodel.py normals <dir_bpb>             # h1/e0/e1 y normales (s5)
     python3 tools/acemodel.py player <dir_bpb>              # aviones del jugador (tipo 4)
+    python3 tools/acemodel.py export-player <registro_t04.bin> <dir>   # .obj+.mtl+PNG
 """
 import os
 import struct
@@ -237,11 +238,14 @@ class LodModel:
             raise ValueError("bloques de primitivas incoherentes")
         for k in range(n3):
             a = self.off_gt3 + 4 + 32 * k
-            self._prim(tuple(raw[a + 4:a + 7]), raw[a + 11] == raw[a + 15] == raw[a + 19] == 0x34, a + 20, a + 24)
+            self._prim(tuple(raw[a + 4:a + 7]), raw[a + 11] == raw[a + 15] == raw[a + 19] == 0x34, a + 20, a + 24,
+                       [tuple(raw[a + 20:a + 22]), tuple(raw[a + 24:a + 26]), tuple(raw[a + 28:a + 30])])
         for k in range(n4):
             a = self.off_gt4 + 4 + 36 * k
             ok = all(raw[a + 11 + 4 * j] == 0x3C for j in range(4))
-            self._prim(tuple(raw[a + 4:a + 8]), ok, a + 24, a + 28)
+            self._prim(tuple(raw[a + 4:a + 8]), ok, a + 24, a + 28,
+                       [tuple(raw[a + 24:a + 26]), tuple(raw[a + 28:a + 30]),
+                        tuple(raw[a + 32:a + 34]), tuple(raw[a + 34:a + 36])])
 
     def _lit_prims(self):
         raw = self.raw
@@ -258,14 +262,16 @@ class LodModel:
                     raise ValueError("primitiva iluminada incoherente")
                 clut = struct.unpack_from("<H", raw, a + 14)[0]
                 tpage = struct.unpack_from("<H", raw, a + 18)[0]
-                self.prims.append({"idx": idx, "normals": nidx, "clut": clut, "tpage": tpage})
+                uv = [tuple(raw[a + 12:a + 14]), tuple(raw[a + 16:a + 18]),
+                      tuple(raw[a + 20:a + 22]), tuple(raw[a + 22:a + 24])][:nv]
+                self.prims.append({"idx": idx, "normals": nidx, "clut": clut, "tpage": tpage, "uv": uv})
 
-    def _prim(self, idx, code_ok, a_uv0, a_uv1):
+    def _prim(self, idx, code_ok, a_uv0, a_uv1, uv=None):
         if not code_ok or max(idx) >= len(self.vertices):
             raise ValueError("primitiva incoherente")
         clut = struct.unpack_from("<H", self.raw, a_uv0 + 2)[0]
         tpage = struct.unpack_from("<H", self.raw, a_uv1 + 2)[0]
-        self.prims.append({"idx": idx, "clut": clut, "tpage": tpage})
+        self.prims.append({"idx": idx, "clut": clut, "tpage": tpage, "uv": uv})
 
     def faces(self):
         out = []
@@ -456,6 +462,59 @@ def cmd_normals(directory):
     return 0
 
 
+def export_player(record_path, outdir):
+    """Exporta el avion del jugador como .obj + .mtl + una textura PNG por fila
+    de CLUT usada (las 8 filas de la piel son paletas de zonas distintas, no
+    esquemas de color). Solo piezas con caras, en su estado base."""
+    import tim2png
+    raw = open(record_path, "rb").read()
+    data, ms = player_models(raw)
+    stem = os.path.splitext(os.path.basename(record_path))[0]
+    os.makedirs(outdir, exist_ok=True)
+    # piel: primera TIM de la seccion 1 del registro
+    from acerec import Record
+    rec = Record.from_file(record_path)
+    skin_buf = rec.section(1)
+    skin = tim2png.scan(skin_buf)[0]
+    clut_y0 = skin["clut"]["dy"]
+    rows = sorted({p["clut"] >> 6 for _, m in ms for p in m.prims})
+    with open(os.path.join(outdir, stem + ".mtl"), "w") as mtl:
+        for row in rows:
+            w, h, px = tim2png.to_rgba(skin_buf, skin, row - clut_y0)
+            png = f"{stem}_clut{row}.png"
+            tim2png.write_png(os.path.join(outdir, png), w, h, px)
+            mtl.write(f"newmtl clut{row}\nmap_Kd {png}\n\n")
+    tex_w, tex_h = skin["img"]["w"] * 4, skin["img"]["h"]
+    lines = [f"# avion del jugador de {stem} (Ace Combat 3); Y invertida",
+             f"mtllib {stem}.mtl"]
+    vbase = 1
+    tbase = 1
+    for i, m in ms:
+        if not m.prims:
+            continue
+        lines.append(f"o pieza{i:02d}")
+        for x, y, z in m.vertices:
+            lines.append(f"v {x} {-y} {z}")
+        by_row = {}
+        for p in m.prims:
+            by_row.setdefault(p["clut"] >> 6, []).append(p)
+        for row, prims in sorted(by_row.items()):
+            lines.append(f"usemtl clut{row}")
+            for p in prims:
+                idx, uv = p["idx"], p["uv"]
+                order = [0, 1, 2] if len(idx) == 3 else [0, 1, 3, 2]
+                for k in order:
+                    u, v = uv[k]
+                    lines.append(f"vt {u / tex_w:.5f} {1 - v / tex_h:.5f}")
+                face = [f"{vbase + idx[k]}/{tbase + n}" for n, k in enumerate(order)]
+                tbase += len(order)
+                lines.append("f " + " ".join(face))
+        vbase += len(m.vertices)
+    with open(os.path.join(outdir, stem + ".obj"), "w") as fh:
+        fh.write("\n".join(lines) + "\n")
+    return os.path.join(outdir, stem + ".obj"), rows
+
+
 def cmd_player(directory):
     """Valida los modelos de avion del jugador de los 22 registros de tipo 4."""
     import collections
@@ -536,6 +595,10 @@ def cmd_check(directory):
 def main(argv):
     if len(argv) >= 3 and argv[1] == "check":
         return cmd_check(argv[2])
+    if len(argv) >= 4 and argv[1] == "export-player":
+        out, rows = export_player(argv[2], argv[3])
+        print(f"{out}  (texturas para las filas de CLUT {rows})")
+        return 0
     if len(argv) >= 3 and argv[1] == "player":
         return cmd_player(argv[2])
     if len(argv) >= 3 and argv[1] == "normals":

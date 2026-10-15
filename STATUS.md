@@ -33,6 +33,8 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
+- ✅ **Avión del jugador exportable con texturas** (`acemodel.py
+  export-player`): validado a ojo (F-15 del registro 0055)
 - ✅ **Avión del jugador encontrado**: en el preludio del registro de tipo 4
   (sección inicial que el modelo de registro ignoraba). 22 aviones, 264/264
   modelos, 7.895/7.895 primitivas validadas — `acemodel.py player`. Los
@@ -61,13 +63,12 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-1. **Ensamblado del avión del jugador:** cómo se combinan las 5 piezas con
-   caras y los 7 estados de solo vértices (aerofrenos, timones…). Leer
-   `player_aircraft_load` (`0x80035C90`) y el render jerárquico
-   `lod_parts_draw` (`0x80061408`), que recibe un bloque de vértices por pieza.
-2. **Preludios sin explorar:** tipo 13 (149 KB) y tipo 17 (116-284 B en ULZ,
-   parámetros de misión; el cargador los guarda en `g_mission + 0x18` y los
-   pasa a `FUN_8005D490`).
+1. Ensamblado del avión del jugador: ✅ mecanismo general (tabla de 12
+   piezas en el hueco id 0 / nivel 3; el render elige entradas/estados).
+   Queda la lógica que elige cada estado de pieza.
+2. ✅ Preludios: tipo 17 = parámetros de entorno y animación de paletas;
+   tipo 13 = imágenes de las 36 misiones. Queda el del tipo 5 y el detalle
+   campo a campo del tipo 17.
 3. Confirmar el papel de cada overlay; `h0`; formato de las demos; seguir
    ampliando `tools/ghidra/names.tsv`.
 

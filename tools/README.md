@@ -43,6 +43,8 @@ python3 tools/tim2png.py scan data/sec/0006_*_s14.bin
 python3 tools/tim2png.py png  data/sec/0006_*_s14.bin data/png
 python3 tools/acemodel.py list  data/sec/0006_*_s04.bin
 python3 tools/acemodel.py verts data/sec/0006_*_s04.bin 0
+python3 tools/acemodel.py player data/bpb
+python3 tools/acemodel.py export-player data/bpb/0055_*_t04.bin data/obj/p55
 python3 tools/acesnd.py  list data/sec/0047_*_s02.bin
 python3 tools/acesnd.py  wav  data/sec/0047_*_s02.bin data/wav
 python3 tools/acepack.py <imagen.bin> xa

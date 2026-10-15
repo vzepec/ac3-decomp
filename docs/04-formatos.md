@@ -119,9 +119,15 @@ estructura de registro y es legible.
 > `u32 tipo; u32 offset[n+1]` con `offset[0] = 4 + 4·(n+1)`. Se mantiene la
 > numeración histórica (sección 0 = la primera tras el preludio);
 > `tools/acerec.py` expone el preludio con `prelude_bounds()`. Preludios:
-> tipo 17 = 116-284 B en ULZ (parámetros de misión, `SIN RESOLVER`); tipo 4 =
-> **modelos del avión del jugador** (ver abajo); tipo 13 = 149 KB `SIN
-> RESOLVER`; tipo 5 = 4-33.156 B.
+> - **tipo 17**: ULZ que descomprime a **312 B fijos de parámetros de entorno**
+>   (muchos tripletes RGB y valores 4.12). El cargador los guarda en
+>   `g_mission + 0x18` y `FUN_8005D490` usa `+8` para generar 16 paletas
+>   animadas (interpolación con `rsin`, subidas a VRAM desde (320,384)):
+>   animación de paletas por misión. Campo a campo, `SIN RESOLVER`.
+> - **tipo 4**: los **modelos del avión del jugador** (ver abajo).
+> - **tipo 13**: tabla de **36 TIM** en ULZ (56×84, 8 bpp): las **imágenes de
+>   las 36 misiones** (ciudades, cañones, la Tierra desde el espacio…).
+> - tipo 5: de 4 a 33.156 B, `SIN RESOLVER`.
 
 Reproducible con `make records`. Válida en **122 de los 127** registros:
 
@@ -373,7 +379,10 @@ struct LodModelHeader {
 - En los LOD altos hay **tres bloques con los mismos vértices a escala ×1,
   ×2 y ×4** (diferencias de redondeo ≤ 1 en 300/300); el de ×4 alcanza
   exactamente `extent`. Los LOD bajos guardan un solo bloque a escala 1/4
-  (`4·máx|v| ≈ extent` en 278/278). Hipótesis: precisión según distancia.
+  (`4·máx|v| ≈ extent` en 278/278). **Confirmado en el código**
+  (`scene_objects_sort`, `0x80065CC4`): son niveles de **precisión según la
+  distancia**; lejos se usa ×1, a media distancia ×2 y cerca ×4, desplazando la
+  traslación `>> (2 − nivel)`.
 - Primitivas: `u32 n` + POLY_GT3 de 32 B (código `0x34`, 3 colores) y
   `u32 n` + POLY_GT4 de 36 B (`0x3C`, 4 colores). Bloques consumidos exactos.
 - En s02 los modelos van de 4 en 4 (mismo `extent`, 155/99/39… vértices):
@@ -409,7 +418,7 @@ PCM: 15 millones de muestras sin un solo recorte en EU.
 | Sec | ULZ | Contenido |
 |---|---|---|
 | 0 | sí | 168-220 B: puntos de referencia del avión (vectores `x,y,z,0`; varios en la cola, probablemente toberas) — `SIN RESOLVER` en detalle |
-| 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
+| 1 | sí | 2 TIM: **piel 256×256** con 8 filas de CLUT e **icono 40×40**. Corrección: las 8 filas **no** son esquemas de color; cada primitiva usa la fila de la zona de la piel que pinta |
 | 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 
 **Modelos del avión del jugador ✅** — en el **preludio** del registro
@@ -423,10 +432,22 @@ modelo 0 de la tabla LOD (huecos 0-3, vacíos en los datos de misión).
 | 4 | **iluminado**: el cuarto campo de cabecera es `off_normals` (bloque de `SVECTOR` sin contador); primitivas de 24 B en los dos bloques: `u32 0`, `u8 vértices[4]`, `u8 normales[4]`, `uv0`+CLUT, `uv1`+tpage, `uv2`, `uv3` |
 | 7 | **solo vértices** (`0xFFFFFFFF` en los tres últimos campos): posiciones alternativas de las piezas móviles |
 
+**Ensamblado:** la tabla de 12 piezas se cuelga del hueco id 0 / nivel 3 de
+la tabla LOD (`*(tabla + 0xC)`, en `FUN_80032514`), y el render compone el
+avión tomando entradas concretas (vistas: e1, e6, e8), con el mismo nivel de
+precisión para todas. Varias entradas son estados alternativos de una pieza
+(e3-e6 de e2, e8 de e7, e10-e11 de e9). La lógica que elige cada estado
+(aerofrenos, timones, tren…) está `SIN RESOLVER`.
+
 Validación (`python3 tools/acemodel.py player data/bpb`): **264/264**
 entradas en los 22 aviones; **7.895/7.895** primitivas texturizan desde la
 página de la piel del jugador (704,256) con su CLUT (336, 312-319).
-Renderizado, el registro 0047 es un ala volante coherente.
+Renderizado con textura (`python3 tools/acemodel.py export-player
+<registro> <dir>` produce `.obj` + `.mtl` + una PNG por fila de CLUT), el
+registro 0047 es un ala volante blanca y roja (igual que una de las vistas del
+hangar) y el 0055 un F-15 azul con todos sus detalles en su sitio: geometría,
+UV, CLUT y piel validados de extremo a extremo. La correspondencia registro →
+nombre del avión está `SIN RESOLVER`.
 
 #### Tipo 13 — interfaz (1 registro, 0072)
 
