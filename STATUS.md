@@ -1,15 +1,15 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-2`; integración en `develop`)
+**Última actualización:** 2026-10-15 (rama `etapa-3`; integración en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 2 — Desempaquetar `ACE.BIN`: HECHA** (rama `etapa-2`). La etapa 1
-está fusionada en `develop`, que es la rama de integración de etapas. La
-siguiente es la **etapa 3 — análisis estático**. Ver `docs/05-hoja-de-ruta.md`.
+**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). Las etapas 1 y 2
+están fusionadas en `develop`. Primer corte de los tres criterios de salida
+cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Hecho
 
@@ -35,38 +35,51 @@ siguiente es la **etapa 3 — análisis estático**. Ver `docs/05-hoja-de-ruta.m
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
 - ⚠️ El **modelo del avión del jugador no está localizado**: tampoco está en
   `ACE.BIN`. Candidatos: registros de tipo 1 grandes y ULZ variante 0
+- ✅ **Etapa 3, primer corte** (`docs/09-codigo.md`): Ghidra 12.1.4 +
+  `ghidra_psx_ldr` en `~/tools`. `ACE.BIN`: 2.011 funciones, ~749 PsyQ,
+  **~1.262 propias (473 KB)**, 1.939 COP2 (incluye 155 funciones que Ghidra
+  no veía por invocarse solo por puntero). Mapa de módulos (no hay overlays
+  de código; `ACE.EXE` = pantalla anticopia). Bucle principal en `main`
+  `0x80025D08` — `make ghidra-import ghidra-stats`
+- ✅ **Sistema de packs localizado en `ACE.BIN`**: apertura (`0x8002A9E4`),
+  streaming (`0x8002A34C`), descompresor ULZ (`0x800AE118`). Con ellos:
+  **tag del SPB resuelto** (72/72, 88/88) y **ULZ variante 0 resuelta**
+  (604/604; tipo 13 = hangar: vistas y nombres de los 21 aviones)
+- ✅ **Cargador de misión** (`0x80035730`) localizado: confirma desde el
+  código el mapa de secciones del tipo 17, y revela que s2 y s3 forman una
+  sola tabla de modelos
+- ✅ Formato de `ACE.BIN` confirmado contra el descompresor real de
+  `SCES_020.66`; resueltos los campos `0x04`, `0x14` y `0x5C`
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
 ## Siguiente tarea concreta
 
-**Etapa 3: preparar el análisis estático de `ACE.BIN`.**
+**Etapa 3: resolver campos de los modelos leyendo su código.**
 
-1. Instalar **Ghidra** (necesita JDK 17+) y la extensión de PSX
-   (`ghidra_psx_ldr`, con soporte de COP2/GTE). Dejar en `docs/` la versión
-   exacta y cómo instalarla.
-2. Cargar `data/exe/ace_eu.exe` (generado con `make acebin`; es un PS-X EXE
-   estándar con carga en `0x80010000` y entrada en `0x8002521C`).
-3. Primera medición, sin entrar todavía en las funciones:
-   - número de funciones que detecta Ghidra
-   - matching de firmas PsyQ: cuántas son de librería y cuántas de Namco
-   - instrucciones COP2 (GTE) en `ACE.BIN`, con la misma métrica que
-     `docs/02-binarios.md` usa para los otros dos ejecutables
-4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra para el ciclo de
-   "explícame esta función". No sustituye a Ghidra.
+```bash
+make acebin ghidra-import      # si data/ghidra no existe (incluye CreateMissingFunctions)
+tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
+```
 
-Criterio de salida de la etapa 3 (hoja de ruta): número de funciones propias,
-mapa de overlays y bucle principal identificado.
+1. ✅ Hecho: `FUN_80026EE0` recoloca 4 offsets (`Model`) o 6 (`LodModel`).
+2. Buscar la función que dibuja modelos (debe leer las primitivas de 36/48 B y
+   usar `RTPT`): ahí deberían verse `h0/h1/e0/e1`. Por huella salieron falsos
+   candidatos (`0x8008FE38`, `0x8008A874`: efectos); seguir el flujo desde los
+   32 accesos a `lw rX, 0x2CC($gp)` (estructura de misión, `$gp = 0x800BA9F4`)
+   y desde las tablas guardadas en `+0x1C..+0x40`.
+3. Buscar quién lee el mapa de teselas (puntero guardado en `+0x1C` de la
+   estructura de misión) para los 3 bits altos de cada celda.
+4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,
+   para que el nombrado sea reproducible.
 
-Pendientes que siguen abiertos de etapas anteriores: el avión del jugador;
-ULZ variante 0; campos `0x04` y `0x5C` de la cabecera de `ACE.BIN`; campos
-sin resolver de primitivas, mapa de teselas y bancos de sonido.
+Pendientes abiertos: el avión del jugador (registros de tipo 1); medición de
+la versión US; valorar `rea`.
 
 ## Bloqueos conocidos
 
 | Bloqueo | Impacto | Cómo se levanta |
 |---|---|---|
-| Ghidra no instalado | Etapa 3 no puede empezar | Instalarlo con el loader de PSX y soporte COP2/GTE |
 | Semántica del `tag` en el SPB | Menor: la extracción ya funciona sin ella | Comparar con subcabeceras XA de cada entrada |
 
 ## Decisiones tomadas

@@ -52,39 +52,48 @@ Cabecera **propietaria de Namco** de `0x5C` bytes, no PS-EXE:
 | Offset | EU | US | Significado | Estado |
 |---|---|---|---|---|
 | `0x00` | `PS-Y` | `PS-Y` | magic | ✅ |
-| `0x04` | `0x77E36134` | `0x3E7035AA` | no es CRC32 ni suma de entrada/salida | ⚠️ sin resolver |
+| `0x04` | `0x77E36134` | `0x3E7035AA` | ajuste para que la suma `u32` del archivo entero sea 0 | ✅ |
 | `0x08` | `0x800BB000` | `0x800BC000` | dirección final = carga + tamaño descomprimido | ✅ |
 | `0x0C` | 413.772 | 415.530 | tamaño útil del archivo (US: 2 bytes de relleno extra) | ✅ |
 | `0x10` | 700.416 | 704.512 | tamaño descomprimido | ✅ |
-| `0x14` | `0x5C` | `0x5C` | tamaño de la cabecera | ✅ |
-| `0x1C` | `0x8002521C` | `0x8002539C` | punto de entrada | ✅ |
+| `0x14` | `0x5C` | `0x5C` | offset del flujo comprimido | ✅ |
+| `0x1C` | `0x8002521C` | `0x8002539C` | punto de entrada; desde aquí, estructura `EXEC` de PsyQ | ✅ |
 | `0x24` | `0x80010000` | `0x80010000` | dirección de carga | ✅ |
 | `0x28` | = `0x10` | = `0x10` | tamaño (repetido) | ✅ |
 | `0x3C` | `0x801FFFF0` | | pila | ✅ |
 | `0x58` | `0x4288FFB0` | `0xA6E2BA6C` | **suma de las palabras `u32` de la salida** | ✅ |
-| `0x5C` | `0x0C` | `0x0C` | ? | ⚠️ sin resolver |
+| `0x5C` | `0x0C` | `0x0C` | primer byte del flujo: bits de distancia (12) | ✅ |
 
 ### Formato de compresión
 
-Un LZ de un solo flujo desde `0x5D`:
+Un LZ de un solo flujo desde `0x5C`:
 
 ```
-repetir hasta producir `tamaño descomprimido` bytes:
-    u8 flags                     # bits 0..6 = 7 elementos (el bit 7 vale 1)
-    por cada bit, del 0 al 6:
+u8 nbits                         # 12
+repetir:
+    u8 flags                     # 0 = fin
+    consumir bits del 0 hacia arriba mientras quede más de uno
+    (el bit más alto es un centinela; con flags >= 0x80 salen 7 elementos):
         1 -> 1 byte literal
-        0 -> b0, b1:
-             longitud  = b0 >> 4             (0 significa 16)
-             distancia = b1 | (b0 & 0xF)<<8  (0 significa 4096)
+        0 -> v = b0<<8 | b1:
+             distancia = v & 0xFFF  (0 significa 4096)
+             longitud  = v >> 12    (0 significa 16)
 ```
 
-Se descifró a mano siguiendo cadenas conocidas (`"Can't open TIM"`,
-`"Error: MemAlloc: Overflow %d bytes (REQ: %d bytes)\n"`).
+Se descifró primero a mano, siguiendo cadenas conocidas (`"Can't open TIM"`,
+`"Error: MemAlloc: Overflow %d bytes (REQ: %d bytes)\n"`), y después se
+**confirmó contra el descompresor real** de `SCES_020.66` (`0x801641E4`),
+decompilado con Ghidra, que además resolvió el byte `0x5C` y el centinela.
+
+Arranque real (`SCES_020.66`, `0x801642D4`): magic, suma del archivo = 0,
+descompresión, final = carga + tamaño, suma de la salida = `0x58`, `Exec()`.
+Si algo falla, carga `ACE.EXE` (pantalla anticopia). Ver `09-codigo.md`.
 
 **Validación:**
 
 - La salida mide exactamente el tamaño declarado, en EU y en US.
-- Se consume toda la entrada salvo 1 y 3 bytes de relleno.
+- El byte 0 terminador cae justo al final del tamaño útil del archivo.
+- La suma `u32` del archivo entero es 0, como exige el cargador.
 - **La suma `u32` de la salida coincide exactamente con el campo `0x58`** en
   los dos discos. Con "distancia 0 = ceros" en vez de 4096, no coincide.
 - El punto de entrada cae tras un `jr ra; nop` y empieza con el bucle de

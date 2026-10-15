@@ -5,6 +5,79 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — La "inicialización" de modelos es una recolocación
+
+`FUN_80026EE0` suma la base del modelo a `n` offsets de su cabecera; `n` = 4
+para s1/s4 y 6 para s2/s3 (leído del registro `a2` en cada llamada del
+cargador de misión). Confirma las dos cabeceras de modelo desde el código.
+
+Intento fallido: buscar el render de modelos por huella (`RTPT` y pasos de
+36/48 bytes) dio dos falsos candidatos, que resultaron ser efectos e
+iluminación. Queda seguir el flujo de datos desde `0x2CC($gp)`.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/m.c 0x80026ee0`
+y el desensamblado de las llamadas en `0x80035A60`, `0x80035AB0`,
+`0x80035B00`, `0x80035B50`
+
+## 2026-10-15 — Cargador de misión localizado; Ghidra se dejaba 155 funciones
+
+El análisis automático de Ghidra no creaba las funciones que solo se invocan
+por puntero: 158 prólogos huérfanos. `tools/ghidra/CreateMissingFunctions.java`
+crea 155 (las otras 3 caen dentro de las nuevas). Nueva cifra de `ACE.BIN`:
+2.011 funciones, ~1.262 propias (473 KB).
+
+Entre ellas, el **cargador de registros de tipo 17** (`0x80035730`): sube las
+TIM de s10-s14, manda s15 (sonido) sin descomprimir, descomprime s0-s10 e
+inicializa las tablas de modelos (s1, s4 por un lado; s2, s3 con un
+parámetro distinto) y fusiona s3 en los huecos 96+ de s2. Confirma desde el
+código el mapa de secciones de la etapa 1.
+
+Se encontró al ver que la cifra de llamadas `jal` al descompresor ULZ no
+cuadraba con los llamadores que listaba Ghidra.
+
+Reproducir: `make ghidra-import ghidra-stats`;
+`tools/ghidra/decomp.sh ace_eu.exe data/ghidra/m.c 0x80035730`
+
+## 2026-10-15 — El código resuelve el tag del SPB y la variante 0 de ULZ
+
+Localizados en `ACE.BIN` el sistema de packs (`0x8002A9E4`: valida `AC3E`, suma
+la LBA del pack y exige los códigos de build `0x1019`/`0x19991019`), el
+arranque de streaming (`0x8002A34C`) y el descompresor ULZ (`0x800AE118`).
+
+- **Tag del SPB:** bit 31, modo (bits 27-28), desplazamiento (24-26), canal XA
+  (19-23), longitud (0-18). Validado 72/72 EU y 88/88 US contra las
+  subcabeceras XA. Las entradas de audio están entrelazadas (un canal cada
+  una) y se solapan.
+- **ULZ variante 0:** bit centinela en cada palabra de flags y palabra 0 como
+  terminador. 604/604 entradas del tipo 13 válidas.
+- **Tipo 13:** vistas cenitales y nombres de los 21 aviones seleccionables.
+
+Reproducir: `make ulz-check`; `python3 tools/acepack.py <imagen> spbtags`;
+`python3 tools/mipsref.py data/exe/ace_eu.bin 0x80010000 --addr 0x800ae7a0 --tsv data/ghidra/stats_eu_funcs.tsv`
+
+## 2026-10-15 — Etapa 3: Ghidra, cifras de funciones, módulos y bucle principal
+
+Ghidra 12.1.4 + `ghidra_psx_ldr` (en `~/tools`). `ACE.BIN` EU: 1.853
+funciones; 747 reconocidas como PsyQ 4.5 (77 KB) y ≤ 1.106 propias (420 KB);
+1.939 instrucciones COP2. Control positivo: la única referencia a
+`ResetGraph:jtb` está en la función nombrada `ResetGraph`; en `SCES_020.66` se
+reconoce el 95 %. Forzar PsyQ 4.6 reconoce menos (456).
+
+Mapa de módulos: `SCES_020.66` carga y valida `ACE.BIN` y lo ejecuta; si falla,
+carga `ACE.EXE`, que es la **pantalla de aviso anticopia** ("WARNING! An error
+has occurred while loading…"). `ACE.BIN` no carga más código.
+
+Bucle principal: `main` en `0x80025D08`, bucle infinito por fotograma con
+`GetRCnt`/`DrawSync`/`VSync(n)`.
+
+El descompresor real de `SCES_020.66` (`0x801641E4`) confirma el formato de
+`ACE.BIN` y resuelve los campos pendientes: el byte `0x5C` es el número de
+bits de distancia (12); los flags usan bit centinela y un byte 0 termina el
+flujo; el campo `0x04` hace que la suma `u32` del archivo sea 0 (verificado
+en EU y US); desde `0x1C` hay una estructura `EXEC` de PsyQ.
+
+Reproducir: `make acebin ghidra-import ghidra-stats`; ver `docs/09-codigo.md`
+
 ## 2026-10-15 — ACE.BIN descomprimido (etapa 2 cumplida)
 
 LZ de un solo flujo desde `0x5D`: byte de flags con 7 elementos (bits 0-6, 1 =

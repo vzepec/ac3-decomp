@@ -1,0 +1,182 @@
+# 09 — Análisis estático del código (etapa 3)
+
+Reproducible con `make ghidra-import` y `make ghidra-stats` (ver §1).
+Scripts en `tools/ghidra/`.
+
+> **Nada de lo que produce Ghidra se versiona.** El proyecto (`data/ghidra/`),
+> los volcados de pseudo-C y los TSV de funciones son derivados del código
+> del juego. Este documento describe estructura, direcciones y cifras; no
+> reproduce código.
+
+## 1. Entorno
+
+Instalado en espacio de usuario (`~/tools`), sin `sudo`:
+
+| Componente | Versión | Verificación |
+|---|---|---|
+| JDK | Temurin 21.0.12.1+1 | SHA-256 de Adoptium `ce79869e…aee94` |
+| Ghidra | 12.1.4 (`ghidra_12.1.4_PUBLIC_20260921.zip`) | SHA-256 publicado `ddac49f9…d4db` |
+| Extensión PSX | `ghidra_psx_ldr` release `2026.10.03`, build para 12.1.4 | release oficial de GitHub (sin hash publicado) |
+
+La extensión aporta el loader de PS-X EXE, el lenguaje `PSX:LE:32` con
+COP2/GTE, un segmento artificial `GTEMAC` con los manejadores de macros GTE y
+firmas de las librerías PsyQ 2.6-4.7.
+
+```bash
+make acebin            # genera data/exe/ace_eu.exe (PS-X EXE en claro)
+make ghidra-import     # importa y analiza (~4 min)
+make ghidra-stats      # cifras -> data/ghidra/stats_eu.txt y _funcs.tsv
+```
+
+## 2. Mapa de módulos ✅
+
+```
+BIOS
+ └─ SCES_020.66   residente en 0x80160000
+     · lee ACE.BIN entero del CD mientras dibuja una pantalla de carga con sonido
+     · lo valida y lo descomprime (función 0x801642D4, ver 02-binarios.md)
+     ├─ si todo cuadra → Exec() de ACE.BIN en 0x80010000
+     └─ si falla, o si Exec vuelve → LoadExec("cdrom:\ACE.EXE;1")
+ ACE.BIN          código 0x80010000-0x800BB000
+                  BSS 0x800BACB0-0x800C9DC0, InitHeap desde 0x800C9DC4
+                  abre solo ACE.BPB/BPH/SPB/SPH: no carga más código
+ ACE.EXE          pantalla fija "WARNING! An error has occurred while
+                  loading…" (aviso anticopia), con una TIM de 640×480
+```
+
+Pruebas: referencias a las cadenas de nombre de archivo de cada ejecutable,
+decompilación de `main` de `SCES_020.66` y de su función de arranque, y la
+TIM de `ACE.EXE` exportada con `tools/tim2png.py`.
+
+**No hay overlays de código** dentro de `ACE.BIN`: es un único módulo de
+700 KB. Los registros de tipo 1 de `ACE.BPB` no contienen código (0
+prólogos MIPS).
+
+## 3. Cifras de funciones ✅
+
+Medido sobre el bloque que contiene el punto de entrada (el segmento
+`GTEMAC` del loader se excluye: no es código del juego).
+
+| Módulo | Funciones | Reconocidas (PsyQ) | Propias | Bytes propios | COP2 |
+|---|---|---|---|---|---|
+| `ACE.BIN` (EU) | 2.011 | 749 (78 KB) | **1.262** | **473 KB** | 1.939 |
+| `SCES_020.66` | 701 | 665 (95 %) | 36 | 4,5 KB | 0 en `.text` |
+| `ACE.EXE` | 221 | 213 | 8 | 0,6 KB | 0 |
+
+"Propias" = funciones sin nombre (`FUN_`) más `main`. Es una **cota
+superior** en un sentido (cualquier función de librería cuya firma no casara
+cuenta como propia) y **aproximada** en el otro: las funciones hoja sin
+prólogo que solo se invocan por puntero no se detectan.
+
+**Corrección importante:** el análisis automático de Ghidra dejaba fuera 158
+prólogos `addiu sp,sp,-N`: funciones que solo se llaman por puntero
+(callbacks del CD, el propio cargador de misión). `tools/ghidra/
+CreateMissingFunctions.java` las crea (155; las otras 3 caían dentro de las
+nuevas) y forma parte de `make ghidra-import`. Antes de esa corrección la
+cifra era 1.853 funciones y 1.106 propias.
+
+Desglose de las ~747 de `ACE.BIN` por librería (medido antes de la corrección; no cambia: las funciones nuevas son todas propias) (`tools/ghidra/libsplit.py`):
+LIBCD 164 · LIBPAD 125 · LIBSPU 124 · LIBC2 75 · LIBGTE 66 · LIBAPI 52 ·
+LIBGPU 42 · LIBETC 37 · LIBCARD 22 · LIBC 19 · LIBSN 11 · LIBPRESS 4 ·
+LIBSND 1 · otros 5.
+
+### Validación del reconocimiento
+
+- **Control positivo:** la cadena `ResetGraph:jtb=%08x` solo la usa
+  `ResetGraph` de libgpu; en `ACE.BIN` la única función que la referencia es
+  justo la que las firmas llamaron `ResetGraph`.
+- En `SCES_020.66` y `ACE.EXE`, que son casi todo librería, se reconoce el
+  95 % y el 96 % de las funciones.
+- **Versión de PsyQ:** el loader elige 4.5.0. Una búsqueda directa de firmas
+  (`tools/ghidra/psyqver.py`) da algo más de coincidencias a 4.6 (187 OBJ
+  frente a 173), pero forzando 4.6.0 en Ghidra se reconocen **menos**
+  funciones (456 frente a 748). Se mantiene 4.5.0. Probablemente se
+  enlazaron librerías de versiones mezcladas.
+
+## 4. Bucle principal ✅
+
+- `start` (`0x8002521C`, `2MBYTE.OBJ` de PsyQ): pone a cero la BSS, llama a
+  `InitHeap` y salta a `main`.
+- `main` (`0x80025D08`): inicialización (`FUN_80025AC0`, `VSync`,
+  `SetDispMask`) y un **bucle infinito por fotograma** que:
+  - llama en orden a 7 funciones propias de actualización (`FUN_80025720`,
+    `FUN_80025BB0`, `FUN_800269E4`, `FUN_80028784`, `FUN_8002DDCC`,
+    `FUN_80025EB0`, `FUN_8002C0B4`) y a `FUN_80027408`;
+  - mide tiempos con el contador raíz (`GetRCnt(0xF2000001)` antes y
+    después de `DrawSync`, y `ResetRCnt`);
+  - sincroniza con `VSync(n)`, con `n` leído de una estructura global: el
+    divisor de fotogramas;
+  - gestiona banderas de estado en una estructura global apuntada desde
+    `0x800BACD0`.
+- `FUN_800269E4` es la que usa `"Can't open TIM"`: carga de recursos.
+
+El papel de cada una de las funciones de actualización está `SIN RESOLVER`.
+
+## 5. Sistema de packs y descompresión en `ACE.BIN` ✅
+
+Localizado con `tools/mipsref.py` (referencias `lui`/`addiu` y tablas de
+punteros) y decompilado con `tools/ghidra/decomp.sh`:
+
+| Dirección (EU) | Función | Qué hace |
+|---|---|---|
+| `0x800AE7A0` | (datos) | tabla de punteros a `\ACE.BPH;1`, `\ACE.SPH;1`, `\ACE.BPB;1`, `\ACE.SPB;1` |
+| `0x8002A8AC` | búsqueda | `CdSearchFile` de los 4 archivos; `"ERR : File Not Found.[%s]"` |
+| `0x8002A9E4` | apertura de packs | lee BPH y SPH, comprueba `AC3E`, suma la LBA del pack a cada `sector`, y exige `SBCODE` = `0x1019` (BPH) y `SPCODE` = `0x19991019` (SPH): el ejecutable EU solo acepta packs EU |
+| `0x8002AC0C` | inicialización | prepara el estado del CD y espera a la apertura |
+| `0x80029E8C` | máquina de estados del CD | la llama `FUN_8002C0B4`, del bucle principal |
+| `0x8002A34C` | arranque de streaming | descodifica el `tag` del SPB (modo, canal XA, longitud): ver `04-formatos.md` |
+| `0x800AE118` | **descompresor ULZ** | variantes 0, 1 y 2 |
+| `0x80026E50` | descomprimir + cargar TIM | ULZ y luego `FUN_80026D8C` (la de `"Can't open TIM"`) |
+| `0x80035730` | **cargador de registro de misión** (tipo 17) | ver §6; `0x80035C90` es una variante |
+
+Esto confirma desde el código el formato de índice de la etapa 1 (magic,
+contador en `0x10`, entradas desde `0x14`, sector relativo al pack) y ha
+resuelto el `tag` del SPB y la variante 0 de ULZ.
+
+## 6. El cargador de misión confirma el formato de tipo 17 ✅
+
+`FUN_80035730` recorre el registro de tipo 17 en memoria. Con el puntero al
+registro desplazado 4 bytes (palabra `k+1` = offset de la sección `k`):
+
+| Sección | Qué hace el cargador | Coincide con la etapa 1 |
+|---|---|---|
+| 14, 13, 12, 11, 10 | `FUN_80026E50(sección, siguiente)`: descomprime y sube las TIM a VRAM, con `DrawSync` entre cada una | ✅ las 5 secciones de texturas |
+| 15 | `FUN_8002D544` sin descomprimir | ✅ el banco de sonido, la única sin ULZ |
+| 0-10 | se copian los offsets a un área temporal bajo `0x801FB700`, se recolocan y se descomprimen las 11 con `FUN_800AE118` | ✅ |
+| 0 | se guarda el puntero | mapa de teselas |
+| 1 | cada entrada pasa por `FUN_80026EE0` (índices 1..n) | ✅ tabla de teselas |
+| 4 | cada entrada pasa por `FUN_80026EE0` | ✅ tabla de objetos |
+| 2, 3 | cada entrada pasa por `FUN_80026EE0(…, 6)` | ✅ la otra familia de modelos (con LOD) |
+| 3 → 2 | las entradas de s3 se copian en los huecos 96+ de la tabla de s2 | nuevo: s2 y s3 son **una sola tabla** de modelos |
+
+Que el cargador trate distinto a s1/s4 y a s2/s3 coincide con las dos
+familias de cabecera de modelo (`Model` y `LodModel` en `tools/acemodel.py`)
+que se dedujeron solo con los datos.
+
+`FUN_80026EE0` no "inicializa": **recoloca**. Suma la dirección base del
+modelo a `n` palabras desde `modelo + 4`, salvo las que ya tienen el bit 31
+(ya son punteros). El número sale del registro `a2` en cada llamada:
+
+| Llamada | `a2` | Campos recolocados |
+|---|---|---|
+| s1, s4 (`Model`) | 4 | `off_vertices, off_unk, off_prims, off_end` |
+| s2, s3 (`LodModel`) | 6 | `off_vertices, off_x2, off_x4, (0), off_gt3, off_gt4` |
+
+Confirma desde el código que esos campos son offsets relativos al modelo, y
+que `off_unk` (siempre 0 en los datos) es el offset de un bloque opcional.
+
+Datos útiles para seguir: `$gp = 0x800BA9F4` (se fija en el arranque), así que
+la estructura de misión `0x800BACC0` se lee como `lw rX, 0x2CC($gp)`, en 32
+sitios del código.
+
+## 7. Lo que queda (etapa 3, siguientes pasos)
+
+1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
+   (entrada, lógica, cámara, render, sonido…).
+2. Localizar el render de modelos para resolver `h0/h1/e0/e1` de las
+   primitivas, y el consumidor del mapa de teselas para sus 3 bits altos.
+   Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
+   candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
+   seguir el flujo desde los 32 accesos a `0x2CC($gp)`.
+3. Repetir la medición en la versión US.
+4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra.

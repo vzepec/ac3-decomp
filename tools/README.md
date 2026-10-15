@@ -14,6 +14,14 @@ CLI. Los atajos están en el `Makefile` de la raíz.
 | `acemodel.py` | Modelos del tipo 17 (terreno, objetos, aviones con LOD): vértices, caras, `.obj`, validación |
 | `acesnd.py` | Bancos de sonido del SPU: listado, validación y ADPCM a WAV |
 | `acebin.py` | Descomprime `ACE.BIN` (LZ de Namco), valida con la suma de la cabecera, opcionalmente lo envuelve en PS-X EXE |
+| `mipsref.py` | Referencias a direcciones/constantes en código MIPS (pares `lui`/`addiu`), con la función que las contiene |
+| `ghidra/decomp.sh` | Atajo para decompilar funciones con `DumpDecomp.java` (incluye quién llama y a quién llama) |
+| `ghidra/AceStats.java` | Script de Ghidra: funciones, reconocidas/propias, COP2; TSV por función |
+| `ghidra/DumpDecomp.java` | Script de Ghidra: pseudo-C de funciones a un archivo (salida solo a `data/`) |
+| `ghidra/CreateMissingFunctions.java` | Script de Ghidra: crea funciones en prólogos huérfanos (las que solo se llaman por puntero) |
+| `ghidra/SetPsyqVersion.java` | Script de Ghidra: fuerza la versión de PsyQ antes del análisis |
+| `ghidra/libsplit.py` | Desglose por librería PsyQ de las funciones reconocidas |
+| `ghidra/psyqver.py` | Qué versión de PsyQ casa mejor con un binario |
 | `acedat.py` | Demuestra que `ACE.DAT` es relleno |
 
 ## Uso directo

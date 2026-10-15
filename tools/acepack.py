@@ -15,7 +15,10 @@ FORMATO DEL INDICE (verificado contra las 4 combinaciones EU/US x SPH/BPH):
     struct Entry {      // 8 bytes
         u32 tag;        // byte alto = categoria
                         // BPB: 24 bits bajos = tamano del registro en u32 (verificado)
-                        // SPB: SIN RESOLVER
+                        // SPB: bit 31 = 1; bits 27-28 modo (2 audio XA,
+                        //   3 audio/video); 24-26 desplazamiento; 19-23 canal
+                        //   XA; 0-18 longitud. Extension en sectores =
+                        //   longitud << desplazamiento (verificado; ver spbtags)
         u32 sector;     // offset en sectores de 2048 bytes dentro del pack
     };
 
@@ -24,7 +27,9 @@ Comprobacion: 0x14 + 8*count == tamano del archivo de indice, en los 4 casos.
 La extension de cada entrada se deduce de la siguiente: la entrada i ocupa
 [sector_i, sector_{i+1}), y la ultima llega al final del pack. Los 24 bits
 bajos de `tag` en el BPB son el tamano en palabras de 32 bits (127/127 en EU
-y US, comando `tags`); en el SPB no (SIN RESOLVER).
+y US, comando `tags`); en el SPB el tag codifica modo, canal XA y longitud
+(comando `spbtags`). OJO: en el SPB las entradas XA estan ENTRELAZADAS (cada
+una es un canal de un flujo de 8) y se solapan; extents() no vale alli.
 
 Cada registro del pack empieza con un u32 que actua de tipo de recurso
 (se han visto 4, 5, 6, 7, 8, 0x11...). Dentro aparecen punteros a RAM de
@@ -36,6 +41,7 @@ Uso:
     python3 tools/acepack.py <imagen.bin> records        # cabecera comun de cada registro
     python3 tools/acepack.py <imagen.bin> tags           # semantica del tag
     python3 tools/acepack.py <imagen.bin> xa [SPB|BPB]   # subcabeceras XA por entrada
+    python3 tools/acepack.py <imagen.bin> spbtags        # tags del SPB descodificados
     python3 tools/acepack.py <imagen.bin> extract BPB <dir>   # extraer entradas
 """
 import os
@@ -186,6 +192,36 @@ def cmd_tags(disc):
         print(f"{PAIRS[which][1]}: tamano = (tag & 0xFFFFFF) * 4 cumple en {ok}/{idx.count}")
 
 
+def spb_tag(tag):
+    """Campos del tag de ACE.SPH, segun el codigo de ACE.BIN (0x8002A34C, EU)."""
+    return {"flag": tag >> 31, "mode": (tag >> 27) & 3, "shift": (tag >> 24) & 7,
+            "channel": (tag >> 19) & 31, "length": tag & 0x7FFFF,
+            "sectors": (tag & 0x7FFFF) << ((tag >> 24) & 7)}
+
+
+def cmd_spbtags(disc):
+    """Descodifica los tags del SPB y los valida contra los sectores reales.
+
+    Validado en 72/72 (EU) y 88/88 (US): bit 31 a 1, inicio + extension dentro
+    del pack, y el canal del tag presente en las subcabeceras XA de la entrada.
+    """
+    idx, pack = load(disc, "SPB")
+    nsec = pack.size // SECTOR
+    ok = 0
+    print(f"{'#':>4} {'tag':>10} {'modo':>4} {'canal':>5} {'sector':>7} {'extension':>9}  canal presente")
+    for i, (tag, sec) in enumerate(idx.entries):
+        f = spb_tag(tag)
+        seen = set()
+        if disc.sector_size == 2352:
+            for s in range(min(64, nsec - sec)):
+                disc.f.seek((pack.lba + sec + s) * 2352 + 16)
+                seen.add(disc.f.read(2)[1])
+        good = f["flag"] == 1 and sec + f["sectors"] <= nsec + 64 and f["channel"] in seen
+        ok += int(good)
+        print(f"{i:>4} {tag:#010x} {f['mode']:>4} {f['channel']:>5} {sec:>7} {f['sectors']:>9}  {'si' if f['channel'] in seen else 'NO'}")
+    print(f"tags coherentes: {ok}/{idx.count}")
+
+
 XA_FLAGS = ((0x80, "EOF"), (0x40, "RT"), (0x20, "FORM2"), (0x10, "TRIG"),
             (0x08, "DATA"), (0x04, "AUDIO"), (0x02, "VIDEO"), (0x01, "EOR"))
 
@@ -250,6 +286,8 @@ def main(argv):
         for which in PAIRS:
             cmd_records(disc, which)
             print()
+    elif cmd == "spbtags":
+        cmd_spbtags(disc)
     elif cmd == "xa":
         cmd_xa(disc, argv[3] if len(argv) > 3 else "SPB")
     elif cmd == "tags":
