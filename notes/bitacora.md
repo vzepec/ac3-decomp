@@ -5,6 +5,29 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Etapa 3: Ghidra, cifras de funciones, módulos y bucle principal
+
+Ghidra 12.1.4 + `ghidra_psx_ldr` (en `~/tools`). `ACE.BIN` EU: 1.853
+funciones; 747 reconocidas como PsyQ 4.5 (77 KB) y ≤ 1.106 propias (420 KB);
+1.939 instrucciones COP2. Control positivo: la única referencia a
+`ResetGraph:jtb` está en la función nombrada `ResetGraph`; en `SCES_020.66` se
+reconoce el 95 %. Forzar PsyQ 4.6 reconoce menos (456).
+
+Mapa de módulos: `SCES_020.66` carga y valida `ACE.BIN` y lo ejecuta; si falla,
+carga `ACE.EXE`, que es la **pantalla de aviso anticopia** ("WARNING! An error
+has occurred while loading…"). `ACE.BIN` no carga más código.
+
+Bucle principal: `main` en `0x80025D08`, bucle infinito por fotograma con
+`GetRCnt`/`DrawSync`/`VSync(n)`.
+
+El descompresor real de `SCES_020.66` (`0x801641E4`) confirma el formato de
+`ACE.BIN` y resuelve los campos pendientes: el byte `0x5C` es el número de
+bits de distancia (12); los flags usan bit centinela y un byte 0 termina el
+flujo; el campo `0x04` hace que la suma `u32` del archivo sea 0 (verificado
+en EU y US); desde `0x1C` hay una estructura `EXEC` de PsyQ.
+
+Reproducir: `make acebin ghidra-import ghidra-stats`; ver `docs/09-codigo.md`
+
 ## 2026-10-15 — ACE.BIN descomprimido (etapa 2 cumplida)
 
 LZ de un solo flujo desde `0x5D`: byte de flags con 7 elementos (bits 0-6, 1 =

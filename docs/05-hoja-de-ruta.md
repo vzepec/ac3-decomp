@@ -86,7 +86,7 @@ la suma de control de la cabecera. Ver `02-binarios.md`.
 
 ---
 
-## Etapa 3 — Análisis estático del código
+## Etapa 3 — Análisis estático del código 🔄 EN CURSO (primer corte de los criterios cumplido)
 
 **Prerrequisito:** instalar **Ghidra** (no está en la máquina) con el loader
 de PSX y soporte COP2/GTE.
@@ -106,6 +106,11 @@ atajo al objetivo.
 
 **Criterio de salida:** un documento con el número de funciones propias, el
 mapa de overlays y el bucle principal identificado.
+
+**Estado (2026-10-15):** `docs/09-codigo.md`. Ghidra 12.1.4 + `ghidra_psx_ldr`
+instalados. `ACE.BIN`: 1.853 funciones, 747 de PsyQ y **≤ 1.106 propias
+(420 KB)**. No hay overlays de código (mapa de módulos resuelto). Bucle
+principal en `main` (`0x80025D08`). Queda nombrar el árbol de llamadas.
 
 **Esfuerzo:** meses. **Riesgo:** medio.
 

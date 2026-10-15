@@ -1,10 +1,13 @@
 # Atajos del proyecto. Requiere solo Python 3.
 PY  ?= python3
+GHIDRA ?= $(HOME)/tools/ghidra_12.1.4_PUBLIC
+JDK    ?= $(HOME)/tools/jdk-21.0.12.1+1
+HEADLESS = JAVA_HOME="$(JDK)" PATH="$(JDK)/bin:$$PATH" "$(GHIDRA)/support/analyzeHeadless"
 EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Electrosphere (Europe) (En,Fr,De,Es,It).bin
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin ghidra-import ghidra-stats check
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -21,6 +24,8 @@ help:
 	@echo "make sounds     - valida los bancos de sonido del SPU"
 	@echo "make textures   - vuelca a data/png/ las TIM del registro REC (def. 0006)"
 	@echo "make acebin     - descomprime ACE.BIN (EU y US) a data/exe/"
+	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
+	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
@@ -73,6 +78,17 @@ acebin:
 	@$(PY) tools/acebin.py "$(EU)" data/exe/ace_eu.exe --psexe
 	@$(PY) tools/acebin.py "$(US)" data/exe/ace_us.exe --psexe
 
+ghidra-import:
+	@mkdir -p data/ghidra
+	@$(HEADLESS) data/ghidra ac3 -import data/exe/ace_eu.exe -overwrite -max-cpu 4 > data/ghidra/import_eu.log 2>&1
+	@grep -E "REPORT" data/ghidra/import_eu.log | tail -3
+
+ghidra-stats:
+	@$(HEADLESS) data/ghidra ac3 -process ace_eu.exe -noanalysis -scriptPath tools/ghidra \
+		-postScript AceStats.java data/ghidra/stats_eu > data/ghidra/stats_eu.log 2>&1
+	@grep -vE "^bloque [A-Z_0-9.]+ " data/ghidra/stats_eu.txt
+	@$(PY) tools/ghidra/libsplit.py data/ghidra/stats_eu_funcs.tsv "$(GHIDRA)/Ghidra/Extensions/ghidra_psx_ldr/data/psyq/450"
+
 brief:
 	@echo "=============================================================="
 	@echo " Ace Combat 3: Electrosphere - ingenieria inversa y port"
@@ -82,7 +98,7 @@ brief:
 	@echo "--------------------------------------------------------------"
 	@echo "ENTORNO"
 	@$(PY) -c "import sys; print('  python', sys.version.split()[0])"
-	@printf "  ghidra: "; command -v ghidra >/dev/null && echo "instalado" || echo "NO instalado (necesario en la etapa 3)"
+	@printf "  ghidra: "; test -x "$(GHIDRA)/support/analyzeHeadless" && echo "$(GHIDRA)" || echo "NO instalado (ver docs/09-codigo.md)"
 	@printf "  discos en Rom/: "; ls -1 Rom 2>/dev/null | wc -l
 	@$(MAKE) --no-print-directory check
 	@echo ""

@@ -72,6 +72,7 @@ docs/
   06-legal.md        que se puede publicar y que no
   07-glosario.md     GTE, MDEC, SPU, overlay, PsyQ, TIM, VAG...
   08-continuar-por-consola.md  retomar el trabajo desde terminal
+  09-codigo.md       analisis estatico: Ghidra, modulos, funciones, bucle
 tools/
   psxiso.py          lectura de imagenes de disco PSX (libreria + CLI)
   acepack.py         indices y contenedores ACE.SPH/SPB y ACE.BPH/BPB
@@ -83,6 +84,7 @@ tools/
   acesnd.py          bancos de sonido del SPU (ADPCM a WAV)
   acedat.py          demuestra que ACE.DAT es relleno
   acebin.py          descompresor de ACE.BIN (modulo principal)
+  ghidra/            scripts de Ghidra y analisis de firmas (etapa 3)
   README.md          que hace cada herramienta y como usarla
 notes/
   bitacora.md        registro append-only de hallazgos con fecha

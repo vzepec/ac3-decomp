@@ -62,6 +62,7 @@ La hoja de ruta está dividida en etapas que valen por sí solas.
 | Plan por etapas | `docs/05-hoja-de-ruta.md` |
 | Qué se puede publicar | `docs/06-legal.md` |
 | Vocabulario de PS1 | `docs/07-glosario.md` |
+| Análisis del código (Ghidra) | `docs/09-codigo.md` |
 | Historial de hallazgos | `notes/bitacora.md` |
 
 ## Al terminar cualquier trabajo
