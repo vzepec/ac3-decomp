@@ -285,6 +285,8 @@ altos del mapa.
 | `0x80065CC4` | por objeto: distancia, y **LOD = id·4 + (0, 1 o 2 según distancia)** sobre la tabla de modelos con LOD |
 | `0x80061408` | **render jerárquico de modelos LOD**: lista de piezas de 0x38 B, cada una con matriz propia, callback, bloque de vértices elegido y `LodModel`; usa sus `+0x14`/`+0x18` (`off_gt3`/`off_gt4`) |
 | `0x8006159C`, `0x800616FC` | renders de los bloques GT3 y GT4 de los modelos LOD |
+| `0x800B09B8`, `0x800B09D0` | tablas de callbacks por pieza, indexadas según el tipo de avión |
+| `0x8008A874` | callback `engine_exhaust_draw`: efecto de motores en los puntos de tobera de t04 s0 (número de motores en `+0xC`). Antes se describió por error como "iluminación" |
 | `0x8002953C` | **identificador de recurso**: bit 11 = pack (0 BPB, 1 SPB), bits 0-10 = entrada |
 | `0x800354B8` | secuenciador de carga: reconoce el registro de misión (tabla `0x800AF748`, índice `+0x390`) y el del avión del jugador (tabla `0x800AF79C`, índice `+0x392`) |
 | `0x80035E78`, `0x80035EF8` | carga y reproducción de **demos** (tabla `0x800AF7C8`: registro de tipo 1, misión, avión) |

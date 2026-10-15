@@ -417,7 +417,7 @@ PCM: 15 millones de muestras sin un solo recorte en EU.
 
 | Sec | ULZ | Contenido |
 |---|---|---|
-| 0 | sí | 168-220 B: puntos de referencia del avión (vectores `x,y,z,0`; varios en la cola, probablemente toberas) — `SIN RESOLVER` en detalle |
+| 0 | sí | 168-220 B: **parámetros del avión**. `+0xC` byte 0 = **número de motores** (verificado contra la realidad: los dos F-16 valen 1; todos los bimotores reales, 2); byte 1 = 1 en F-15S/MT, F-22, Su-37 y otros: probablemente toberas vectoriales (`SIN VERIFICAR`). Siguen vectores `x,y,z,0`, los puntos de tobera. Lo consume el efecto de motores `engine_exhaust_draw` (`0x8008A874`) |
 | 1 | sí | 2 TIM: **piel 256×256** con 8 filas de CLUT e **icono 40×40**. Corrección: las 8 filas **no** son esquemas de color; cada primitiva usa la fila de la zona de la piel que pinta |
 | 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 

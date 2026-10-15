@@ -67,9 +67,10 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 Etapa 3 en curso. Pendientes, por orden de valor para la etapa 4:
 
-1. **Estados de pieza del avión del jugador**: localizar los callbacks por
-   pieza de `lod_parts_draw` (campo `+0x34` de cada entrada de 0x38 B), que
-   deben elegir/interpolar los estados alternativos.
+1. **Estados de pieza**: callbacks localizados (tablas `0x800B09B8` y
+   `0x800B09D0`); el 1 es el efecto de motores. Quedan por leer los demás
+   (`0x8008BCBC`, `0x8008BE4C`, `0x8008B914`, `0x8008BA18`, `0x8008BB1C`,
+   `0x8008B1A8`) para ver cuál elige/interpola estados de pieza.
 2. Overlays: ✅ 1 = menú principal, 2 = interfaz de campaña (probable, con
    evidencia de código); quedan las subpantallas y los overlays 3-5.
 3. `h0` de las primitivas; formato de las demos; detalle del preludio del
