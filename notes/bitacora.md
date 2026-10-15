@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Las callbacks "de estado de pieza" son luces y rotores
+
+Las callbacks de pieza de `0x800B09B8` no son superficies móviles: dibujan
+luces, un resplandor, discos de hélice/rotor (3 o 5 palas, y un par
+contrarrotatorio) y las toberas. Ghidra había partido mal estas funciones
+(empezaban 4-8 bytes tarde; dos no existían); `FixFunctionStarts.java` las
+crea en la dirección exacta que dan las tablas. Las superficies móviles
+siguen pendientes: candidatas, los modelos "solo vértices" del avión del
+jugador.
+
+Reproducir: volcar `0x800B09B8` del ejecutable, aplicar
+`FixFunctionStarts.java` y descompilar con `tools/ghidra/decomp.sh`.
+
 ## 2026-10-15 — Tablas de aparición de la misión: aviones y objetos de tierra
 
 Confirmado en el código (`FUN_8004C258`, `FUN_8004CDB0`): el guion (s6) trae

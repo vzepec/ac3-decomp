@@ -82,3 +82,9 @@
 0x8004BEDC	f	spawn_aircraft_links	enlaza registros de aparicion con subtablas
 0x8004C08C	f	spawn_objects_links	idem para objetos
 0x80053704	f	mission_script_exec	interprete del guion de eventos
+0x8008BCBC	f	part_light_draw	luz de pieza (sprite aditivo)
+0x8008BE4C	f	part_glow_draw	resplandor rojo en degradado
+0x8008B914	f	part_rotor3_draw	disco de rotor de 3 palas
+0x8008BA18	f	part_rotor5_draw	disco de rotor de 5 palas
+0x8008BB1C	f	part_rotor_coax_draw	dos rotores contrarrotatorios
+0x8008B6D0	f	rotor_disc_draw	abanico de POLY_G3 sustractivo
