@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Corrección: el misil sí deja estela de humo
+
+Buscando la interpolación de las superficies móviles aparecieron dos
+sistemas de estela con búfer circular: A, alimentado por los proyectiles
+(estela de humo del misil, 90 ticks), y B, por los aviones (estelas de punta
+de ala, 63 ticks). Se dibujan como bandas Gouraud semitransparentes. Corrige
+lo dicho en la entrada de explosiones y estelas, donde solo se había visto el
+sprite de llama estirado (que también existe). Lección: un efecto puede
+tener varias capas; no dar por cerrado "cómo se dibuja X" por haber hallado
+una.
+
+Reproducir: usuarios de `DAT_800BAF38` en `data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-15 — Las callbacks "de estado de pieza" son luces y rotores
 
 Las callbacks de pieza de `0x800B09B8` no son superficies móviles: dibujan

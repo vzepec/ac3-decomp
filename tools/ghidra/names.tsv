@@ -88,3 +88,8 @@
 0x8008BA18	f	part_rotor5_draw	disco de rotor de 5 palas
 0x8008BB1C	f	part_rotor_coax_draw	dos rotores contrarrotatorios
 0x8008B6D0	f	rotor_disc_draw	abanico de POLY_G3 sustractivo
+0x8007C44C	f	trails_update	actualiza estelas A (humo de proyectil) y B (puntas de ala)
+0x8007B36C	f	smoke_trails_feed	puntos de estela desde los proyectiles
+0x8007C164	f	wingtip_trails_feed	puntos de estela desde los aviones
+0x8007A990	f	smoke_trails_draw	bandas Gouraud semitransparentes (A)
+0x8007B928	f	wingtip_trails_draw	bandas Gouraud semitransparentes (B)

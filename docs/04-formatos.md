@@ -420,6 +420,21 @@ s1 (16×64 texeles en u=0xB0/0xC0/0xE0/0xD0, v=0x60, aditivo). Qué lista
 corresponde al misil estándar: `SIN RESOLVER` (probablemente `F388`).
 Tabla de armas `0x800B0A04`: 5 actualizaciones + 5 finales.
 
+**Estelas de humo y de vapor** (búferes circulares en `DAT_800BAF38`;
+actualiza `FUN_8007C44C` cada tick). Corrige la idea anterior de que el misil
+no deja humo:
+
+| Sistema | Fuente | Puntos | Vida | Dibujo |
+|---|---|---|---|---|
+| A (32 estelas × 32 puntos de 4 posiciones) | proyectiles con bandera `&8` (`FUN_8007B36C`): un punto nuevo cada 4 fotogramas (el resto actualiza el último), 4 posiciones a lo largo del eje del proyectil (tabla `0x800B1E94`) | `FUN_8007A60C` / `FUN_8007A7C0` | 90 ticks (`FUN_8007A8B4`) | `FUN_8007A990` |
+| B (32 × 32 puntos de 2 posiciones) | aviones con `+5 & 8` (`FUN_8007C164`): un punto cada 2 fotogramas, dos posiciones según el tipo de avión (tabla `0x800B1EB4`, 16 B por tipo): **estelas de las puntas de ala** | `FUN_8007B5F0` / `FUN_8007B77C` | 63 ticks (`FUN_8007B834`) | `FUN_8007B928` |
+
+Ambas se dibujan como bandas de POLY_G4 semitransparentes sin textura entre
+puntos consecutivos (LINE_G2 semitransparente cuando están lejos), con el
+color atenuado por la edad del punto. `SIN RESOLVER`: el color exacto (la A
+carga el color lejano de la GTE desde s8 `+0x20`, pero reutiliza ese
+registro como temporal) y el modo de mezcla.
+
 **Otros**: `FUN_8008EBDC` (postquemador, llamas de s1), `FUN_80090478` /
 `FUN_80090FE0` (cintas Gouraud entre dos puntos, depósito `+0x3964`; las
 emiten el rayo láser `FUN_80081B88` y el efecto 4.9).
