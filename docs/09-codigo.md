@@ -48,9 +48,15 @@ Pruebas: referencias a las cadenas de nombre de archivo de cada ejecutable,
 decompilación de `main` de `SCES_020.66` y de su función de arranque, y la
 TIM de `ACE.EXE` exportada con `tools/tim2png.py`.
 
-**No hay overlays de código** dentro de `ACE.BIN`: es un único módulo de
-700 KB. Los registros de tipo 1 de `ACE.BPB` no contienen código (0
-prólogos MIPS).
+**CORRECCIÓN (2026-10-15): sí hay overlays de código.** La tabla de modos
+del juego (`0x800AE544`, registros de 16 B `{pasos, id, carga, fin}`) tiene
+modos con código fuera de `ACE.BIN`: modo 3 = id 2, `0x800C9DC0`-`0x800F9E18`;
+modo 4 = id 1, `0x800C9DC0`-`0x800DB010`. Las entradas 1 y 2 del BPB (las
+"tablas de sistema" de la etapa 1) son código (1,54 y 1,65 prólogos/KiB) y
+sus tamaños casan con esos rangos. Hipótesis fuerte, `SIN VERIFICAR` del todo:
+el desplazamiento exacto de carga no se ha confirmado (la cabecera de esas
+entradas es `u32 n` + tabla de punteros `0x800CBxxx`/`0x800CCxxx`). Las
+entradas 3-5 tienen poca densidad de código.
 
 ## 3. Cifras de funciones ✅
 
@@ -108,7 +114,14 @@ LIBSND 1 · otros 5.
     divisor de fotogramas;
   - gestiona banderas de estado en una estructura global apuntada desde
     `0x800BACD0`.
-- `FUN_800269E4` es la que usa `"Can't open TIM"`: carga de recursos.
+- Corrección: `"Can't open TIM"` lo usan `FUN_80026BE4`, `FUN_80026D00` y
+  `FUN_80026D8C`; `FUN_800269E4` es la lectura del mando (`PadChkVsync`).
+- Papeles del fotograma: `FUN_80025720` modo de vídeo, `FUN_80025BB0` limpia
+  la tabla de orden, `FUN_800269E4` mando, `FUN_80028784` descodifica el
+  mando por tipo (`0x41`, `0x23`…), `FUN_8002DDCC` sonido, **`FUN_80025EB0`
+  despachador de modos** (`tabla[modo][paso]` en `0x800AE544`),
+  `FUN_8002C0B4` CD, `FUN_80027408` sprites 2D, `FUN_80025C20` fin de
+  fotograma. Nombres aplicables con `tools/ghidra/names.tsv`.
 
 El papel de cada una de las funciones de actualización está `SIN RESOLVER`.
 

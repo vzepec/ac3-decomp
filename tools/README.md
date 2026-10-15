@@ -19,6 +19,7 @@ CLI. Los atajos están en el `Makefile` de la raíz.
 | `ghidra/AceStats.java` | Script de Ghidra: funciones, reconocidas/propias, COP2; TSV por función |
 | `ghidra/DumpDecomp.java` | Script de Ghidra: pseudo-C de funciones a un archivo (salida solo a `data/`) |
 | `ghidra/CreateMissingFunctions.java` | Script de Ghidra: crea funciones en prólogos huérfanos (las que solo se llaman por puntero) |
+| `ghidra/ApplyNames.java` + `ghidra/names.tsv` | Nombres de funciones y datos identificados, aplicables de forma reproducible |
 | `ghidra/SetPsyqVersion.java` | Script de Ghidra: fuerza la versión de PsyQ antes del análisis |
 | `ghidra/libsplit.py` | Desglose por librería PsyQ de las funciones reconocidas |
 | `ghidra/psyqver.py` | Qué versión de PsyQ casa mejor con un binario |

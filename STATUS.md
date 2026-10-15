@@ -61,22 +61,18 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-**Decisión pendiente del usuario:** el siguiente paso útil es dinámico.
+**Verificar y desmontar los overlays de código** (entradas 1 y 2 del BPB,
+cargadas en `0x800C9DC0` por los modos 3 y 4; ver `docs/09-codigo.md` §2):
 
-**A (recomendada). Análisis dinámico para el avión del jugador.** Instalar un
-emulador con depurador (PCSX-Redux tiene volcado de RAM y depurador MIPS en
-Linux), jugar hasta una misión con vista exterior y volcar la RAM:
+1. Determinar el desplazamiento exacto de carga: la cabecera es `u32 n` +
+   tabla de punteros; probar que la tabla de pasos del modo 3 (`0x800F1E34`)
+   apunte a prólogos dentro del overlay.
+2. Herramienta que los extraiga como PS-X EXE e importarlos en Ghidra.
+3. Ver si un overlay (probablemente el de vuelo, id 2) contiene o carga el
+   **modelo del avión del jugador** (los huecos 0-7 de la tabla LOD).
 
-1. buscar en el volcado cabeceras `LodModel` (`u16 0, u16 extent, u32 0x1C…`
-   recolocadas: los offsets ya son punteros `0x80…`) y la tabla de modelos
-   LOD (huecos 0-7)
-2. comparar sus bytes con los registros del BPB para saber de dónde salen
-3. regla: los volcados de RAM son datos del juego → solo en `data/`
-
-**B. Seguir con análisis estático:** `h0` de las primitivas, el formato de las
-demos (registros 111-126), el bit exacto de cada vecino en el mapa de
-teselas, y nombrar en Ghidra las funciones ya identificadas con un script
-reproducible desde un `.tsv` versionado.
+Después: nombrar más funciones en `tools/ghidra/names.tsv` (se aplican con
+`make ghidra-import`); `h0`; formato de las demos.
 
 ## Bloqueos conocidos
 

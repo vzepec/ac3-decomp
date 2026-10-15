@@ -1,0 +1,43 @@
+# Nombres de funciones y datos de ACE.BIN (version EU, SCES_020.66) identificados
+# en la etapa 3. Solo direcciones y nombres propios: no es codigo del juego.
+# Formato: direccion<TAB>tipo (f = funcion, d = dato)<TAB>nombre<TAB>nota (docs/09-codigo.md)
+0x8002521C	f	ac3_start	arranque PsyQ: limpia BSS, InitHeap, main
+0x80025D08	f	ac3_main	bucle principal por fotograma
+0x8002953C	f	res_entry	id de recurso -> entrada del indice (bit 11 = SPB)
+0x8002A8AC	f	cd_search_packs	CdSearchFile de los 4 packs
+0x8002A9E4	f	packs_open	lee BPH/SPH, valida AC3E y codigos de build
+0x8002AC0C	f	packs_init	inicializa estado del CD y abre los packs
+0x80029E8C	f	cd_state_machine	maquina de estados del CD (desde FUN_8002C0B4)
+0x8002A34C	f	spb_stream_start	descodifica el tag del SPB y arranca el streaming
+0x800AE118	f	ulz_decompress	descompresor ULZ, variantes 0/1/2
+0x80026E50	f	ulz_load_tims	ULZ + subida de TIM a VRAM
+0x80026EE0	f	model_relocate	suma la base del modelo a n offsets de cabecera
+0x800354B8	f	load_sequencer	reconoce registro de mision / avion del jugador
+0x80035730	f	mission_load	cargador de registro de tipo 17
+0x80035C90	f	mission_load_alt	variante del cargador de mision
+0x80035C10	f	player_record_load	pide el registro de tipo 4 del avion elegido
+0x80035E78	f	demo_record_load	pide el registro de tipo 1 de la demo
+0x80035EF8	f	demo_start	arranca la reproduccion de la demo
+0x80035E28	f	demo_select	elige mision y avion de la demo
+0x80035F5C	f	fade_prim	fundido a pantalla completa
+0x80097EDC	f	terrain_raycast	interseccion rayo-terreno (normales e0/e1)
+0x80098EF4	f	terrain_raycast2	gemela de terrain_raycast
+0x80098B80	f	terrain_query	posicion -> celda del mapa de teselas
+0x8005CDA4	f	tile_list_build	lista de celdas visibles desde el mapa
+0x8005CFB4	f	terrain_draw_setup	prepara el scratchpad y dibuja el terreno
+0x8005FF9C	f	terrain_draw	pasada de vertices (RTPT) y primitivas
+0x80060214	f	prims_ft4_draw	render bloque POLY_FT4 de Model
+0x80060470	f	prims_gt4_draw	render bloque POLY_GT4 de Model
+0x80060DC0	f	prim_subdivide	subdivision de caras cercanas
+0x80066B64	f	scene_objects_draw	render de objetos de escena
+0x80065CC4	f	scene_objects_sort	reparte objetos y elige LOD
+0x80061408	f	lod_parts_draw	render jerarquico de piezas LodModel
+0x8006159C	f	lod_gt3_draw	render bloque GT3 de LodModel
+0x800616FC	f	lod_gt4_draw	render bloque GT4 de LodModel
+0x800AE7A0	d	pack_names	punteros a \ACE.BPH;1, \ACE.SPH;1, \ACE.BPB;1, \ACE.SPB;1
+0x800AF748	d	mission_records	short[41]: registro BPB de cada mision
+0x800AF79C	d	player_records	short[22]: registro BPB (tipo 4) de cada avion
+0x800AF7C8	d	demo_records	16 x (u16 registro, u8 mision, u8 avion)
+0x800BACC0	d	g_mission	puntero a la estructura de mision (0x800BE168)
+0x800BACC4	d	g_render	puntero a la estructura de render
+0x800BACD0	d	g_state	puntero al estado del juego

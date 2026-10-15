@@ -5,6 +5,14 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Hay overlays de código (corrige la etapa 3) y nombrado reproducible
+
+La tabla de modos (`0x800AE544`) revela modos con código cargado en
+`0x800C9DC0`: las entradas 1 y 2 del BPB son overlays (casan en tamaño y
+densidad de prólogos). Pendiente confirmar el offset de carga. Corregido
+también qué función usa "Can't open TIM". Nuevo `tools/ghidra/names.tsv` +
+`ApplyNames.java` (40 nombres).
+
 ## 2026-10-15 — Revisión de proyectos externos; el SPB no tiene modelos
 
 No hay decompilación pública de AC3. `loadwordteam/ac3es-tools` confirma los
