@@ -37,6 +37,7 @@ que **no** hay que repetir.
    las entradas del heurístico de prólogos MIPS y de los TIM "inexistentes".
 4. **No construyas todavía** renderer, runtime ni proyecto Android. La etapa
    actual es de análisis. Ver `docs/05-hoja-de-ruta.md`.
+   Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.
 

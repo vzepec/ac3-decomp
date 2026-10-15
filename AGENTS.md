@@ -82,6 +82,7 @@ tools/
   acemodel.py        modelos 3D del tipo 17 (terreno, objetos, aviones LOD)
   acesnd.py          bancos de sonido del SPU (ADPCM a WAV)
   acedat.py          demuestra que ACE.DAT es relleno
+  acebin.py          descompresor de ACE.BIN (modulo principal)
   README.md          que hace cada herramienta y como usarla
 notes/
   bitacora.md        registro append-only de hallazgos con fecha
@@ -107,7 +108,7 @@ de código en inglés, sin tildes dentro de los archivos `.py` (compatibilidad).
   todavía. La etapa actual es de análisis (ver `STATUS.md`). Construir el
   armazón del port antes de entender los datos es la forma más rápida de
   tirar meses.
-- No intentes decompilar `ACE.BIN` directamente: está comprimido. Primero
-  hay que desempaquetarlo (etapa 2).
+- `ACE.BIN` está comprimido en el disco: trabaja siempre sobre la salida de
+  `make acebin` (`data/exe/`), y nunca la subas a git.
 - No añadas dependencias a las herramientas sin una razón fuerte. Deben
   ejecutarse en cualquier Python 3 recién instalado.

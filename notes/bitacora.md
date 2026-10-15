@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — ACE.BIN descomprimido (etapa 2 cumplida)
+
+LZ de un solo flujo desde `0x5D`: byte de flags con 7 elementos (bits 0-6, 1 =
+literal), referencias de 2 bytes `longitud = b0>>4` (0 → 16) y `distancia =
+b1 | (b0&0xF)<<8` (0 → 4096). Se descifró siguiendo cadenas conocidas
+("Can't open TIM", "Error: MemAlloc: Overflow…").
+
+Validación definitiva: el campo `0x58` de la cabecera es la suma de las
+palabras `u32` de la salida, y coincide exactamente en EU (`0x4288FFB0`) y US
+(`0xA6E2BA6C`). La salida mide lo declarado (700.416 / 704.512) y la entrada
+se consume entera salvo el relleno. El campo `0x14` (antes "¿número de
+secciones?") es el tamaño de la cabecera.
+
+Pista que no funcionó: un LZSS clásico (Okumura) consumía solo la mitad de la
+entrada. Diferencias: 7 flags por byte, no 8, y longitudes sin desplazamiento.
+
+`ACE.BIN` no contiene TIM ni modelos en formato conocido: el avión del jugador
+sigue sin aparecer.
+
+Reproducir: `make acebin`
+
 ## 2026-10-15 — Bancos de sonido, aviones con LOD y el SPB (corrige una hipótesis)
 
 La "siguiente tarea" suponía que la sección 2 del tipo 4 era el modelo del
