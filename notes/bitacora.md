@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Primitivas resueltas: h1, e0/e1 y la sección 5 (normales)
+
+Leyendo el código de intersección con el terreno de `ACE.BIN` (`0x80097EDC`):
+`e0`/`e1` son offsets a normales de cara en la sección 5 del registro de
+tipo 17; `h1` = 0 cuadrilátero plano, 1 triángulo, 2 cuadrilátero partido en
+dos triángulos con una normal cada uno.
+
+Validado en los 41 registros: 119.003 `e` dentro de s5 y `máx(e)+8 = len(s5)`
+en 41/41; clases de `h1` sin excepciones; 77.831/77.831 normales
+antiparalelas al producto vectorial de la cara; partición de `h1 = 2` en el
+99,7 %.
+
+Dos falsos candidatos antes de dar con ella (efectos con `RTPT`). La pista
+buena: funciones con mucho `lwc2` y `NCLIP` y sin `RTPT`.
+
+Reproducir: `python3 tools/acemodel.py normals data/bpb`
+
 ## 2026-10-15 — La "inicialización" de modelos es una recolocación
 
 `FUN_80026EE0` suma la base del modelo a `n` offsets de su cabecera; `n` = 4

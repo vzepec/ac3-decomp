@@ -232,7 +232,7 @@ Reproducible con `make sections` y `make models`.
 | 2 | sí | **Aviones de la misión con LOD**: 128 huecos (32 × 4 LOD) | sí | ✅ ver abajo |
 | 3 | sí | **Modelos pequeños con LOD** (¿armas?): 4 o 16 huecos | sí | ✅ geometría |
 | 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
-| 5 | sí | Sin tabla de offsets | sí | `SIN RESOLVER` |
+| 5 | sí | **Tabla de normales de cara** (`SVECTOR` unitarios en 4.12) | sí | ✅ ver primitivas |
 | 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
 | 7-9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
 | 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
@@ -289,9 +289,10 @@ Las teselas miden 2048×2048 unidades.
 
 | Off | Tipo | Campo |
 |---|---|---|
-| 0 | `u8`, `u8` | `h0` (0-6), `h1` (0-2) — `SIN RESOLVER` |
+| 0 | `u8` | `h0` (0-4) — `SIN RESOLVER` |
+| 1 | `u8` | `h1`: 0 = cuadrilátero plano, 1 = triángulo, 2 = cuadrilátero no plano partido en `(i0,i1,i2)` + `(i1,i3,i2)` |
 | 2 | `u16` | 0 |
-| 4 | `u16`×2 | `e0`, `e1` — `SIN RESOLVER` (¿clave de profundidad?) |
+| 4 | `u16`×2 | `e0`, `e1`: offsets en bytes a la **normal de la cara** en la sección 5; `e0 = e1` salvo con `h1 = 2` (una normal por triángulo) |
 | 8 | `u8[8]` | por vértice, offset en bytes de su `xy` y su `z` en el bloque de vértices (listos para el GTE; redundantes con los índices) |
 | 16 | `u8[4]` | índices `i0..i3`; orden de tira: cara `i0,i1,i3,i2`; triángulo si `i3 == i2` |
 | 20 | | `uv0`, CLUT (`x=(c&63)*16`, `y=c>>6`), `uv1`, tpage, `uv2`, `uv3` |
@@ -302,6 +303,19 @@ GPU de PS1. En las teselas cada bloque va seguido de 12 bytes de ceros por
 primitiva (huecos que el motor rellenará con coordenadas de pantalla); en los
 objetos no hay relleno. Las CLUT y tpages apuntan exactamente a las zonas de
 VRAM donde se cargan las TIM del mismo registro.
+
+**`h1`, `e0`, `e1` y la sección 5** se resolvieron leyendo el código de
+intersección con el terreno de `ACE.BIN` (`0x80097EDC`, ver `09-codigo.md`) y
+se validaron con `python3 tools/acemodel.py normals data/bpb`:
+
+- 119.003/119.003 `e` son múltiplos de 8 y caen dentro de s5, y en los 41
+  registros `máx(e) + 8` es **exactamente** el tamaño de s5
+- `h1 = 0` siempre es cuadrilátero (55.746), `h1 = 1` siempre triángulo
+  (22.110), `h1 = 2` siempre cuadrilátero (41.147)
+- en las 77.831 caras con una sola normal, la guardada es **antiparalela** a
+  `(v1−v0)×(v2−v0)` (coseno < −0,99) y tiene módulo 4096
+- con `h1 = 2`, `e0`/`e1` casan con los triángulos `(i0,i1,i2)` y
+  `(i1,i3,i2)` en el 99,7 % (41.034/41.147)
 
 **Validación:** en **14.095/14.095** modelos los dos bloques se consumen
 exactamente, todos los códigos son `0x2C`/`0x3C`, todos los índices son
@@ -405,7 +419,7 @@ entradas por idioma. La sección 3 contiene TIM.
    tipo 1.
 3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
    teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
-4. Secciones 5, 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.
+4. Secciones 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.
 5. El campo `unk` del BPH (no lo usa la rutina de apertura) y los sectores de
    datos intercalados en el audio XA.
 

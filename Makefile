@@ -60,6 +60,7 @@ sections:
 
 models:
 	@$(PY) tools/acemodel.py check data/bpb
+	@$(PY) tools/acemodel.py normals data/bpb
 
 sounds:
 	@$(PY) tools/acesnd.py check data/bpb
