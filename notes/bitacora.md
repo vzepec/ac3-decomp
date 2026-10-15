@@ -5,6 +5,64 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Overlays en Ghidra: ~580 funciones propias más
+
+Overlays 1-5: 141, 401, 21, 10 y 8 funciones; solo `CdMix` es de librería.
+Total de código propio del juego: unas 1.840 funciones (~690 KB). Papeles
+probables por cadenas: menú/carga (1), interfaz entre misiones (2), datos
+gráficos (3), BGM (4), títulos de temas (5).
+
+Reproducir: `make overlays` e importar `data/exe/ovl/overlayN.exe` con
+`CreateMissingFunctions.java` y `AceStats.java` (ver `docs/09-codigo.md`).
+
+## 2026-10-15 — Overlays confirmados: las entradas 1-5 del BPB son código
+
+La tabla de modos de `ACE.BIN` (`0x800AE544`) lista 10 modos; los 3, 4, 7, 8 y
+9 cargan los overlays 2, 1, 3, 4 y 5 en `0x800C9DC0`. Overlay k = entrada k
+del BPB: tamaño según el tag == rango de memoria en 4/5 (el otro, 4 bytes de
+diferencia); punteros de pasos en inicios de función. Corrige la etapa 1 (que
+las llamó "tablas de sistema") y la etapa 3 (que dijo que no había overlays).
+
+Ningún overlay contiene modelos. El avión elegido (`+0x392` del estado) pasa
+al objeto del jugador (`+0x48`) por una tabla identidad en `0x800234E4`.
+
+Reproducir: `make overlays`
+
+## 2026-10-15 — Hay overlays de código (corrige la etapa 3) y nombrado reproducible
+
+La tabla de modos (`0x800AE544`) revela modos con código cargado en
+`0x800C9DC0`: las entradas 1 y 2 del BPB son overlays (casan en tamaño y
+densidad de prólogos). Pendiente confirmar el offset de carga. Corregido
+también qué función usa "Can't open TIM". Nuevo `tools/ghidra/names.tsv` +
+`ApplyNames.java` (40 nombres).
+
+## 2026-10-15 — Revisión de proyectos externos; el SPB no tiene modelos
+
+No hay decompilación pública de AC3. `loadwordteam/ac3es-tools` confirma los
+ULZ de tipos 0 y 2. Krishty extrajo los aviones jugables de la versión
+**japonesa** (37 carpetas; tres juegos de vértices; normales por vértice),
+pero nadie ha documentado la internacional. Ver `docs/03-versiones.md`.
+
+Descartado el SPB: sus 28.446 sectores de datos (los Form 2 intercalados con
+el audio, leídos con 2324 bytes) no contienen ULZ, TIM ni modelos; parecen
+marcas de sincronía por canal. Una búsqueda exhaustiva de bloques de vértices
+en todo el BPB descomprimido solo encuentra los de t17 s1-s4.
+
+## 2026-10-15 — Render de aviones jerárquico, demos, y el avión del jugador sigue sin aparecer
+
+- `0x80061408`: render de modelos LOD por piezas con matriz propia (aviones
+  articulados); `0x80065CC4` elige LOD = id·4 + (0-2 según distancia).
+- `0x8002953C`: id de recurso = bit 11 pack + 11 bits de entrada.
+- Tablas en `ACE.BIN`: misiones (`0x800AF748`), aviones del jugador
+  (`0x800AF79C`, registros 47-68) y demos (`0x800AF7C8`, registros 111-126 con
+  misión y avión). **Los registros de tipo 1 grandes son las demos.**
+- Huecos 0-7 de la tabla de modelos LOD vacíos en las 41 misiones: se rellenan
+  en ejecución. El modelo del jugador no está en ningún registro analizado.
+  Propuesta: análisis dinámico con emulador.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80061408 0x80065cc4 0x80035e28 0x800354b8`
+y la tabla con `python3 -c` sobre `data/exe/ace_eu.bin` en `0x800AF79C`.
+
 ## 2026-10-15 — Bits altos del mapa de teselas: no reutilizar vértices vecinos
 
 `FUN_8005CDA4` construye la lista de celdas visibles desde el mapa y copia la

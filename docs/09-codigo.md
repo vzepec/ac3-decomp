@@ -48,9 +48,43 @@ Pruebas: referencias a las cadenas de nombre de archivo de cada ejecutable,
 decompilación de `main` de `SCES_020.66` y de su función de arranque, y la
 TIM de `ACE.EXE` exportada con `tools/tim2png.py`.
 
-**No hay overlays de código** dentro de `ACE.BIN`: es un único módulo de
-700 KB. Los registros de tipo 1 de `ACE.BPB` no contienen código (0
-prólogos MIPS).
+**CORRECCIÓN (2026-10-15): sí hay overlays de código** — verificado con
+`python3 tools/aceovl.py list data/exe/ace_eu.bin data/bpb`.
+
+La tabla de modos (`0x800AE544`, registros `{pasos, id, inicio, fin}` de
+16 B) que recorre el despachador `FUN_80025EB0`:
+
+| Modo | Código | Rango | Tamaño |
+|---|---|---|---|
+| 0, 1, 2, 5, 6 | residente (`ACE.BIN`); el 2 es la carga de misión | `0x80010000`- | |
+| 3 | **overlay 2** = entrada 2 del BPB | `0x800C9DC0`-`0x800F9E18` | 196.696 |
+| 4 | **overlay 1** = entrada 1 | `0x800C9DC0`-`0x800DB010` | 70.224 |
+| 7 | **overlay 3** = entrada 3 | `0x800C9DC0`-`0x800DECE8` | 85.800 |
+| 8 | **overlay 4** = entrada 4 | `0x800C9DC0`-`0x800D96C0` | 63.744 |
+| 9 | **overlay 5** = entrada 5 | `0x800C9DC0`-`0x800CBA38` | 7.288 |
+
+Pruebas: el tamaño del registro según su `tag` coincide exactamente con el
+rango en 4 de 5 overlays (en el 4 difiere en 4 bytes); los punteros de pasos
+caen tras un `jr ra` (inicios de función) con base `0x800C9DC0`; el código de
+los overlays referencia globales del residente (`0x800BACD0`). Las entradas
+1-5 del BPB no son "tablas de sistema": son estos overlays. El overlay 1
+contiene las cadenas de la tarjeta de memoria. Ninguno contiene modelos,
+TIM (salvo uno en el 5) ni ULZ. `make overlays` los extrae como PS-X EXE a
+`data/exe/ovl/`.
+
+Importados en Ghidra (base `0x800C9DC0`, con `CreateMissingFunctions`):
+
+| Overlay | Modo | Funciones | Propias | Bytes propios | COP2 | Papel probable (por sus cadenas, `SIN VERIFICAR`) |
+|---|---|---|---|---|---|---|
+| 1 | 4 | 141 | 140 | 39 KB | 0 | menú principal / carga de partida (tarjeta, "LOG OUT", "Now Loading") |
+| 2 | 3 | 401 | 401 | 152 KB | 66 | interfaz entre misiones ("DEBRIEFING", "CONNECTION LOST") |
+| 3 | 7 | 21 | 21 | 14 KB | 0 | casi todo datos gráficos |
+| 4 | 8 | 10 | 10 | 12 KB | 0 | nombres de pistas BGM (¿reproductor?) |
+| 5 | 9 | 8 | 8 | 4 KB | 0 | títulos de los temas (¿modo de sonido / créditos?) |
+
+Solo `CdMix` (libcd) aparece como librería; el resto es código de Namco.
+**Total del juego: unas 1.840 funciones propias (~690 KB)**: ~1.262 en
+`ACE.BIN` y ~580 en los overlays.
 
 ## 3. Cifras de funciones ✅
 
@@ -108,7 +142,14 @@ LIBSND 1 · otros 5.
     divisor de fotogramas;
   - gestiona banderas de estado en una estructura global apuntada desde
     `0x800BACD0`.
-- `FUN_800269E4` es la que usa `"Can't open TIM"`: carga de recursos.
+- Corrección: `"Can't open TIM"` lo usan `FUN_80026BE4`, `FUN_80026D00` y
+  `FUN_80026D8C`; `FUN_800269E4` es la lectura del mando (`PadChkVsync`).
+- Papeles del fotograma: `FUN_80025720` modo de vídeo, `FUN_80025BB0` limpia
+  la tabla de orden, `FUN_800269E4` mando, `FUN_80028784` descodifica el
+  mando por tipo (`0x41`, `0x23`…), `FUN_8002DDCC` sonido, **`FUN_80025EB0`
+  despachador de modos** (`tabla[modo][paso]` en `0x800AE544`),
+  `FUN_8002C0B4` CD, `FUN_80027408` sprites 2D, `FUN_80025C20` fin de
+  fotograma. Nombres aplicables con `tools/ghidra/names.tsv`.
 
 El papel de cada una de las funciones de actualización está `SIN RESOLVER`.
 
@@ -225,13 +266,32 @@ hace `flags ^= flags & (flags << 16)`: los bits 9, 10 y 11 de la celda anulan
 los bits 25, 26 y 27. Así se resolvieron (con contraste estadístico) los bits
 altos del mapa.
 
-## 9. Lo que queda (etapa 3, siguientes pasos)
+## 9. Objetos de escena, aviones y recursos ✅
+
+| Dirección (EU) | Qué hace |
+|---|---|
+| `0x80066B64` | render de objetos de escena: reparte (`0x80065CC4`) y llama a los renders |
+| `0x80065CC4` | por objeto: distancia, y **LOD = id·4 + (0, 1 o 2 según distancia)** sobre la tabla de modelos con LOD |
+| `0x80061408` | **render jerárquico de modelos LOD**: lista de piezas de 0x38 B, cada una con matriz propia, callback, bloque de vértices elegido y `LodModel`; usa sus `+0x14`/`+0x18` (`off_gt3`/`off_gt4`) |
+| `0x8006159C`, `0x800616FC` | renders de los bloques GT3 y GT4 de los modelos LOD |
+| `0x8002953C` | **identificador de recurso**: bit 11 = pack (0 BPB, 1 SPB), bits 0-10 = entrada |
+| `0x800354B8` | secuenciador de carga: reconoce el registro de misión (tabla `0x800AF748`, índice `+0x390`) y el del avión del jugador (tabla `0x800AF79C`, índice `+0x392`) |
+| `0x80035E78`, `0x80035EF8` | carga y reproducción de **demos** (tabla `0x800AF7C8`: registro de tipo 1, misión, avión) |
+
+Tablas de datos en `ACE.BIN` con números de entrada del BPB:
+`0x800AF748` (41 misiones: registros 6-46), `0x800AF79C` (22 aviones del
+jugador: registros 47-68) y `0x800AF7C8` (16 demos: registros 111-126).
+
+## 10. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
 2. `h0` de las primitivas; qué vecino exacto corresponde a cada bit alto del
-   mapa; qué dibuja los objetos de s4 y los aviones de s2/s3 (otra lista de
-   colocación, probablemente de las secciones 7-9).
+   mapa.
+3. **El modelo del avión del jugador**: por análisis estático no aparece (ver
+   `04-formatos.md`). Propuesta: instalar un emulador con depurador
+   (PCSX-Redux o DuckStation), volcar la RAM en una misión con vista exterior
+   y localizar el `LodModel` del jugador y su origen.
    Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
    candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
    seguir el flujo desde los 32 accesos a `0x2CC($gp)`.

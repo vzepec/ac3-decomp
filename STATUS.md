@@ -33,8 +33,10 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
-- ⚠️ El **modelo del avión del jugador no está localizado**: tampoco está en
-  `ACE.BIN`. Candidatos: registros de tipo 1 grandes y ULZ variante 0
+- ⚠️ El **modelo del avión del jugador no está localizado**. Descartado por
+  análisis estático en todos los registros y en `ACE.BIN`; los huecos 0-7 de
+  la tabla de modelos LOD se rellenan en ejecución. Los registros de tipo 1
+  grandes resultaron ser las **demos**
 - ✅ **Etapa 3, primer corte** (`docs/09-codigo.md`): Ghidra 12.1.4 +
   `ghidra_psx_ldr` en `~/tools`. `ACE.BIN`: 2.011 funciones, ~749 PsyQ,
   **~1.262 propias (473 KB)**, 1.939 COP2 (incluye 155 funciones que Ghidra
@@ -59,25 +61,18 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-**Etapa 3: resolver campos de los modelos leyendo su código.**
+**Etapa 3: analizar los overlays en Ghidra** (ya extraídos y validados con
+`make overlays`; ver `docs/09-codigo.md` §2).
 
-```bash
-make acebin ghidra-import      # si data/ghidra no existe (incluye CreateMissingFunctions)
-tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
-```
+1. ✅ Importados y medidos: ~580 funciones propias; total del juego ~1.840.
+2. Papeles probables por cadenas (menú, interfaz entre misiones, BGM…):
+   confirmarlos leyendo sus pasos de modo.
+3. Avión del jugador: el índice elegido llega a `+0x48` del objeto del
+   jugador (`*0x800BACCC`); seguir quién lo usa para elegir modelo. Si no sale
+   por estático, análisis dinámico (aparcado hasta decisión del usuario).
 
-1. ✅ Hecho: `FUN_80026EE0` recoloca 4 offsets (`Model`) o 6 (`LodModel`).
-2. ✅ Hecho: `h1`, `e0`, `e1`, sección 5, y el render de terreno/objetos
-   (`0x8005FF9C`, `0x80060214`, `0x80060470`, `0x80060DC0`), que confirma el
-   layout de vértices y los offsets GTE. ✅ Bits altos del mapa de teselas:
-   anulan la reutilización de vértices de la vecina (contraste 60 % frente a
-   0,7 %). Queda `h0`.
-3. ✅ Hecho (`0x8005CDA4` + `0x8005FF9C`).
-4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,
-   para que el nombrado sea reproducible.
-
-Pendientes abiertos: el avión del jugador (registros de tipo 1); medición de
-la versión US; valorar `rea`.
+Otros: `h0`; formato de las demos; nombrar más funciones en
+`tools/ghidra/names.tsv`.
 
 ## Bloqueos conocidos
 
