@@ -153,12 +153,30 @@ Que el cargador trate distinto a s1/s4 y a s2/s3 coincide con las dos
 familias de cabecera de modelo (`Model` y `LodModel` en `tools/acemodel.py`)
 que se dedujeron solo con los datos.
 
+`FUN_80026EE0` no "inicializa": **recoloca**. Suma la dirección base del
+modelo a `n` palabras desde `modelo + 4`, salvo las que ya tienen el bit 31
+(ya son punteros). El número sale del registro `a2` en cada llamada:
+
+| Llamada | `a2` | Campos recolocados |
+|---|---|---|
+| s1, s4 (`Model`) | 4 | `off_vertices, off_unk, off_prims, off_end` |
+| s2, s3 (`LodModel`) | 6 | `off_vertices, off_x2, off_x4, (0), off_gt3, off_gt4` |
+
+Confirma desde el código que esos campos son offsets relativos al modelo, y
+que `off_unk` (siempre 0 en los datos) es el offset de un bloque opcional.
+
+Datos útiles para seguir: `$gp = 0x800BA9F4` (se fija en el arranque), así que
+la estructura de misión `0x800BACC0` se lee como `lw rX, 0x2CC($gp)`, en 32
+sitios del código.
+
 ## 7. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
-2. Decompilar `FUN_80026EE0` (inicialización de modelos) y el render de
-   modelos para resolver `h0/h1/e0/e1` de las primitivas; y el consumidor del
-   mapa de teselas para sus 3 bits altos.
+2. Localizar el render de modelos para resolver `h0/h1/e0/e1` de las
+   primitivas, y el consumidor del mapa de teselas para sus 3 bits altos.
+   Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
+   candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
+   seguir el flujo desde los 32 accesos a `0x2CC($gp)`.
 3. Repetir la medición en la versión US.
 4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra.

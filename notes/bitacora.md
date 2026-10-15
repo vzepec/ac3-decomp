@@ -5,6 +5,20 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — La "inicialización" de modelos es una recolocación
+
+`FUN_80026EE0` suma la base del modelo a `n` offsets de su cabecera; `n` = 4
+para s1/s4 y 6 para s2/s3 (leído del registro `a2` en cada llamada del
+cargador de misión). Confirma las dos cabeceras de modelo desde el código.
+
+Intento fallido: buscar el render de modelos por huella (`RTPT` y pasos de
+36/48 bytes) dio dos falsos candidatos, que resultaron ser efectos e
+iluminación. Queda seguir el flujo de datos desde `0x2CC($gp)`.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/m.c 0x80026ee0`
+y el desensamblado de las llamadas en `0x80035A60`, `0x80035AB0`,
+`0x80035B00`, `0x80035B50`
+
 ## 2026-10-15 — Cargador de misión localizado; Ghidra se dejaba 155 funciones
 
 El análisis automático de Ghidra no creaba las funciones que solo se invocan

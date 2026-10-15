@@ -62,11 +62,12 @@ make acebin ghidra-import      # si data/ghidra no existe (incluye CreateMissing
 tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80026ee0
 ```
 
-1. `FUN_80026EE0`: inicialización de cada modelo (la llama el cargador de
-   misión `0x80035730` para s1, s2, s3 y s4). Ver qué campos de la cabecera de
-   modelo toca y qué hace el parámetro `6` de los modelos con LOD.
+1. ✅ Hecho: `FUN_80026EE0` recoloca 4 offsets (`Model`) o 6 (`LodModel`).
 2. Buscar la función que dibuja modelos (debe leer las primitivas de 36/48 B y
-   usar `RTPT`): ahí deberían verse `h0/h1/e0/e1`.
+   usar `RTPT`): ahí deberían verse `h0/h1/e0/e1`. Por huella salieron falsos
+   candidatos (`0x8008FE38`, `0x8008A874`: efectos); seguir el flujo desde los
+   32 accesos a `lw rX, 0x2CC($gp)` (estructura de misión, `$gp = 0x800BA9F4`)
+   y desde las tablas guardadas en `+0x1C..+0x40`.
 3. Buscar quién lee el mapa de teselas (puntero guardado en `+0x1C` de la
    estructura de misión) para los 3 bits altos de cada celda.
 4. Script en `tools/ghidra/` que aplique nombres desde un `.tsv` versionado,
