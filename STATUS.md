@@ -33,10 +33,10 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
-- ⚠️ El **modelo del avión del jugador no está localizado**. Descartado por
-  análisis estático en todos los registros y en `ACE.BIN`; los huecos 0-7 de
-  la tabla de modelos LOD se rellenan en ejecución. Los registros de tipo 1
-  grandes resultaron ser las **demos**
+- ✅ **Avión del jugador encontrado**: en el preludio del registro de tipo 4
+  (sección inicial que el modelo de registro ignoraba). 22 aviones, 264/264
+  modelos, 7.895/7.895 primitivas validadas — `acemodel.py player`. Los
+  registros de tipo 1 grandes son las **demos**
 - ✅ **Etapa 3, primer corte** (`docs/09-codigo.md`): Ghidra 12.1.4 +
   `ghidra_psx_ldr` en `~/tools`. `ACE.BIN`: 2.011 funciones, ~749 PsyQ,
   **~1.262 propias (473 KB)**, 1.939 COP2 (incluye 155 funciones que Ghidra
@@ -61,18 +61,15 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-**Etapa 3: analizar los overlays en Ghidra** (ya extraídos y validados con
-`make overlays`; ver `docs/09-codigo.md` §2).
-
-1. ✅ Importados y medidos: ~580 funciones propias; total del juego ~1.840.
-2. Papeles probables por cadenas (menú, interfaz entre misiones, BGM…):
-   confirmarlos leyendo sus pasos de modo.
-3. Avión del jugador: el índice elegido llega a `+0x48` del objeto del
-   jugador (`*0x800BACCC`); seguir quién lo usa para elegir modelo. Si no sale
-   por estático, análisis dinámico (aparcado hasta decisión del usuario).
-
-Otros: `h0`; formato de las demos; nombrar más funciones en
-`tools/ghidra/names.tsv`.
+1. **Ensamblado del avión del jugador:** cómo se combinan las 5 piezas con
+   caras y los 7 estados de solo vértices (aerofrenos, timones…). Leer
+   `player_aircraft_load` (`0x80035C90`) y el render jerárquico
+   `lod_parts_draw` (`0x80061408`), que recibe un bloque de vértices por pieza.
+2. **Preludios sin explorar:** tipo 13 (149 KB) y tipo 17 (116-284 B en ULZ,
+   parámetros de misión; el cargador los guarda en `g_mission + 0x18` y los
+   pasa a `FUN_8005D490`).
+3. Confirmar el papel de cada overlay; `h0`; formato de las demos; seguir
+   ampliando `tools/ghidra/names.tsv`.
 
 ## Bloqueos conocidos
 
