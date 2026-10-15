@@ -5,6 +5,21 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Explosiones, humo y estelas: texturas y sistema de partículas
+
+El registro común 0000 contiene las texturas de efectos de combate (s0:
+explosiones/fuego/humo en rejilla de 64 px; s1: llamas, restos, estelas).
+Validado con un caso positivo: los fotogramas 6-15 que recorre
+`FUN_80084324` forman una animación de explosión coherente
+(`tools/acefx.py frames`). Documentados el registro de partícula (28 B), los
+4 tipos, la cola de eventos de efecto, la composición del impacto de misil y
+cómo se dibujan los proyectiles en vuelo (segmentos cabeza-cola, no humo).
+Sin resolver: qué lista de proyectil es el misil estándar; ritmo de ticks
+(¿25 Hz en PAL, 30 en NTSC?).
+
+Reproducir: `python3 tools/acefx.py sheet data/bpb/0000_*.bin` y búsqueda de
+CLUT `0x40x6`-`0x45x6` en `data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-15 — Efectos del entorno: nubes, sol y bruma (las explosiones, no)
 
 Buscando las explosiones por sus CLUT constantes en el código: s13 TIM 1 es

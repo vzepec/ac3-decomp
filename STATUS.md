@@ -67,10 +67,10 @@
 
 Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
 
-1. **Efectos**: ✅ nubes, sol/destello y bruma localizados (s13 + s8 +
-   preludio). Faltan **explosiones y estelas de misil**: buscar quién crea
-   efectos al destruir un objetivo (desde el código de impacto de misil) o
-   las texturas de s12.
+1. **Efectos**: ✅ nubes, sol/destello y bruma (s13 + s8 + preludio);
+   ✅ explosiones, humo, restos y estelas de proyectil (registro 0000 +
+   sistema de partículas, ver `docs/04-formatos.md`). Pendiente menor: qué
+   lista de proyectil es el misil estándar.
 2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
 3. **Callbacks de estado de pieza** (superficies móviles del avión).
 4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.

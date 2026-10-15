@@ -276,6 +276,68 @@ de explosión; el código muestra que es el sol. **Las explosiones no están
 localizadas.** Nota: `g_render + 0x244` = `g_mission + 0x18` (preludio) y
 `g_render + 0x268` = `g_mission + 0x3C` (sección 8).
 
+### Efectos de combate (registro común 0000), desde el código
+
+El registro **0000** (tipo 5) trae dos TIM fijos en VRAM con todos los efectos
+de combate. Exportar: `python3 tools/acefx.py sheet|frames data/bpb/0000_*.bin`.
+
+| TIM | VRAM | CLUT | Contenido |
+|---|---|---|---|
+| s0 | (448,256), tpage `0x17` | 16 filas en (352,256) | rejilla 4×4 de celdas de 64 px: explosión (celdas 6-15), fuego, humo; las filas 0-1 a media escala (celdas de 32 px) |
+| s1 | (512,256), tpage `0x18` | 12 filas en (352,272) | celdas de 32 px: salpicaduras/restos (v=0/32/64), llamas (v=96-159), estelas alargadas de proyectil (u=0xB0-0xEF), anillos |
+
+**Partículas** (depósito `DAT_800BAE00 + 0x600`: 3 grupos × 32, máscara de
+bits por grupo, `FUN_8007E76C` reserva). Registro de 28 bytes:
+
+| Offset | Campo |
+|---|---|
+| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`); se dibuja si ≥ 0 |
+| `+0x02` s16 | vida en ticks; al alcanzarla la partícula se libera |
+| `+0x04/08/0C` s32 | posición (mundo << 12) |
+| `+0x10/12/14` s16 | velocidad (se suma ×0x100 por tick) |
+| `+0x16` u16 | movimiento: bits 0-2 rozamiento (v -= v >> n), bits 3-4 gravedad (+0x8AA/0x1A00/0x3400 a vy) |
+| `+0x18` u16 | bits 0-3 parámetro, bits 4-7 **tipo** (índice en la tabla `0x800B221C`), bits 8-9 **mezcla** |
+| `+0x1A` s16 | tamaño (unidades de mundo; se proyecta como tamaño × H / z) |
+
+| Tipo | Dibujante | Aspecto |
+|---|---|---|
+| 0 | `FUN_80084324` | **explosión**: fotograma = edad×10/vida + 6 (celdas 6→15 de s0); mezcla 0 → CLUT 1 y semitransparencia media; si no, CLUT 0 y modo GPU = mezcla (1 = aditivo) |
+| 1 | `FUN_8008451C` | **humo**: mismas celdas (6 + 10·t), CLUT 3 (gris), crece de tamaño s a 2s (3s si parámetro ≠ 0) y se funde hacia el color de niebla; mezcla 2 = sustractiva (humo oscuro), 1 = aditiva (claro) |
+| 2 | `FUN_8008473C` | salpicaduras/restos en celdas de 32 px de s1 (6 u 8 fotogramas) |
+| 3 | `FUN_80084934` | sprite que gira (tabla de senos `0x800B4F84`), `SIN RESOLVER` |
+
+Valores de los generadores (`+0x18`): `0x100` = explosión aditiva,
+`0x210` = humo oscuro, `0x111` = humo claro, `0x130` = tipo 3.
+
+**Cola de eventos de efecto** (`FUN_8007C8AC`): los objetos no crean
+partículas directamente; emiten un evento que `FUN_8007D9CC` reparte:
+clase 3 = efecto puntual (7 variantes, `FUN_8007E3A0`), clase 4 = efecto con
+velocidad (10 variantes, `FUN_8007E4DC`), clase 5 = estela/restos
+(`FUN_8007E658`), clase 1 = efecto global (`FUN_8007E384`). Cada variante
+tiene un envoltorio público (p. ej. 3.0 = `FUN_8007EA98`, 4.8 humo =
+`FUN_800816F0`).
+
+**Impacto de misil** (`FUN_800684BC` → `FUN_8007F3A8` → `FUN_8007F15C`,
+sonido `0x1D`; sin impacto: efecto 4.0 y sonido `0x1C`):
+1 explosión (vida 14 ticks, tamaño 256, aditiva) + 1 destello (depósito
+`+0x33C0`, vida 9-12, tamaño 400-463) + 8 restos (depósito `+0x1098`): 2
+fragmentos ardiendo con gravedad (tamaño 240-271) y 6 chispas.
+Explosión pequeña genérica (`FUN_8007E7E0`): vida 8, tamaño 50-81
+(100-131 en la variante 2) + 2 a 5 restos.
+
+**Proyectiles en vuelo** (`FUN_8006AE1C`; objetos de 0x3C bytes en
+`DAT_800BAF08 + 0x15D0`, con dos puntos cabeza/cola): se dibujan como
+**segmentos**, no como partículas. `FUN_8008F204`: línea Gouraud
+semitransparente (naranja → amarillo pálido; trazadoras). `FUN_8008F388`,
+`F660`, `F940`, `FB00`: sprite estirado de cola a cabeza con las estelas de
+s1 (16×64 texeles en u=0xB0/0xC0/0xE0/0xD0, v=0x60, aditivo). Qué lista
+corresponde al misil estándar: `SIN RESOLVER` (probablemente `F388`).
+Tabla de armas `0x800B0A04`: 5 actualizaciones + 5 finales.
+
+**Otros**: `FUN_8008EBDC` (postquemador, llamas de s1), `FUN_80090478` /
+`FUN_80090FE0` (cintas Gouraud entre dos puntos, depósito `+0x3964`; las
+emiten el rayo láser `FUN_80081B88` y el efecto 4.9).
+
 **Sección 0 = mapa de teselas.** 65.536 celdas `u16`; los 9 bits bajos son un
 índice de tesela y `max(v & 0x1FF)` coincide **exactamente** con el número de
 teselas de la sección 1 en los 41 registros comprobados. Pintado, el mapa del

@@ -50,3 +50,23 @@
 0x8008DD10	f	clouds_draw	campo de nubes (s13 TIM 1, CLUT 315)
 0x8008A310	f	sun_flare_draw	sol y destello (s13 TIM 2, CLUT 316/317)
 0x8008C1C8	f	haze_layers_draw	capas de nubes/bruma (s13 TIM 0; parametros en s8)
+0x8007E76C	f	pool_alloc	reserva en deposito con mascara de bits
+0x800836AC	f	particles_update	edad, velocidad, rozamiento y gravedad
+0x80083D48	f	particles_draw	proyecta y llama a la tabla 0x800B221C por tipo
+0x80084324	f	fx_explosion_draw	tipo 0: celdas 6-15 de 0000 s0
+0x8008451C	f	fx_smoke_draw	tipo 1: humo, CLUT 3
+0x8008473C	f	fx_splash_draw	tipo 2: celdas de 32 px de 0000 s1
+0x800841AC	f	fx_sprite_quad	esquinas del sprite (con giro)
+0x80083A64	f	fx_update_all	actualiza todos los depositos de efectos
+0x80083B78	f	fx_draw_all	sol, bruma, clima, particulas, restos, cintas
+0x8007C8AC	f	fx_event_alloc	cola de eventos de efecto
+0x8007D9CC	f	fx_event_dispatch	reparte eventos por clase
+0x8007E3A0	f	fx_point_spawn	clase 3 (7 variantes)
+0x8007E4DC	f	fx_moving_spawn	clase 4 (10 variantes)
+0x8007E7E0	f	fx_small_explosion	vida 8, tamano 50-81
+0x8007F15C	f	fx_missile_impact	explosion + destello + 8 restos
+0x800815D4	f	fx_smoke_puff	humo claro con deriva
+0x8006AE1C	f	projectiles_draw	segmentos cabeza-cola en 5 listas
+0x8008F204	f	tracer_draw	lineas Gouraud semitransparentes
+0x8008F388	f	projectile_streak_draw	sprite estirado, estela de 0000 s1
+0x800684BC	f	weapon_end_0	final de proyectil: impacto o fallo
