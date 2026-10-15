@@ -373,7 +373,10 @@ struct LodModelHeader {
 - En los LOD altos hay **tres bloques con los mismos vértices a escala ×1,
   ×2 y ×4** (diferencias de redondeo ≤ 1 en 300/300); el de ×4 alcanza
   exactamente `extent`. Los LOD bajos guardan un solo bloque a escala 1/4
-  (`4·máx|v| ≈ extent` en 278/278). Hipótesis: precisión según distancia.
+  (`4·máx|v| ≈ extent` en 278/278). **Confirmado en el código**
+  (`scene_objects_sort`, `0x80065CC4`): son niveles de **precisión según la
+  distancia**; lejos se usa ×1, a media distancia ×2 y cerca ×4, desplazando la
+  traslación `>> (2 − nivel)`.
 - Primitivas: `u32 n` + POLY_GT3 de 32 B (código `0x34`, 3 colores) y
   `u32 n` + POLY_GT4 de 36 B (`0x3C`, 4 colores). Bloques consumidos exactos.
 - En s02 los modelos van de 4 en 4 (mismo `extent`, 155/99/39… vértices):
@@ -422,6 +425,13 @@ modelo 0 de la tabla LOD (huecos 0-3, vacíos en los datos de misión).
 | 1 | `LodModel` clásico (colores precalculados) |
 | 4 | **iluminado**: el cuarto campo de cabecera es `off_normals` (bloque de `SVECTOR` sin contador); primitivas de 24 B en los dos bloques: `u32 0`, `u8 vértices[4]`, `u8 normales[4]`, `uv0`+CLUT, `uv1`+tpage, `uv2`, `uv3` |
 | 7 | **solo vértices** (`0xFFFFFFFF` en los tres últimos campos): posiciones alternativas de las piezas móviles |
+
+**Ensamblado:** la tabla de 12 piezas se cuelga del hueco id 0 / nivel 3 de
+la tabla LOD (`*(tabla + 0xC)`, en `FUN_80032514`), y el render compone el
+avión tomando entradas concretas (vistas: e1, e6, e8), con el mismo nivel de
+precisión para todas. Varias entradas son estados alternativos de una pieza
+(e3-e6 de e2, e8 de e7, e10-e11 de e9). La lógica que elige cada estado
+(aerofrenos, timones, tren…) está `SIN RESOLVER`.
 
 Validación (`python3 tools/acemodel.py player data/bpb`): **264/264**
 entradas en los 22 aviones; **7.895/7.895** primitivas texturizan desde la

@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Escalas ×1/×2/×4 confirmadas en el código; ensamblado del jugador
+
+`scene_objects_sort` elige el bloque de vértices por distancia (×1 lejos, ×2
+medio, ×4 cerca) y ajusta la traslación: confirma la hipótesis de precisión.
+El avión del jugador se cuelga como tabla de 12 piezas en el hueco id 0 /
+nivel 3 de la tabla LOD, y el render toma entradas concretas (e1, e6, e8):
+algunas son estados alternativos de piezas móviles.
+
+Reproducir: `make ghidra-import`, DumpAll y leer `scene_objects_sort` y
+`FUN_80032514` (ver `docs/09-codigo.md`).
+
 ## 2026-10-15 — ENCONTRADO el avión del jugador: el preludio de los registros
 
 Siguiendo en el código quién rellena el modelo 0 de la tabla LOD (el del
