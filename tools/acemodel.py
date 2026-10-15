@@ -8,6 +8,9 @@ TABLA DE OFFSETS (contenedor generico, lo usan casi todas las secciones):
     u32 offset[count];      // offset[0] == 4 + 4*count ; monotonos
     // la entrada i ocupa [offset[i], offset[i+1]) y la ultima hasta el final
 
+Hay dos familias: Model (teselas s01 y objetos s04, abajo) y LodModel
+(aviones y armas de s02/s03, ver la clase).
+
 CABECERA DE MODELO (verificada en 14.095 modelos de los 41 registros):
 
     u16 zero;               // siempre 0
@@ -149,12 +152,99 @@ class Model:
         return (max(xs), min(xs), max(ys), min(ys), max(zs), min(zs))
 
 
+def _vertex_block(raw, off):
+    n = struct.unpack_from("<I", raw, off)[0]
+    verts = []
+    for g in range((n + 2) // 3):
+        x0, y0, x1, y1, x2, y2, z0, z1, z2, _ = struct.unpack_from("<10h", raw, off + 4 + 20 * g)
+        verts += [(x0, y0, z0), (x1, y1, z1), (x2, y2, z2)]
+    return verts[:n], off + 4 + 20 * ((n + 2) // 3)
+
+
+class LodModel:
+    """Modelos con LOD de las secciones 2 y 3 del tipo 17 (aviones, armas).
+
+    Cabecera: u16 0, u16 extent, u32 0x1C, u32 off_x2, u32 off_x4, u32 0,
+              u32 off_gt3, u32 off_gt4.
+    En 0x1C un bloque de vertices (mismo layout que Model). Si off_x2 y
+    off_x4 valen 0x1C no hay mas; si no, son otros dos bloques con LOS MISMOS
+    vertices a escala x2 y x4 (diferencias de redondeo <= 1), y el de x4
+    alcanza exactamente `extent`. Los LOD sin bloques extra guardan los
+    vertices a escala 1/4 (4*max|v| ~ extent).
+    GT3: u32 n ; n x 32 B = u32 0, u8 i0,i1,i2,pad, 3 x (rgb + 0x34),
+         uv0+CLUT, uv1+tpage, uv2+pad.
+    GT4: u32 n ; n x 36 B = u32 0, u8 i0..i3, 4 x (rgb + 0x3C),
+         uv0+CLUT, uv1+tpage, uv2, uv3.
+    """
+
+    def __init__(self, raw):
+        if len(raw) < 32 or raw[:2] != b"\0\0":
+            raise ValueError("no es un modelo")
+        (self.extent, ov, self.off_x2, self.off_x4, unk,
+         self.off_gt3, self.off_gt4) = struct.unpack_from("<HIIIIII", raw, 2)
+        if ov != 0x1C or unk != 0:
+            raise ValueError("cabecera de modelo LOD no reconocida")
+        self.raw = raw
+        base, end = _vertex_block(raw, 0x1C)
+        self.scaled = self.off_x2 != 0x1C
+        if self.scaled:
+            x2, end2 = _vertex_block(raw, self.off_x2)
+            x4, end4 = _vertex_block(raw, self.off_x4)
+            if end != self.off_x2 or end2 != self.off_x4 or end4 != self.off_gt3:
+                raise ValueError("bloques de vertices incoherentes")
+            if not len(base) == len(x2) == len(x4):
+                raise ValueError("bloques de escala con distinto numero de vertices")
+            self.vertices = x4
+        else:
+            if end != self.off_gt3:
+                raise ValueError("bloque de vertices incoherente con off_gt3")
+            self.vertices = [(4 * x, 4 * y, 4 * z) for x, y, z in base]
+        self.base_vertices = base
+        self.prims = []
+        n3 = struct.unpack_from("<I", raw, self.off_gt3)[0]
+        n4 = struct.unpack_from("<I", raw, self.off_gt4)[0]
+        if self.off_gt3 + 4 + 32 * n3 != self.off_gt4 or self.off_gt4 + 4 + 36 * n4 != len(raw):
+            raise ValueError("bloques de primitivas incoherentes")
+        for k in range(n3):
+            a = self.off_gt3 + 4 + 32 * k
+            self._prim(tuple(raw[a + 4:a + 7]), raw[a + 11] == raw[a + 15] == raw[a + 19] == 0x34, a + 20, a + 24)
+        for k in range(n4):
+            a = self.off_gt4 + 4 + 36 * k
+            ok = all(raw[a + 11 + 4 * j] == 0x3C for j in range(4))
+            self._prim(tuple(raw[a + 4:a + 8]), ok, a + 24, a + 28)
+
+    def _prim(self, idx, code_ok, a_uv0, a_uv1):
+        if not code_ok or max(idx) >= len(self.vertices):
+            raise ValueError("primitiva incoherente")
+        clut = struct.unpack_from("<H", self.raw, a_uv0 + 2)[0]
+        tpage = struct.unpack_from("<H", self.raw, a_uv1 + 2)[0]
+        self.prims.append({"idx": idx, "clut": clut, "tpage": tpage})
+
+    def faces(self):
+        out = []
+        for p in self.prims:
+            idx = p["idx"]
+            out.append(idx if len(idx) == 3 else (idx[0], idx[1], idx[3], idx[2]))
+        return out
+
+    def real_bbox(self):
+        xs, ys, zs = zip(*self.vertices)
+        return (max(xs), min(xs), max(ys), min(ys), max(zs), min(zs))
+
+
+def parse_model(raw):
+    """Model o LodModel segun la cabecera."""
+    if len(raw) >= 8 and struct.unpack_from("<I", raw, 4)[0] == 0x1C:
+        return LodModel(raw)
+    return Model(raw)
+
+
 def models(buf):
-    """[(indice, Model)] de una seccion con tabla de offsets de modelos."""
+    """[(indice, modelo)] de una seccion con tabla de offsets de modelos."""
     out = []
     for i, (a, b) in enumerate(offset_table(buf)):
         try:
-            out.append((i, Model(buf[a:b])))
+            out.append((i, parse_model(buf[a:b])))
         except (ValueError, struct.error):
             pass
     return out
@@ -209,7 +299,7 @@ def cmd_tilemap(directory):
 
 def cmd_check(directory):
     from acerec import Record
-    total = size_ok = bbox_n = bbox_ok = 0
+    total = size_ok = bbox_n = bbox_ok = lod_n = lod_ok = 0
     for name in sorted(os.listdir(directory)):
         rec = Record.from_file(os.path.join(directory, name))
         if rec is None or rec.type != 17:
@@ -220,14 +310,23 @@ def cmd_check(directory):
                 raw = buf[a:b]
                 if len(raw) < 24 or raw[:2] != b"\0\0":
                     continue
-                if struct.unpack_from("<I", raw, 4)[0] not in (0x18, 0x24):
+                if struct.unpack_from("<I", raw, 4)[0] not in (0x18, 0x1C, 0x24):
                     continue
                 total += 1
                 try:
-                    m = Model(raw)
+                    m = parse_model(raw)
                 except (ValueError, struct.error):
                     continue
                 size_ok += 1
+                if isinstance(m, LodModel):
+                    lod_n += 1
+                    if m.scaled:
+                        mx = max(max(map(abs, v)) for v in m.vertices)
+                        lod_ok += int(mx == m.extent)
+                    else:
+                        mx = max(max(map(abs, v)) for v in m.base_vertices)
+                        lod_ok += int(abs(4 * mx - m.extent) <= 4)
+                    continue
                 if m.bbox:
                     bbox_n += 1
                     bbox_ok += int(m.bbox == m.real_bbox())
@@ -235,7 +334,8 @@ def cmd_check(directory):
     print(f"vertices + primitivas coherentes (bloques consumidos exactos,")
     print(f"  codigos GPU, indices y offsets GTE): {size_ok}/{total}")
     print(f"bbox de cabecera == bbox de vertices (objetos): {bbox_ok}/{bbox_n}")
-    return 0 if size_ok == total and bbox_ok == bbox_n else 1
+    print(f"modelos LOD con extent coherente con su escala: {lod_ok}/{lod_n}")
+    return 0 if size_ok == total and bbox_ok == bbox_n and lod_ok == lod_n else 1
 
 
 def main(argv):
@@ -246,14 +346,16 @@ def main(argv):
     if len(argv) >= 3 and argv[1] == "list":
         buf = open(argv[2], "rb").read()
         for i, m in models(buf):
-            extra = f" bbox={m.bbox}" if m.bbox else ""
+            extra = f" bbox={m.bbox}" if getattr(m, "bbox", None) else ""
+            if isinstance(m, LodModel):
+                extra = " LOD " + ("escalas x1/x2/x4" if m.scaled else "escala 1/4")
             print(f"{i:4d} extent={m.extent:5d} vertices={len(m.vertices):4d} prims={len(m.prims):4d}{extra}")
         return 0
     if len(argv) >= 4 and argv[1] in ("verts", "obj"):
         buf = open(argv[2], "rb").read()
         i = int(argv[3])
         a, b = offset_table(buf)[i]
-        m = Model(buf[a:b])
+        m = parse_model(buf[a:b])
         if argv[1] == "verts":
             print(f"modelo {i}: {len(m.vertices)} vertices, bbox real {m.real_bbox()}")
             for j, v in enumerate(m.vertices):

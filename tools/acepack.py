@@ -35,6 +35,7 @@ Uso:
     python3 tools/acepack.py <imagen.bin> inventory      # inventario + cabeceras
     python3 tools/acepack.py <imagen.bin> records        # cabecera comun de cada registro
     python3 tools/acepack.py <imagen.bin> tags           # semantica del tag
+    python3 tools/acepack.py <imagen.bin> xa [SPB|BPB]   # subcabeceras XA por entrada
     python3 tools/acepack.py <imagen.bin> extract BPB <dir>   # extraer entradas
 """
 import os
@@ -185,6 +186,42 @@ def cmd_tags(disc):
         print(f"{PAIRS[which][1]}: tamano = (tag & 0xFFFFFF) * 4 cumple en {ok}/{idx.count}")
 
 
+XA_FLAGS = ((0x80, "EOF"), (0x40, "RT"), (0x20, "FORM2"), (0x10, "TRIG"),
+            (0x08, "DATA"), (0x04, "AUDIO"), (0x02, "VIDEO"), (0x01, "EOR"))
+
+
+def cmd_xa(disc, which):
+    """Clasifica cada entrada por la subcabecera XA de sus sectores.
+
+    Resultado en ACE.SPB (EU): las categorias 0xF3, 0xF4 y 0xFB son sobre
+    todo audio XA-ADPCM (submodo 0x64 = RT|FORM2|AUDIO) entrelazado en varios
+    canales, con ~9 % de sectores Form 2 de datos intercalados (SIN RESOLVER);
+    las dos entradas 0xF8 son datos en tiempo real (submodo 0x48 = RT|DATA,
+    con algunos 0x64 de audio intercalados): probable video STR. Los sectores
+    Form 2 llevan 2324 bytes utiles, no 2048: leerlos con read() no sirve.
+    """
+    import collections
+    if disc.sector_size != 2352:
+        print("hace falta una imagen de 2352 bytes por sector para ver subcabeceras")
+        return
+    idx, pack = load(disc, which)
+    print(f"{'#':>4} {'cat':>4} {'sectores':>9}  submodos (num. sectores) / canales")
+    for i, tag, sec, nbytes in idx.extents(pack.size):
+        nsec = nbytes // SECTOR
+        if nsec == 0:
+            continue
+        modes = collections.Counter()
+        chans = set()
+        for s in range(nsec):
+            disc.f.seek((pack.lba + sec + s) * 2352 + 16)
+            sub = disc.f.read(4)
+            modes[sub[2]] += 1
+            chans.add(sub[1])
+        desc = ", ".join(
+            "%s(%d)" % ("|".join(n for b, n in XA_FLAGS if m & b) or "0", c) for m, c in modes.most_common(3))
+        print(f"{i:>4} 0x{tag >> 24:02X} {nsec:>9}  {desc} / {len(chans)} canales")
+
+
 def cmd_extract(disc, which, outdir):
     idx, pack = load(disc, which)
     os.makedirs(outdir, exist_ok=True)
@@ -213,6 +250,8 @@ def main(argv):
         for which in PAIRS:
             cmd_records(disc, which)
             print()
+    elif cmd == "xa":
+        cmd_xa(disc, argv[3] if len(argv) > 3 else "SPB")
     elif cmd == "tags":
         cmd_tags(disc)
     elif cmd == "extract":

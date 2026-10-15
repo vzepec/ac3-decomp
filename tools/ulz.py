@@ -32,8 +32,12 @@ declarado, la holgura de cada flujo es
 en las 659 secciones. Un error en el orden de bits, la polaridad o el reparto
 distancia/longitud rompe esa coherencia de inmediato.
 
-La variante (byte alto de 0x04) vale 2 en todos los casos vistos. Si aparece
-otra, el descompresor se niega en vez de adivinar.
+La variante (byte alto de 0x04) vale 2 en todas las secciones de primer
+nivel. La variante 0 aparece en las 604 entradas ULZ anidadas del registro de
+tipo 13 (0072): con este mismo algoritmo salen TIM con cabeceras coherentes,
+pero en 413/604 el flujo de literales se queda corto (se piden mas literales
+de los que hay entre lit_off y ref_off). La diferencia exacta de la variante 0
+esta SIN RESOLVER, asi que el descompresor se niega a tratarla.
 
 Uso:
     python3 tools/ulz.py <archivo> [offset] [salida]   # descomprimir uno

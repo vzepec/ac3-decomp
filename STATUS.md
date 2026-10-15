@@ -27,40 +27,55 @@
 - ✅ EU y US comparten terreno, modelos y texturas; solo cambian textos y la
   sección 15
 - ✅ `ACE.DAT` es relleno (`tools/acedat.py`)
+- ✅ **Bancos de sonido del SPU** (tipo 4 s2, tipo 17 s15, tipo 13 s8): 63/63
+  por disco, ADPCM a WAV — `make sounds`. Corrige la hipótesis de "punteros a
+  código": eran direcciones de la RAM del SPU
+- ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
+  POLY_GT3/GT4: 578/578 — `make models`
+- ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
+- ⚠️ El **modelo del avión del jugador no está localizado** (ver abajo)
 
 ## Siguiente tarea concreta
 
-**Descifrar el formato de la sección 2 del tipo 4 (aviones del jugador)**,
-que comparte formato con la sección 15 del tipo 17. Es el candidato a modelo
-jerárquico de avión, que es lo que necesita la rebanada vertical de la etapa 4.
+La etapa 1 tiene su criterio de salida cumplido y la rebanada vertical (etapa
+4) ya tiene un avión que dibujar: el modelo 8 de la sección 2 del registro
+0006. Dos opciones; **la recomendada es la A**:
+
+**A. Empezar la etapa 2: descomprimir `ACE.BIN` de forma estática.** Pista
+nueva (sin verificar): el campo `0x14` de la cabecera (`0x5C`) es el offset
+de los datos comprimidos, y en ellos se lee `"Can't" FF " ope"`, es decir,
+literales en claro con un byte de flags `0xFF` intercalado: patrón de un LZ con
+flags de 8 bits. Un LZSS clásico (Okumura, ventana de 4 KB) **no** lo
+descomprime bien (consume solo ~206 KB de 413 KB): es una variante.
 
 ```bash
-make extract-bpb
-python3 tools/acerec.py dump data/bpb/0047_*_t04.bin data/sec
-xxd data/sec/0047_tage000206c_t04_s02.bin | head -40
+python3 -c "import sys; sys.path.insert(0,'tools'); from psxiso import Disc; \
+b=Disc('Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Electrosphere (Europe) (En,Fr,De,Es,It).bin').read_file('ACE.BIN'); \
+open('data/ace_bin.raw','wb').write(b)"
+xxd -s 0x5c data/ace_bin.raw | head -40
 ```
 
-Pistas (sin verificar):
+Criterio de validación: la salida debe medir exactamente 700.416 bytes,
+consumir exactamente los 413.772 − 0x5C de entrada, y dar una densidad de
+prólogos MIPS comparable a `SCES_020.66` (`tools/psexe.py` la mide). Si el
+formato no sale por análisis, buscar el descompresor en `SCES_020.66` (que
+está en claro) o volcar la RAM con un emulador.
 
-1. Empieza con `u32` cuyo byte alto es 0 y valores tipo `0x043C90` que caen
-   en el rango de `ACE.BIN` (`0x10000`-`0xBB000`) y **cambian entre EU y US**:
-   probablemente punteros a funciones del ejecutable.
-2. Aparece repetida la palabra `ff 80 c9 5f`; buscar el periodo de registro.
-3. Comprobar si reutiliza el formato de modelo de `tools/acemodel.py`
-   (cabecera `u16 0, u16 extent, u32 0x24…`) en algún nivel.
+**B. Seguir buscando el modelo del avión del jugador.** Descartados: tipo 4,
+tipo 17 s02/s03, SPB. Candidatos: los 16 registros de tipo 1 (0111-0126,
+formato desconocido) y las entradas ULZ de variante 0 del tipo 13. Si no
+aparece en los datos, puede estar dentro de `ACE.BIN`, con lo que A lo
+desbloquea también.
 
-Tareas de cierre de la etapa 1, en paralelo o después:
-
-- Campos `h0`/`h1`/`e0`/`e1` de las primitivas y bits altos del mapa de teselas
-- Exportar `.obj` con UV + atlas de textura (las CLUT/tpage ya están decodificadas)
-- Secciones 2, 3, 5, 7-9 del tipo 17 y el registro de tipo 13
-- `ACE.SPB`: identificar vídeo (STR/MDEC) y audio (XA) por subcabecera de sector
+Pendientes menores de la etapa 1: ULZ variante 0; campos `h0/h1/e0/e1` de las
+primitivas; bits altos del mapa de teselas; campos sin resolver de los bancos
+de sonido; frecuencia de muestreo de las muestras; `.obj` con UV y atlas.
 
 ## Bloqueos conocidos
 
 | Bloqueo | Impacto | Cómo se levanta |
 |---|---|---|
-| `ACE.BIN` comprimido | **No se puede analizar ni medir el código del juego** | Etapa 2: volcado de RAM desde emulador, o reimplementar el descompresor |
+| `ACE.BIN` comprimido | **No se puede analizar ni medir el código del juego** | Etapa 2: hay pista de formato (ver arriba); si no, volcado de RAM o descompresor de `SCES_020.66` |
 | Ghidra no instalado | Etapa 3 no puede empezar | Instalarlo con el loader de PSX y soporte COP2/GTE |
 | Semántica del `tag` en el SPB | Menor: la extracción ya funciona sin ella | Comparar con subcabeceras XA de cada entrada |
 

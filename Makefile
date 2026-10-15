@@ -4,7 +4,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds check
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -18,6 +18,7 @@ help:
 	@echo "make ulz-check  - valida el descompresor ULZ en todas las secciones"
 	@echo "make sections   - resumen de secciones (descomprimidas) por tipo"
 	@echo "make models     - valida el formato de modelos (vertices) en todo el BPB"
+	@echo "make sounds     - valida los bancos de sonido del SPU"
 	@echo "make textures   - vuelca a data/png/ las TIM del registro REC (def. 0006)"
 	@echo "make check      - comprueba que las herramientas corren"
 	@echo ""
@@ -54,6 +55,9 @@ sections:
 models:
 	@$(PY) tools/acemodel.py check data/bpb
 
+sounds:
+	@$(PY) tools/acesnd.py check data/bpb
+
 textures:
 	@mkdir -p data/sec data/png
 	@$(PY) tools/acerec.py dump data/bpb/$(REC)_*.bin data/sec
@@ -80,4 +84,4 @@ brief:
 	@echo "  para el flujo de trabajo desde terminal."
 
 check:
-	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel; print('herramientas OK')"
+	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel, acesnd; print('herramientas OK')"

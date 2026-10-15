@@ -11,7 +11,8 @@ CLI. Los atajos están en el `Makefile` de la raíz.
 | `ulz.py` | Descompresor ULZ de Namco (`Ulz\x1a`). `--check` valida la coherencia de flujos en todas las secciones |
 | `acerec.py` | Registros de `ACE.BPB`: tabla de secciones, volcado descomprimido, resumen por tipo |
 | `tim2png.py` | Escanea TIM estándar (validadas por `bnum`) y las exporta a PNG sin dependencias |
-| `acemodel.py` | Modelos del tipo 17: lista vértices, exporta `.obj` (nube de puntos), validación global |
+| `acemodel.py` | Modelos del tipo 17 (terreno, objetos, aviones con LOD): vértices, caras, `.obj`, validación |
+| `acesnd.py` | Bancos de sonido del SPU: listado, validación y ADPCM a WAV |
 | `acedat.py` | Demuestra que `ACE.DAT` es relleno |
 
 ## Uso directo
@@ -31,6 +32,9 @@ python3 tools/tim2png.py scan data/sec/0006_*_s14.bin
 python3 tools/tim2png.py png  data/sec/0006_*_s14.bin data/png
 python3 tools/acemodel.py list  data/sec/0006_*_s04.bin
 python3 tools/acemodel.py verts data/sec/0006_*_s04.bin 0
+python3 tools/acesnd.py  list data/sec/0047_*_s02.bin
+python3 tools/acesnd.py  wav  data/sec/0047_*_s02.bin data/wav
+python3 tools/acepack.py <imagen.bin> xa
 python3 tools/acedat.py  <imagen EU>
 ```
 

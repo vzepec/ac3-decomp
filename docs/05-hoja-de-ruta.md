@@ -40,8 +40,11 @@ japonesa. Ver `03-versiones.md`.
 | Vértices y caras de modelos del tipo 17 | ✅ `tools/acemodel.py`, 14.095/14.095 |
 | Mapa de teselas del terreno | ✅ índice de 9 bits, base 1 |
 | Contenido de `ACE.DAT` (42 MB) | ✅ relleno, `tools/acedat.py` |
-| Modelos de avión (tipo 4 s2 / tipo 17 s15) | ⬜ siguiente |
-| `ACE.SPB` (streaming: vídeo/audio) | ⬜ |
+| Aviones de misión con LOD (tipo 17 s02/s03) | ✅ 578/578 |
+| Bancos de sonido del SPU | ✅ `tools/acesnd.py`, 63/63 |
+| `ACE.SPB`: qué es | ✅ audio XA + vídeo (subcabeceras) |
+| Modelo del avión del jugador | ⬜ no localizado (siguiente) |
+| ULZ variante 0 (tipo 13, interfaz) | ⬜ |
 
 **Criterio de salida:** poder extraer de `ACE.BPB` una textura y verla como
 PNG, y un modelo y listar sus vértices.

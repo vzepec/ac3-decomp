@@ -70,6 +70,14 @@ otra cosa. `SIN RESOLVER`.
 
 ### `ACE.SPB` — pack de streaming, 72 entradas
 
+**Resuelto qué es** (`python3 tools/acepack.py <imagen> xa`): las
+subcabeceras XA dicen que `0xF3`, `0xF4` y `0xFB` son audio XA-ADPCM
+(`RT|FORM2|AUDIO`) entrelazado en hasta 10 canales, con ~9 % de sectores
+Form 2 de datos intercalados; las dos `0xF8` son `RT|DATA` con audio
+intercalado (probable vídeo STR). Son sectores **Form 2**: 2.324 bytes útiles,
+así que la tabla de abajo, hecha leyendo 2.048, es solo orientativa. No hay
+modelos en el SPB.
+
 | Categoría | Entradas | Volumen | Hipótesis |
 |---|---|---|---|
 | `0xF8` | 2 | 37,9 MiB | Dos bloques de ~19 MB al inicio del pack: vídeo de apertura (MDEC) |
@@ -193,15 +201,15 @@ Reproducible con `make sections` y `make models`.
 |---|---|---|---|---|
 | 0 | sí | **Mapa de teselas** 256×256 `u16` (131.072 B fijos) | sí | ✅ ver abajo |
 | 1 | sí | **Teselas de terreno**: tabla de modelos (187-491) | sí | ✅ vértices |
-| 2 | sí | Tabla de 128 entradas, pocas no vacías | sí | `SIN RESOLVER` |
-| 3 | sí | Tabla de 4 o 16 entradas | sí | `SIN RESOLVER` |
+| 2 | sí | **Aviones de la misión con LOD**: 128 huecos (32 × 4 LOD) | sí | ✅ ver abajo |
+| 3 | sí | **Modelos pequeños con LOD** (¿armas?): 4 o 16 huecos | sí | ✅ geometría |
 | 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
 | 5 | sí | Sin tabla de offsets | sí | `SIN RESOLVER` |
 | 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
 | 7-9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
 | 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
 | 11-14 | sí | **Texturas**: avión, radar, fuente, iconos | sí | ✅ |
-| 15 | no | Formato propio; difiere entre regiones | **no** | `SIN RESOLVER` |
+| 15 | no | **Banco de sonido del SPU** (ver abajo) | **no** | ✅ |
 
 **Sección 0 = mapa de teselas.** 65.536 celdas `u16`; los 9 bits bajos son un
 índice de tesela y `max(v & 0x1FF)` coincide **exactamente** con el número de
@@ -216,7 +224,8 @@ espejo, que explicaría el residuo) sigue `SIN RESOLVER`.
 
 **Comparación EU/US:** las secciones 0-5 y 7-14 son **idénticas byte a byte**
 en los 41 registros. Solo cambian la 6 (textos) y la 15. Terreno, modelos y
-texturas son comunes a las dos versiones.
+texturas son comunes a las dos versiones. La 15 difiere porque es el banco de
+sonido, cuya dirección base en la RAM del SPU cambia entre versiones.
 
 #### Formato de modelo (secciones 1 y 4 del tipo 17) ✅ vértices y caras
 
@@ -272,18 +281,78 @@ menores que el número de vértices y los offsets de los bytes 8-15 coinciden
 con los índices. Renderizado en alámbrico, el terreno colocado según el mapa
 de teselas forma costas continuas.
 
+#### Modelos con LOD (secciones 2 y 3 del tipo 17) ✅
+
+Implementado en `tools/acemodel.py` (`LodModel`). Verificado en **578/578**.
+
+```c
+struct LodModelHeader {
+    u16 zero; u16 extent;
+    u32 off_vertices;    // 0x1C siempre
+    u32 off_x2, off_x4;  // 0x1C si no hay bloques extra
+    u32 zero2;
+    u32 off_gt3, off_gt4;
+};
+```
+
+- Vértices con el mismo layout de grupos de 3 que los modelos de terreno.
+- En los LOD altos hay **tres bloques con los mismos vértices a escala ×1,
+  ×2 y ×4** (diferencias de redondeo ≤ 1 en 300/300); el de ×4 alcanza
+  exactamente `extent`. Los LOD bajos guardan un solo bloque a escala 1/4
+  (`4·máx|v| ≈ extent` en 278/278). Hipótesis: precisión según distancia.
+- Primitivas: `u32 n` + POLY_GT3 de 32 B (código `0x34`, 3 colores) y
+  `u32 n` + POLY_GT4 de 36 B (`0x3C`, 4 colores). Bloques consumidos exactos.
+- En s02 los modelos van de 4 en 4 (mismo `extent`, 155/99/39… vértices):
+  un avión con sus niveles de detalle. Renderizado, el modelo 8 del registro 6
+  es un avión con alas en flecha y deriva.
+- Las texturas que usan están en VRAM (768/800, 256): las pieles de la
+  sección 11 de la misma misión. **No** usan la página de la piel del jugador
+  (tipo 4, en (704,256)): son los aviones enemigos/aliados de la misión.
+
+#### Bancos de sonido del SPU (tipo 17 s15, tipo 4 s2, tipo 13 s8) ✅
+
+Implementado en `tools/acesnd.py`. Verificado en **63/63** (EU) y **63/63**
+(US).
+
+```c
+u8  b0;  u8 n;  u16 b2;      // n = numero de entradas; b0, b2 SIN RESOLVER
+u32 spu_base;                // destino en la RAM del SPU
+u32 size;                    // bytes de ADPCM
+struct { u32 id; u16 p0, p1; u16 vol; u8 u0; u8 note;
+         u32 adsr; u32 addr; } entry[n];      // 20 B
+u8  adpcm[size];             // + relleno de ceros
+```
+
+Validación: todos los bloques ADPCM válidos, el último con flag de fin, y cada
+`addr - spu_base` alineado y justo detrás de un fin de muestra. Decodificadas a
+PCM: 15 millones de muestras sin un solo recorte en EU.
+
+**Corrige una hipótesis anterior:** los valores que cambian entre EU y US
+(`0x043C90` / `0x0496D0`) son `spu_base`, no punteros a código de `ACE.BIN`.
+
 #### Tipo 4 — aviones del jugador (22 registros)
 
 | Sec | ULZ | Contenido |
 |---|---|---|
 | 0 | sí | 168-220 B, `SIN RESOLVER` (¿parámetros?) |
 | 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
-| 2 | no | Mismo formato que la sección 15 del tipo 17; difiere entre regiones |
+| 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 
-En la sección 2 lo que cambia entre EU y US son valores como `0x043C90` /
-`0x0496D0`, que caen en el rango de carga de `ACE.BIN` (`0x10000`-`0xBB000`).
-Hipótesis `SIN RESOLVER`: punteros a funciones del ejecutable, que se
-recolocan entre versiones. Candidato a contener el modelo jerárquico del avión.
+**El modelo 3D del avión del jugador no está en estos registros** ni en
+ninguno de formato conocido: ver "Lo que queda sin resolver".
+
+#### Tipo 13 — interfaz (1 registro, 0072)
+
+12 secciones sin comprimir; dentro, **cada entrada de tabla es un ULZ
+independiente de variante 0** (604 en total). Las entradas empiezan por
+cabecera TIM: son imágenes de interfaz/menú. La sección 8 es un banco de
+sonido. La variante 0 de ULZ no está resuelta del todo (ver `tools/ulz.py`).
+
+#### Tipo 1 grandes (16 registros, 0111-0126)
+
+`u32 1, u32 8`, luego una tabla de 2 entradas: la primera siempre de 8.276 B,
+la segunda de 140-358 KB. No es código (0 prólogos MIPS), no es ULZ, no es
+ADPCM del SPU (≤ 28 % de bloques válidos frente a ~100 %). `SIN RESOLVER`.
 
 #### Tipo 5 — briefings de misión (40 registros)
 
@@ -293,15 +362,17 @@ entradas por idioma. La sección 3 contiene TIM.
 
 ## Lo que queda sin resolver
 
-1. Campos `h0`, `h1`, `e0`, `e1` de las primitivas y los 3 bits altos del
-   mapa de teselas.
-2. **Formato de la sección 15 del tipo 17 y la 2 del tipo 4** (probables
-   modelos jerárquicos / objetos con punteros a código).
-3. Secciones 2, 3, 5, 7-9 del tipo 17; el tipo 13; las tablas 1-5 del BPB.
-4. **El `tag` del SPB** y el campo `unk` del BPH (`0x16C3` / `0x16CF`).
-5. El contenido de `ACE.SPB` (vídeo/audio por streaming).
-
-`ACE.DAT` ya no está en la lista: es relleno (`tools/acedat.py`).
+1. **Dónde está el modelo 3D del avión del jugador.** Descartados: tipo 4
+   (piel + icono + sonido), tipo 17 s02/s03 (aviones de la misión, que no
+   usan la textura del jugador), SPB (audio/vídeo). Candidatos: los 16
+   registros grandes de tipo 1 y las entradas de variante 0 del tipo 13.
+   Si no aparece en los datos, puede vivir dentro de `ACE.BIN` (etapa 2).
+2. **ULZ variante 0** (tipo 13).
+3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
+   teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
+4. Secciones 5, 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.
+5. **El `tag` del SPB**, el campo `unk` del BPH y los sectores de datos
+   intercalados en el audio XA.
 
 ## Cómo seguir
 
@@ -309,6 +380,7 @@ entradas por idioma. La sección 3 contiene TIM.
 make extract-bpb       # las 127 entradas en data/bpb/
 make ulz-check         # descompresor validado
 make sections          # mapa de secciones por tipo
-make models            # validacion de vertices
+make models            # validacion de modelos (terreno, objetos, LOD)
+make sounds            # validacion de bancos de sonido
 make textures REC=0006 # TIM a PNG en data/png/
 ```

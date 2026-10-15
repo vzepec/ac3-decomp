@@ -53,7 +53,7 @@ Cabecera **propietaria de Namco**, no PS-EXE. Magic `PS-Y4a\xe3w`.
 | `0x08` | `0x800BB000` | dirección final = carga + tamaño descomprimido | ✅ verificado |
 | `0x0C` | `0x6504C` = 413.772 | **tamaño del archivo, exacto** | ✅ verificado |
 | `0x10` | `0xAB000` = 700.416 | tamaño descomprimido | ✅ verificado |
-| `0x14` | `0x5C` = 92 | ¿número de secciones? | ⚠️ sin resolver |
+| `0x14` | `0x5C` = 92 | offset del inicio de los datos comprimidos (la cabecera mide 0x5C; ahí empiezan literales legibles como `Can't ope`) | ⚠️ probable, sin verificar con un descompresor |
 | `0x1C` | `0x8002521C` | punto de entrada | ✅ verificado |
 | `0x24` | `0x80010000` | dirección de carga | ✅ verificado |
 | `0x28` | `0xAB000` | tamaño | ✅ verificado |

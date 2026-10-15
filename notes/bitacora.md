@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Bancos de sonido, aviones con LOD y el SPB (corrige una hipótesis)
+
+La "siguiente tarea" suponía que la sección 2 del tipo 4 era el modelo del
+avión con punteros a código. **Falso**: es un banco de sonido del SPU, igual
+que la sección 15 del tipo 17 y la 8 del tipo 13. Los valores que cambiaban
+entre EU y US son la dirección base en la RAM del SPU. Validado en 63/63
+bancos por disco; 15 M muestras PCM decodificadas sin recortes.
+
+Los aviones están en la sección 2 del tipo 17: modelos de 4 en 4 (LOD), con
+tres bloques de vértices a escala ×1/×2/×4 en el LOD alto, y primitivas
+POLY_GT3/GT4. 578/578 válidos; el render del modelo 8 del registro 6 es un
+avión. Pero usan las pieles de la misión, no la del jugador: el modelo del
+avión del jugador sigue sin aparecer.
+
+`ACE.SPB` es audio XA y vídeo (subcabeceras de sector Form 2). El tipo 13 son
+imágenes de interfaz en ULZ de variante 0 (no resuelta del todo).
+
+Reproducir: `make sounds`; `make models`;
+`python3 tools/acepack.py <imagen EU> xa`;
+`python3 tools/acemodel.py obj data/sec/0006_tage0028567_t17_s02.bin 8 data/obj/avion.obj`
+
 ## 2026-10-15 — Primitivas de los modelos y base del mapa de teselas
 
 Bloque 1: `u32 n` + POLY_FT4 de 36 B (código `0x2C`); bloque 2: `u32 n` +

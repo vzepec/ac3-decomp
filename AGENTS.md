@@ -79,7 +79,8 @@ tools/
   ulz.py             descompresor ULZ de Namco (secciones de los registros)
   acerec.py          secciones de los registros de ACE.BPB
   tim2png.py         TIM a PNG
-  acemodel.py        modelos 3D (vertices) del tipo 17
+  acemodel.py        modelos 3D del tipo 17 (terreno, objetos, aviones LOD)
+  acesnd.py          bancos de sonido del SPU (ADPCM a WAV)
   acedat.py          demuestra que ACE.DAT es relleno
   README.md          que hace cada herramienta y como usarla
 notes/
