@@ -23,6 +23,8 @@ void scene_init(Scene *s) { memset(s, 0, sizeof *s); }
 void scene_free(Scene *s) {
     free(s->tiles.v);
     free(s->plane.v);
+    for (int i = 0; i < 4; i++) free(s->enemy[i].v);
+    free(s->missile.v);
     memset(s, 0, sizeof *s);
 }
 
@@ -144,6 +146,8 @@ static void emit_prim(Mesh *mesh, float (*v)[3], const uint8_t idx[4], const uin
     }
 }
 
+static int add_plane_model(Mesh *dst, const uint8_t *m, uint32_t len);
+
 /* ---- Model (teselas: off_vertices = 0x18, relleno de 12 B por primitiva) ---- */
 
 static int add_tile_model(Scene *s, const uint8_t *m, uint32_t len, uint32_t tile) {
@@ -205,13 +209,33 @@ int scene_load_mission(Scene *s, Disc *d, AcePack *p, uint32_t record) {
     }
     s->ntiles = n;
     free(tl);
+    /* aviones de la mision: entradas de s2 con los tres bloques de escala (LOD alto) */
+    uint8_t *la = section_data(&r, 2, &len);
+    static uint32_t ls[128], le[128];
+    uint32_t nl = la ? offset_table(la, len, ls, le, 128) : 0;
+    s->nenemy = 0;
+    for (uint32_t i = 0; i < nl && s->nenemy < 4; i++) {
+        const uint8_t *m = la + ls[i];
+        uint32_t ml = le[i] - ls[i];
+        if (ml < 32 || rd32(m + 4) != 0x1C || rd32(m + 8) == 0x1C) continue;  /* vacio o LOD bajo */
+        Mesh *dst = &s->enemy[s->nenemy];
+        dst->n = 0;
+        if (add_plane_model(dst, m, ml) == 0 && dst->n) s->nenemy++;
+    }
+    free(la);
+    /* misil: s3, entrada 3 (12 vertices, 8x8x52: comun a todas las misiones) */
+    uint8_t *wp = section_data(&r, 3, &len);
+    uint32_t nw = wp ? offset_table(wp, len, ls, le, 128) : 0;
+    s->missile.n = 0;
+    if (nw > 3) add_plane_model(&s->missile, wp + ls[3], le[3] - ls[3]);
+    free(wp);
     free(raw);
     return 0;
 }
 
 /* ---- avion del jugador: preludio del tipo 4, tabla de 12 LodModel ---- */
 
-static int add_plane_model(Scene *s, const uint8_t *m, uint32_t len) {
+static int add_plane_model(Mesh *dst, const uint8_t *m, uint32_t len) {
     static float v[512][3], v2[512][3], nrm[1024][3];
     uint32_t n, n2, end, end2;
     if (len < 32 || rd16(m) != 0 || rd32(m + 4) != 0x1C) return -1;
@@ -271,7 +295,7 @@ static int add_plane_model(Scene *s, const uint8_t *m, uint32_t len) {
             for (int k = 0; k < 4; k++) {
                 if (idx[k] >= n || (lit && nid[k] >= nn)) return -1;
             }
-            emit_prim(&s->plane, v, idx, uv, col, lit ? nrm : NULL, nid, quad && idx[3] != idx[2], tpage, clut, 0, 0);
+            emit_prim(dst, v, idx, uv, col, lit ? nrm : NULL, nid, quad && idx[3] != idx[2], tpage, clut, 0, 0);
         }
     }
     /* los modelos clasicos no traen normales: se dejan a 0 y el shader no los ilumina */
@@ -293,7 +317,7 @@ int scene_load_aircraft(Scene *s, Disc *d, AcePack *p, uint32_t record) {
     if (!n) { free(pm); free(raw); return -2; }
     s->plane.n = 0;
     for (uint32_t i = 0; i < n; i++) {
-        if (add_plane_model(s, pm + st[i], en[i] - st[i])) { free(pm); free(raw); return -3; }
+        if (add_plane_model(&s->plane, pm + st[i], en[i] - st[i])) { free(pm); free(raw); return -3; }
     }
     free(pm);
     free(raw);

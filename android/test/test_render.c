@@ -40,9 +40,21 @@ int main(int argc, char **argv) {
     float secs = atof(argv[4]);
     for (float t = 0; t < secs; t += 1.0f / 60) {
         if (argc > 6) { a.lx = t < secs * 0.5f ? 0.3f : 0.0f; a.ly = 0.35f; }
+        a.fire = ((int)(t * 4) % 2) == 0;   /* dispara a rafagas */
         update(&a, 1.0f / 60);
     }
+    a.fps_shown = 60;
+    if (argc > 7) {  /* enemigo delante para verlo de cerca */
+        for (int k = 0; k < 3; k++) {
+            Enemy *e = &a.enemies[k];
+            e->alive = 1; e->type = k % (int)a.scene->nenemy;
+            e->pos = (V3){a.pos.x + a.fwd.x * (380 + 260 * k) + a.right.x * (k - 1) * 140, a.pos.y + 20 + 25 * k, a.pos.z + a.fwd.z * (380 + 260 * k)};
+            e->fwd = (V3){-a.right.x, 0, -a.right.z}; e->up = (V3){0, 1, 0}; e->right = a.fwd; e->bank = 0;
+        }
+        a.target = 0;
+    }
     draw(&a);
+    printf("enemigos vivos: %d  blanco: %d  derribos: %d\n", (int)(a.enemies[0].alive + a.enemies[1].alive + a.enemies[2].alive + a.enemies[3].alive + a.enemies[4].alive + a.enemies[5].alive + a.enemies[6].alive + a.enemies[7].alive), a.target, a.kills);
     glFinish();
     GLenum err = glGetError();
     unsigned char *px = malloc(W * H * 4);

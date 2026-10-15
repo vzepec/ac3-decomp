@@ -17,12 +17,37 @@
 
 typedef struct { float x, y, z; } V3;
 
+#define MAX_ENEMIES 8
+#define MAX_MISSILES 24
+#define MAX_BOOMS 16
+
+typedef struct {
+    V3 pos, fwd, right, up, wp;
+    float speed, bank, respawn, wp_timer;
+    int type, alive;
+} Enemy;
+
+typedef struct {
+    V3 pos, dir;
+    float speed, life;
+    int target, active;
+} Missile;
+
+typedef struct {
+    V3 pos;
+    float t;
+    int active;
+} Boom;
+
 
 typedef struct {
     void *platform;        /* struct android_app * en Android */
     int w, h;
     /* GL */
     GLuint prog, vram_tex, vao_tiles, vbo_tiles, vao_plane, vbo_plane;
+    GLuint vao_enemy[4], vbo_enemy[4], vao_missile, vbo_missile;
+    GLuint prog_solid, vao_solid, vbo_solid;
+    GLint us_mvp, us_color;
     GLint u_mvp, u_model, u_cam, u_lit, u_light, u_fogcol, u_fog;
     /* datos */
     Disc disc;
@@ -36,9 +61,19 @@ typedef struct {
     float speed;
     /* mando */
     float lx, ly, rx, ry, lt, rt;
-    int l1, r1, sel, start;
+    int l1, r1, sel, start, fire, fire_prev;
     float cam_yaw, cam_pitch;
-    /* tiempo */
+    /* combate */
+    Enemy enemies[MAX_ENEMIES];
+    Missile missiles[MAX_MISSILES];
+    Boom booms[MAX_BOOMS];
+    int target, kills, fire_side;
+    float fire_cd;
+    uint32_t rng;
+    /* tiempo y contador de fps */
+    float fps_shown;
+    double fps_hud_t;
+    int fps_hud_frames;
     double last, fps_t;
     int frames;
 } App;

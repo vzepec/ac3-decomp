@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — APK 0.3: misiles, enemigos, HUD de fps y controles invertidos
+
+Confirmado por el usuario que la 0.2 funciona en la Retroid. La 0.3 añade:
+enemigos con los aviones de la misión (s2, LOD alto) y una IA sencilla;
+misiles con el modelo real del juego (s3 entrada 3: 12 vértices, 8×8×52,
+igual en todas las misiones) guiados al blanco fijado; explosiones; contador
+de fps y de derribos. El cabeceo estaba al revés de lo que decía el código:
+ahora palanca hacia delante = morro abajo, como el original. Cámara a la
+mitad de distancia. Verificado en el PC con `android/test/test_render.c`.
+
 ## 2026-10-15 — APK 0.2: la imagen de disco se elige con el selector del sistema
 
 En la Retroid la versión 0.1 se quedaba en magenta: no encontraba la imagen

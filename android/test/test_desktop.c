@@ -20,6 +20,8 @@ int main(int argc, char **argv) {
     int tims_mission = s.tims_loaded;
     printf("mision: %d  teselas %u  triangulos de terreno %u  TIM subidas %d\n", rm, s.ntiles, s.tiles.n / 3, tims_mission);
     int ra = scene_load_aircraft(&s, &d, &p, atoi(argv[3]));
+    printf("enemigos: %u tipos (%u, %u triangulos)  misil: %u triangulos\n", s.nenemy, s.enemy[0].n / 3,
+           s.enemy[1].n / 3, s.missile.n / 3);
     printf("avion: %d  triangulos %u  TIM subidas %d\n", ra, s.plane.n / 3, s.tims_loaded - tims_mission);
     unsigned long sum = 0;
     for (int i = 0; i < VRAM_W * VRAM_H; i++) sum += s.vram[i];

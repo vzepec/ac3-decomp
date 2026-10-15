@@ -48,7 +48,8 @@ Todavía no hay texto en pantalla:
 
 | Mando | Acción |
 |---|---|
-| palanca izquierda | cabeceo (hacia delante = morro abajo) y alabeo |
+| palanca izquierda | cabeceo invertido como el original (hacia delante = morro abajo) y alabeo |
+| A / B | disparar misil (se guía hacia el blanco del recuadro verde) |
 | R2 / L2 | acelerar / frenar |
 | R1 / L1 | guiñada |
 | palanca derecha | girar la cámara |
@@ -56,6 +57,19 @@ Todavía no hay texto en pantalla:
 | Select | misión siguiente (registros 6-46) |
 | Start | volver a la posición inicial |
 | Select + Start | elegir otra imagen de disco |
+
+## HUD y combate
+
+- Arriba a la derecha, discreto: **fps** (media de cada medio segundo).
+  Arriba a la izquierda: **K** = derribos.
+- **Enemigos**: hasta 8 aviones de la propia misión (sección 2 del registro,
+  sus modelos y pieles originales) con una IA sencilla que vuela entre puntos
+  de paso alrededor del jugador. Al ser alcanzados explotan y reaparecen a
+  los 5 s.
+- **Misiles**: modelo real del juego (sección 3, entrada 3). Se fija el
+  enemigo más centrado en un cono de ~35° y a menos de 14.000 unidades
+  (recuadro verde); el misil acelera y se guía hacia él.
+- El texto del HUD usa una fuente propia de 5×7 (no es la del juego).
 
 ## Rendimiento
 
@@ -81,6 +95,7 @@ build/test_desktop <imagen.bin> 6 55
 
 - Vuelo arcade simple, sin física real del juego, sin IA, HUD ni misiones.
 - Solo se dibujan las piezas del avión en su estado base (sin superficies
-  móviles) y el terreno (sin objetos de s4 ni aviones de la misión).
+  móviles), el terreno, los enemigos y los misiles (no los objetos de s4).
+- Combate simplificado: los enemigos no disparan ni hay colisiones entre aviones.
 - Iluminación aproximada (luz fija); los colores precalculados del terreno sí
   son los del juego.

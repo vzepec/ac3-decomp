@@ -188,6 +188,8 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         int down = AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN;
         int32_t k = AKeyEvent_getKeyCode(e);
         switch (k) {
+        case AKEYCODE_BUTTON_A:
+        case AKEYCODE_BUTTON_B: a->fire = down; return 1;   /* misil */
         case AKEYCODE_BUTTON_L1: a->l1 = down; return 1;
         case AKEYCODE_BUTTON_R1: a->r1 = down; return 1;
         case AKEYCODE_BUTTON_L2: a->lt = down; return 1;
@@ -278,6 +280,12 @@ void android_main(struct android_app *app) {
         eglSwapBuffers(P.dpy, P.surf);
         first_frame = 0;
         a.frames++;
+        a.fps_hud_frames++;
+        if (t - a.fps_hud_t >= 0.5) {
+            a.fps_shown = a.fps_hud_frames / (float)(t - a.fps_hud_t);
+            a.fps_hud_frames = 0;
+            a.fps_hud_t = t;
+        }
         if (t - a.fps_t >= 2.0) {
             LOG("%.1f fps", a.frames / (t - a.fps_t));
             a.frames = 0;

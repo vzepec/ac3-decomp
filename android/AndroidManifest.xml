@@ -2,8 +2,8 @@
 <!-- AC3 Slice: rebanada vertical de la etapa 4. No contiene datos del juego. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3slice"
-    android:versionCode="2"
-    android:versionName="0.2">
+    android:versionCode="3"
+    android:versionName="0.3">
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />

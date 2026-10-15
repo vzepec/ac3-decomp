@@ -33,6 +33,10 @@ typedef struct {
     uint32_t ntiles;
     /* avion del jugador (espacio de modelo, morro hacia -z) */
     Mesh plane;
+    /* aviones de la mision (s2, LOD alto) y misil (s3, entrada 3) */
+    Mesh enemy[4];
+    uint32_t nenemy;
+    Mesh missile;
     int tims_loaded;
 } Scene;
 
