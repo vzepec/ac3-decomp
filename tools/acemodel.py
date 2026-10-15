@@ -76,6 +76,7 @@ Uso:
     python3 tools/acemodel.py normals <dir_bpb>             # h1/e0/e1 y normales (s5)
     python3 tools/acemodel.py player <dir_bpb>              # aviones del jugador (tipo 4)
     python3 tools/acemodel.py export-player <registro_t04.bin> <dir>   # .obj+.mtl+PNG
+    python3 tools/acemodel.py hangar <dir_bpb>              # registro -> nombre de avion
 """
 import os
 import struct
@@ -515,6 +516,100 @@ def export_player(record_path, outdir):
     return os.path.join(outdir, stem + ".obj"), rows
 
 
+HANGAR_NAMES = [  # transcripcion de los rotulos de t13 s1, en su orden
+    "EF2000E Typhoon II", "MiG-33 Fulcrum SS", "F/A-18U Hornet ADV", "F-16XFU Gyrfalcon",
+    "R-101 Delphinus#1", "R-201 Asterozoa", "F-16XA Sakerfalcon", "F-15S/MT Eagle+",
+    "F-22C Raptor II", "F/A-32C Erne", "Su-37 Super Flanker", "R-102 Delphinus#2",
+    "R-211 Orcinus", "Su-43 Berkut", "R-103 Delphinus#3", "XFA-36A Game",
+    "RF-12A2 Blackbird", "R-352 Sepia", "XR-900 Geopelia", "X-49 Night Raven",
+    "UI-4054 Aurora"]
+
+
+def _norm_mask(w, h, alpha, n=48):
+    xs = [i % w for i, a in enumerate(alpha) if a]
+    ys = [i // w for i, a in enumerate(alpha) if a]
+    x0, x1, y0, y1 = min(xs), max(xs), min(ys), max(ys)
+    return [alpha[int(y0 + (y1 - y0) * (j + 0.5) / n) * w + int(x0 + (x1 - x0) * (i + 0.5) / n)]
+            for j in range(n) for i in range(n)]
+
+
+def _model_silhouette(ms, w=128):
+    alpha = [0] * (w * w)
+    parts = [m for _, m in ms if m.prims]
+    ext = max(max(abs(v[0]), abs(v[2])) for m in parts for v in m.vertices)
+    k = (w / 2 - 2) / ext
+    for m in parts:
+        for p in m.prims:
+            pts = [(w / 2 + m.vertices[i][0] * k, w / 2 - m.vertices[i][2] * k) for i in p["idx"]]
+            tris = [pts[:3]] + ([[pts[1], pts[3], pts[2]]] if len(pts) == 4 else [])
+            for (x0, y0), (x1, y1), (x2, y2) in tris:
+                d = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0)
+                if abs(d) < 1e-9:
+                    continue
+                for y in range(int(max(0, min(y0, y1, y2))), int(min(w - 1, max(y0, y1, y2))) + 1):
+                    for x in range(int(max(0, min(x0, x1, x2))), int(min(w - 1, max(x0, x1, x2))) + 1):
+                        a = ((x1 - x) * (y2 - y) - (x2 - x) * (y1 - y)) / d
+                        b = ((x2 - x) * (y0 - y) - (x0 - x) * (y2 - y)) / d
+                        if a >= 0 and b >= 0 and a + b <= 1:
+                            alpha[y * w + x] = 1
+    return _norm_mask(w, w, alpha)
+
+
+def cmd_hangar(directory):
+    """Registro de tipo 4 -> nombre de avion, por silueta.
+
+    Compara la silueta cenital de cada avion del jugador con las 21 vistas del
+    hangar (t13 s0, mismo orden que los rotulos de t13 s1), probando las 4
+    rotaciones y el espejo, con IoU sobre mascaras normalizadas.
+    Resultado (EU): el indice i (registro 47+i) es el avion i-1 del hangar
+    para i = 1..21; el indice 0 es otro XR-900 Geopelia (prototipo oculto).
+    """
+    import ulz
+    import tim2png
+    from acerec import Record
+    n = 48
+    hang_rec = [f for f in sorted(os.listdir(directory)) if f.endswith("_t13.bin")][0]
+    sec = Record.from_file(os.path.join(directory, hang_rec)).section(0)
+    hang = []
+    for a, b in offset_table(sec):
+        x = ulz.decompress(sec, a, b)
+        t = tim2png.scan(x)[0]
+        w, h, px = tim2png.to_rgba(x, t)
+        hang.append(_norm_mask(w, h, [1 if px[i * 4 + 3] and sum(px[i * 4:i * 4 + 3]) > 40 else 0
+                                      for i in range(w * h)], n))
+
+    def rot(m):
+        return [m[(n - 1 - i) * n + j] for j in range(n) for i in range(n)]
+
+    def flip(m):
+        return [m[j * n + (n - 1 - i)] for j in range(n) for i in range(n)]
+
+    def iou(a, b):
+        inter = sum(1 for x, y in zip(a, b) if x and y)
+        uni = sum(1 for x, y in zip(a, b) if x or y)
+        return inter / uni if uni else 0.0
+
+    idx = 0
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith("_t04.bin"):
+            continue
+        raw = open(os.path.join(directory, name), "rb").read()
+        if struct.unpack_from("<2I", raw, 0) != (4, 0x14):
+            continue
+        _, ms = player_models(raw)
+        v = _model_silhouette(ms)
+        views = []
+        for _ in range(4):
+            views += [v, flip(v)]
+            v = rot(v)
+        scores = sorted(((max(iou(x, hm) for x in views), k) for k, hm in enumerate(hang)), reverse=True)
+        (s1, k1), (s2, k2) = scores[0], scores[1]
+        print(f"{name[:4]} (indice {idx:2d}): {HANGAR_NAMES[k1]:<22} IoU {s1:.2f}  "
+              f"(segundo: {HANGAR_NAMES[k2]} {s2:.2f})")
+        idx += 1
+    return 0
+
+
 def cmd_player(directory):
     """Valida los modelos de avion del jugador de los 22 registros de tipo 4."""
     import collections
@@ -599,6 +694,8 @@ def main(argv):
         out, rows = export_player(argv[2], argv[3])
         print(f"{out}  (texturas para las filas de CLUT {rows})")
         return 0
+    if len(argv) >= 3 and argv[1] == "hangar":
+        return cmd_hangar(argv[2])
     if len(argv) >= 3 and argv[1] == "player":
         return cmd_player(argv[2])
     if len(argv) >= 3 and argv[1] == "normals":

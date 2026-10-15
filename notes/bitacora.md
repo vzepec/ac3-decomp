@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Papel de los overlays 1 y 2 desde el código
+
+Su primer paso de modo inicializa una máquina de subpantallas de menú según
+banderas del estado y restaura la última misión y avión elegidos. Con sus
+cadenas: overlay 1 = menú principal; overlay 2 = interfaz de campaña entre
+misiones. Estados de pieza del avión: el repartidor prepara los bloques de
+vértices de todas las entradas; la elección/interpolación debe estar en el
+callback por pieza (sin localizar).
+
+## 2026-10-15 — Correspondencia registro → avión, por silueta
+
+Silueta cenital de cada avión del jugador frente a las 21 vistas del hangar:
+los registros 0048-0068 son los 21 aviones en el orden del hangar (IoU
+0,77-0,95, siempre máximo en el que toca); el 0047 es otro XR-900 Geopelia
+(prototipo oculto). Primer intento fallido por orientación (el hangar tiene
+el morro a la derecha): ahora se prueban rotaciones y espejo.
+
+Reproducir: `python3 tools/acemodel.py hangar data/bpb`
+
 ## 2026-10-15 — Avión del jugador exportado con texturas (UV validadas)
 
 `acemodel.py export-player` saca `.obj` + `.mtl` + texturas. Rasterizados en

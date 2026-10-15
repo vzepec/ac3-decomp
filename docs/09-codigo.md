@@ -83,6 +83,16 @@ Importados en Ghidra (base `0x800C9DC0`, con `CreateMissingFunctions`):
 | 5 | 9 | 8 | 8 | 4 KB | 0 | títulos de los temas (¿modo de sonido / créditos?) |
 
 Solo `CdMix` (libcd) aparece como librería; el resto es código de Namco.
+
+**Evidencia del código para los overlays 1 y 2** (su primer paso de modo):
+ambos inicializan una máquina de subpantallas de menú cuyo estado inicial
+depende de banderas del estado del juego (`g_state + 0x964`, `+0x970`: de
+dónde se viene) y restauran la última misión y el último avión elegidos
+(`+0x390 ← +0x394`, `+0x392 ← +0x396`). El overlay 2 reserva un búfer de
+trabajo de 128 KB. Con sus cadenas: **overlay 1 = menú principal (título,
+cargar/guardar)** y **overlay 2 = interfaz de campaña entre misiones
+(informe, hangar, resultados)**. Probable; las subpantallas concretas siguen
+`SIN RESOLVER`.
 **Total del juego: unas 1.840 funciones propias (~690 KB)**: ~1.262 en
 `ACE.BIN` y ~580 en los overlays.
 
