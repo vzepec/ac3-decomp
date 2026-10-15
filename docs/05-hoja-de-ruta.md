@@ -25,7 +25,7 @@ japonesa. Ver `03-versiones.md`.
 
 ---
 
-## Etapa 1 — Arqueología de assets 🔄 EN CURSO
+## Etapa 1 — Arqueología de assets ✅ CRITERIO DE SALIDA CUMPLIDO
 
 **Objetivo:** entender y documentar los contenedores de datos del disco.
 
@@ -34,10 +34,17 @@ japonesa. Ver `03-versiones.md`.
 | Lectura de imágenes `MODE2/2352` y tabla ISO9660 | ✅ `tools/psxiso.py` |
 | Formato de los índices `ACE.SPH` / `ACE.BPH` | ✅ resuelto, 100 % de cobertura |
 | Extracción de los 199 recursos | ✅ `make extract-bpb` |
-| Semántica del campo `tag` | ⬜ sin resolver |
-| Formato interno de los registros tipo `0x11` (geometría/texturas) | ⬜ siguiente |
-| Localizar y convertir TIM a PNG | ⬜ |
-| Contenido de `ACE.DAT` (42 MB) | ⬜ |
+| Semántica del campo `tag` | ✅ BPB (tamaño en `u32`) · ⬜ SPB |
+| Compresión de las secciones (ULZ) | ✅ `tools/ulz.py`, 659/659 |
+| Localizar y convertir TIM a PNG | ✅ `tools/tim2png.py` |
+| Vértices y caras de modelos del tipo 17 | ✅ `tools/acemodel.py`, 14.095/14.095 |
+| Mapa de teselas del terreno | ✅ índice de 9 bits, base 1 |
+| Contenido de `ACE.DAT` (42 MB) | ✅ relleno, `tools/acedat.py` |
+| Aviones de misión con LOD (tipo 17 s02/s03) | ✅ 578/578 |
+| Bancos de sonido del SPU | ✅ `tools/acesnd.py`, 63/63 |
+| `ACE.SPB`: qué es | ✅ audio XA + vídeo (subcabeceras) |
+| Modelo del avión del jugador | ⬜ no localizado (siguiente) |
+| ULZ variante 0 (tipo 13, interfaz) | ⬜ |
 
 **Criterio de salida:** poder extraer de `ACE.BPB` una textura y verla como
 PNG, y un modelo y listar sus vértices.

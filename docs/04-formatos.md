@@ -23,7 +23,9 @@ struct AceIndexHeader {   // 0x14 = 20 bytes
 };
 
 struct AceIndexEntry {    // 8 bytes
-    u32 tag;              // byte alto = categoria ; 24 bits bajos = ID  SIN RESOLVER
+    u32 tag;              // byte alto = categoria
+                          // BPB: 24 bits bajos = tamano del registro en u32 (verificado)
+                          // SPB: SIN RESOLVER
     u32 sector;           // offset dentro del pack, en sectores de 2048 bytes
 };
 ```
@@ -53,9 +55,28 @@ Con ese criterio la suma de extensiones cubre **el 100 %** de los dos packs
 (316,3 MiB y 33,0 MiB), lo que confirma que no hay huecos ni solapes y que la
 interpretación es correcta.
 
+## Semántica del `tag` ✅ RESUELTA EN EL BPB
+
+Reproducible con `make tags`.
+
+En `ACE.BPB`, `(tag & 0xFFFFFF) * 4` es el **tamaño exacto del registro en
+bytes**; la extensión en el pack es ese valor redondeado a sector. Se cumple
+en **127/127** entradas del disco europeo y **127/127** del americano.
+
+En `ACE.SPB` la regla **no** se cumple (0/72, 0/88): allí el tag significa
+otra cosa. `SIN RESOLVER`.
+
 ## Categorías observadas (byte alto de `tag`)
 
 ### `ACE.SPB` — pack de streaming, 72 entradas
+
+**Resuelto qué es** (`python3 tools/acepack.py <imagen> xa`): las
+subcabeceras XA dicen que `0xF3`, `0xF4` y `0xFB` son audio XA-ADPCM
+(`RT|FORM2|AUDIO`) entrelazado en hasta 10 canales, con ~9 % de sectores
+Form 2 de datos intercalados; las dos `0xF8` son `RT|DATA` con audio
+intercalado (probable vídeo STR). Son sectores **Form 2**: 2.324 bytes útiles,
+así que la tabla de abajo, hecha leyendo 2.048, es solo orientativa. No hay
+modelos en el SPB.
 
 | Categoría | Entradas | Volumen | Hipótesis |
 |---|---|---|---|
@@ -126,48 +147,240 @@ Hallazgos notables:
   conocida y traen punteros precalculados. Eso **revela el mapa de memoria en
   tiempo de ejecución** y es muy valioso para la etapa 3.
 
-#### ⚠️ Resultado negativo importante: no hay TIM estándar
+#### Compresión: las secciones van en ULZ ✅ RESUELTO
 
-Se buscó la cabecera TIM (magic `10 00 00 00` seguido de un campo de flags
-con modo de color plausible) en registros de tipo 17 y 4: **cero
-coincidencias**. Las texturas **no** se almacenan como TIM suelto dentro de
-estos registros.
+Reproducible con `make ulz-check`. Implementado en `tools/ulz.py`.
 
-Hipótesis a probar: van empaquetadas en formato propio dentro de una de las
-secciones, o pre-formateadas como un bloque listo para subir a la VRAM del
-GPU con `LoadImage` (en cuyo caso no llevarían cabecera TIM, solo un
-rectángulo de destino y los píxeles).
+Las 16 secciones del tipo 17 (salvo la 15) y la sección 1 del tipo 4 vienen
+comprimidas con **ULZ**, un formato LZ de Namco (magic `Ulz\x1a`):
 
-No perder tiempo buscando TIM de nuevo.
+```c
+struct UlzHeader {          // 16 bytes
+    char magic[4];          // "Ulz\x1a"
+    u32  size_variant;      // bits 0-23: tamano descomprimido ; 24-31: variante (siempre 2)
+    u32  lit_off_nbits;     // bits 0-23: offset del flujo de literales ; 24-31: nbits
+    u32  ref_off;           // offset del flujo de referencias
+};                          // flujo de flags: desde 0x10 hasta lit_off
+```
+
+Tres flujos independientes. Flags: palabras `u32` LE consumidas del bit 31 al
+0. Bit `1` → copiar un byte de literales. Bit `0` → leer un `u16` `v` de
+referencias: `distancia = (v & ((1<<nbits)-1)) + 1`, `longitud = (v >> nbits) + 3`.
+
+**Validación:** tras producir exactamente el tamaño declarado, la holgura de
+cada flujo es siempre 4 bytes (flags: una palabra terminadora), 0-3
+(literales: alineación) y 0 o 2 (referencias: alineación a `u32`), en las
+**659 de 659** secciones ULZ. Ninguna referencia apunta fuera de la ventana.
+
+#### Las texturas SÍ son TIM, dentro del ULZ ✅
+
+Reproducible con `make textures`. Implementado en `tools/tim2png.py`.
+
+La búsqueda anterior de cabeceras TIM dio cero porque se hizo sobre datos
+**comprimidos**. Tras descomprimir aparecen TIM estándar de Sony (casi todas
+4 bpp con CLUT), con su destino en VRAM. Validación del escaneo:
+`bnum == 12 + 2*w*h` en todos los bloques y destino dentro de 1024×512.
+
+Verificado a ojo en el registro 6: una **fuente** con acentos europeos, la
+**piel de un avión** vista desde arriba y el **mapa de radar** de la zona.
+
+#### Contenedor genérico: tabla de offsets ✅
+
+Casi todas las secciones descomprimidas empiezan igual:
+
+```c
+u32 count;
+u32 offset[count];     // offset[0] == 4 + 4*count, monotonos
+```
+
+#### Tipo 17 — misión / escenario (41 registros)
+
+Reproducible con `make sections` y `make models`.
+
+| Sec | ULZ | Contenido | EU = US | Estado |
+|---|---|---|---|---|
+| 0 | sí | **Mapa de teselas** 256×256 `u16` (131.072 B fijos) | sí | ✅ ver abajo |
+| 1 | sí | **Teselas de terreno**: tabla de modelos (187-491) | sí | ✅ vértices |
+| 2 | sí | **Aviones de la misión con LOD**: 128 huecos (32 × 4 LOD) | sí | ✅ ver abajo |
+| 3 | sí | **Modelos pequeños con LOD** (¿armas?): 4 o 16 huecos | sí | ✅ geometría |
+| 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
+| 5 | sí | Sin tabla de offsets | sí | `SIN RESOLVER` |
+| 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
+| 7-9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
+| 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
+| 11-14 | sí | **Texturas**: avión, radar, fuente, iconos | sí | ✅ |
+| 15 | no | **Banco de sonido del SPU** (ver abajo) | **no** | ✅ |
+
+**Sección 0 = mapa de teselas.** 65.536 celdas `u16`; los 9 bits bajos son un
+índice de tesela y `max(v & 0x1FF)` coincide **exactamente** con el número de
+teselas de la sección 1 en los 41 registros comprobados. Pintado, el mapa del
+registro 6 muestra mar, costa y una ciudad en cuadrícula, con la misma silueta
+que su textura de radar. **El índice es base 1** (`tesela = s01[(v & 0x1FF) - 1]`):
+con base 1 los vértices de bordes compartidos entre teselas vecinas coinciden
+en altura en el **99,4 %** de los casos (4.707.247/4.734.343, 41 registros),
+frente al 74,6 % con base 0 (`python3 tools/acemodel.py tilemap data/bpb`).
+Qué codifican los 3 bits altos (≈0,5 % de las celdas; probablemente giro o
+espejo, que explicaría el residuo) sigue `SIN RESOLVER`.
+
+**Comparación EU/US:** las secciones 0-5 y 7-14 son **idénticas byte a byte**
+en los 41 registros. Solo cambian la 6 (textos) y la 15. Terreno, modelos y
+texturas son comunes a las dos versiones. La 15 difiere porque es el banco de
+sonido, cuya dirección base en la RAM del SPU cambia entre versiones.
+
+#### Formato de modelo (secciones 1 y 4 del tipo 17) ✅ vértices y caras
+
+Implementado en `tools/acemodel.py`.
+
+```c
+struct ModelHeader {
+    u16 zero;
+    u16 extent;          // teselas: 4387 fijo ; objetos: >= max|coord|
+    u32 off_vertices;    // 0x18 teselas, 0x24 objetos
+    u32 off_unk;         // 0 en todos los vistos
+    u32 off_prims;       // bloque 1: primitivas planas   (POLY_FT4)
+    u32 off_end;         // bloque 2: primitivas Gouraud  (POLY_GT4)
+    // objetos: u32 0 ; s16 bbox[6] = xmax,xmin, ymax,ymin, zmax,zmin
+};
+// en off_vertices:
+u32 n;
+struct { s16 x0,y0, x1,y1, x2,y2; s16 z0,z1,z2; s16 pad; } group[(n+2)/3];
+```
+
+Los vértices van en **grupos de tres**, con los `(x,y)` juntos y los `z`
+aparte: es justo lo que el GTE necesita para `RTPT` (transformar 3 vértices
+de una vez cargando `VXY0..2` y `VZ0..2` con `lwc2`).
+
+**Validación:** `off_vertices + 4 + 20*ceil(n/3) == off_prims` en **14.095 de
+14.095** modelos; en los 421 objetos con bbox, la bbox de la cabecera es
+**exactamente** el mín/máx de los vértices decodificados (**421/421**). La
+tesela de mar da las cuatro esquinas `(±1024, -1126, ±1024)`.
+
+Las teselas miden 2048×2048 unidades.
+
+**Primitivas** (`u32 n` y `n` registros en cada bloque):
+
+| Off | Tipo | Campo |
+|---|---|---|
+| 0 | `u8`, `u8` | `h0` (0-6), `h1` (0-2) — `SIN RESOLVER` |
+| 2 | `u16` | 0 |
+| 4 | `u16`×2 | `e0`, `e1` — `SIN RESOLVER` (¿clave de profundidad?) |
+| 8 | `u8[8]` | por vértice, offset en bytes de su `xy` y su `z` en el bloque de vértices (listos para el GTE; redundantes con los índices) |
+| 16 | `u8[4]` | índices `i0..i3`; orden de tira: cara `i0,i1,i3,i2`; triángulo si `i3 == i2` |
+| 20 | | `uv0`, CLUT (`x=(c&63)*16`, `y=c>>6`), `uv1`, tpage, `uv2`, `uv3` |
+| 32 | | FT4 (36 B): `rgb` + `0x2C` · GT4 (48 B): 4 × (`rgb` + `0x3C`) |
+
+Los últimos bytes son literalmente la palabra color+código de un paquete del
+GPU de PS1. En las teselas cada bloque va seguido de 12 bytes de ceros por
+primitiva (huecos que el motor rellenará con coordenadas de pantalla); en los
+objetos no hay relleno. Las CLUT y tpages apuntan exactamente a las zonas de
+VRAM donde se cargan las TIM del mismo registro.
+
+**Validación:** en **14.095/14.095** modelos los dos bloques se consumen
+exactamente, todos los códigos son `0x2C`/`0x3C`, todos los índices son
+menores que el número de vértices y los offsets de los bytes 8-15 coinciden
+con los índices. Renderizado en alámbrico, el terreno colocado según el mapa
+de teselas forma costas continuas.
+
+#### Modelos con LOD (secciones 2 y 3 del tipo 17) ✅
+
+Implementado en `tools/acemodel.py` (`LodModel`). Verificado en **578/578**.
+
+```c
+struct LodModelHeader {
+    u16 zero; u16 extent;
+    u32 off_vertices;    // 0x1C siempre
+    u32 off_x2, off_x4;  // 0x1C si no hay bloques extra
+    u32 zero2;
+    u32 off_gt3, off_gt4;
+};
+```
+
+- Vértices con el mismo layout de grupos de 3 que los modelos de terreno.
+- En los LOD altos hay **tres bloques con los mismos vértices a escala ×1,
+  ×2 y ×4** (diferencias de redondeo ≤ 1 en 300/300); el de ×4 alcanza
+  exactamente `extent`. Los LOD bajos guardan un solo bloque a escala 1/4
+  (`4·máx|v| ≈ extent` en 278/278). Hipótesis: precisión según distancia.
+- Primitivas: `u32 n` + POLY_GT3 de 32 B (código `0x34`, 3 colores) y
+  `u32 n` + POLY_GT4 de 36 B (`0x3C`, 4 colores). Bloques consumidos exactos.
+- En s02 los modelos van de 4 en 4 (mismo `extent`, 155/99/39… vértices):
+  un avión con sus niveles de detalle. Renderizado, el modelo 8 del registro 6
+  es un avión con alas en flecha y deriva.
+- Las texturas que usan están en VRAM (768/800, 256): las pieles de la
+  sección 11 de la misma misión. **No** usan la página de la piel del jugador
+  (tipo 4, en (704,256)): son los aviones enemigos/aliados de la misión.
+
+#### Bancos de sonido del SPU (tipo 17 s15, tipo 4 s2, tipo 13 s8) ✅
+
+Implementado en `tools/acesnd.py`. Verificado en **63/63** (EU) y **63/63**
+(US).
+
+```c
+u8  b0;  u8 n;  u16 b2;      // n = numero de entradas; b0, b2 SIN RESOLVER
+u32 spu_base;                // destino en la RAM del SPU
+u32 size;                    // bytes de ADPCM
+struct { u32 id; u16 p0, p1; u16 vol; u8 u0; u8 note;
+         u32 adsr; u32 addr; } entry[n];      // 20 B
+u8  adpcm[size];             // + relleno de ceros
+```
+
+Validación: todos los bloques ADPCM válidos, el último con flag de fin, y cada
+`addr - spu_base` alineado y justo detrás de un fin de muestra. Decodificadas a
+PCM: 15 millones de muestras sin un solo recorte en EU.
+
+**Corrige una hipótesis anterior:** los valores que cambian entre EU y US
+(`0x043C90` / `0x0496D0`) son `spu_base`, no punteros a código de `ACE.BIN`.
+
+#### Tipo 4 — aviones del jugador (22 registros)
+
+| Sec | ULZ | Contenido |
+|---|---|---|
+| 0 | sí | 168-220 B, `SIN RESOLVER` (¿parámetros?) |
+| 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
+| 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
+
+**El modelo 3D del avión del jugador no está en estos registros** ni en
+ninguno de formato conocido: ver "Lo que queda sin resolver".
+
+#### Tipo 13 — interfaz (1 registro, 0072)
+
+12 secciones sin comprimir; dentro, **cada entrada de tabla es un ULZ
+independiente de variante 0** (604 en total). Las entradas empiezan por
+cabecera TIM: son imágenes de interfaz/menú. La sección 8 es un banco de
+sonido. La variante 0 de ULZ no está resuelta del todo (ver `tools/ulz.py`).
+
+#### Tipo 1 grandes (16 registros, 0111-0126)
+
+`u32 1, u32 8`, luego una tabla de 2 entradas: la primera siempre de 8.276 B,
+la segunda de 140-358 KB. No es código (0 prólogos MIPS), no es ULZ, no es
+ADPCM del SPU (≤ 28 % de bloques válidos frente a ~100 %). `SIN RESOLVER`.
+
+#### Tipo 5 — briefings de misión (40 registros)
+
+Sin comprimir. Textos de briefing ("Neuwork air unit transporting military
+supplies…") y listas de enemigos ("R-501 Rhincodon x 2"), con una tabla de 5
+entradas por idioma. La sección 3 contiene TIM.
 
 ## Lo que queda sin resolver
 
-1. **Semántica de los 24 bits bajos de `tag`.** Comprobado que **no** son el
-   tamaño en bytes. Candidatos: ID de recurso, hash de nombre, o un par
-   `(tipo:16, índice:16)` — en el SPB el byte alto varía en pasos de `0x20`
-   (`0xF340`, `0xF360`, `0xF380`…), lo que apunta a un campo compuesto.
-2. **El campo `unk` en `0x0C` del BPH** (`0x16C3` / `0x16CF`).
-3. **Los formatos internos** de cada tipo de registro (4, 5, 6, 7, 8, 17).
-   El tipo 17 es el objetivo prioritario: contiene la geometría y las
-   texturas.
-4. **Qué contiene `ACE.DAT`** (42 MB, solo en la versión europea). No tiene
-   índice propio en el disco; probablemente lo indexa el código.
+1. **Dónde está el modelo 3D del avión del jugador.** Descartados: tipo 4
+   (piel + icono + sonido), tipo 17 s02/s03 (aviones de la misión, que no
+   usan la textura del jugador), SPB (audio/vídeo). Candidatos: los 16
+   registros grandes de tipo 1 y las entradas de variante 0 del tipo 13.
+   Si no aparece en los datos, puede vivir dentro de `ACE.BIN` (etapa 2).
+2. **ULZ variante 0** (tipo 13).
+3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
+   teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
+4. Secciones 5, 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.
+5. **El `tag` del SPB**, el campo `unk` del BPH y los sectores de datos
+   intercalados en el audio XA.
 
 ## Cómo seguir
 
 ```bash
-make records                  # tipos de registro y tablas de seccion
-make extract-bpb              # extrae las 127 entradas a data/bpb/
+make extract-bpb       # las 127 entradas en data/bpb/
+make ulz-check         # descompresor validado
+make sections          # mapa de secciones por tipo
+make models            # validacion de modelos (terreno, objetos, LOD)
+make sounds            # validacion de bancos de sonido
+make textures REC=0006 # TIM a PNG en data/png/
 ```
-
-Siguiente objetivo: **las 16 secciones de un registro de tipo 17**. Para cada
-sección, mirar su tamaño y sus primeros bytes y clasificarla. Se buscan:
-
-- Un bloque de píxeles para VRAM (sin cabecera TIM, ver arriba) junto con un
-  rectángulo de destino
-- Una CLUT (paleta): 16 o 256 entradas de 16 bits
-- Listas de primitivas del GPU o geometría: tripletes de `s16` como
-  coordenadas de vértice
-
-Comparar la **misma** entrada entre el disco europeo y el americano ayuda:
-lo que cambie es dato localizado, lo que no cambie es geometría o código.

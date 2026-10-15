@@ -13,7 +13,9 @@ FORMATO DEL INDICE (verificado contra las 4 combinaciones EU/US x SPH/BPH):
     0x14    Entry[count]
 
     struct Entry {      // 8 bytes
-        u32 tag;        // byte alto = categoria; 24 bits bajos = ID/hash. SIN RESOLVER
+        u32 tag;        // byte alto = categoria
+                        // BPB: 24 bits bajos = tamano del registro en u32 (verificado)
+                        // SPB: SIN RESOLVER
         u32 sector;     // offset en sectores de 2048 bytes dentro del pack
     };
 
@@ -21,7 +23,8 @@ Comprobacion: 0x14 + 8*count == tamano del archivo de indice, en los 4 casos.
 
 La extension de cada entrada se deduce de la siguiente: la entrada i ocupa
 [sector_i, sector_{i+1}), y la ultima llega al final del pack. Los 24 bits
-bajos de `tag` NO son el tamano en bytes (comprobado: no coincide).
+bajos de `tag` en el BPB son el tamano en palabras de 32 bits (127/127 en EU
+y US, comando `tags`); en el SPB no (SIN RESOLVER).
 
 Cada registro del pack empieza con un u32 que actua de tipo de recurso
 (se han visto 4, 5, 6, 7, 8, 0x11...). Dentro aparecen punteros a RAM de
@@ -31,6 +34,8 @@ Uso:
     python3 tools/acepack.py <imagen.bin> index          # volcar los indices
     python3 tools/acepack.py <imagen.bin> inventory      # inventario + cabeceras
     python3 tools/acepack.py <imagen.bin> records        # cabecera comun de cada registro
+    python3 tools/acepack.py <imagen.bin> tags           # semantica del tag
+    python3 tools/acepack.py <imagen.bin> xa [SPB|BPB]   # subcabeceras XA por entrada
     python3 tools/acepack.py <imagen.bin> extract BPB <dir>   # extraer entradas
 """
 import os
@@ -164,6 +169,59 @@ def cmd_records(disc, which):
             print(f"  ... y {len(odd) - 12} mas")
 
 
+def cmd_tags(disc):
+    """Comprueba la semantica del tag en ACE.BPB.
+
+    Verificado (EU y US, 127/127): los 24 bits bajos del tag son el tamano
+    exacto del registro en palabras de 32 bits. La extension en el pack es ese
+    tamano redondeado a sector (2048). En ACE.SPB la regla NO se cumple: alli
+    el tag significa otra cosa (SIN RESOLVER).
+    """
+    for which in PAIRS:
+        idx, pack = load(disc, which)
+        ok = 0
+        for i, tag, sec, nbytes in idx.extents(pack.size):
+            size = (tag & 0xFFFFFF) * 4
+            ok += int(size <= nbytes and nbytes - size < SECTOR)
+        print(f"{PAIRS[which][1]}: tamano = (tag & 0xFFFFFF) * 4 cumple en {ok}/{idx.count}")
+
+
+XA_FLAGS = ((0x80, "EOF"), (0x40, "RT"), (0x20, "FORM2"), (0x10, "TRIG"),
+            (0x08, "DATA"), (0x04, "AUDIO"), (0x02, "VIDEO"), (0x01, "EOR"))
+
+
+def cmd_xa(disc, which):
+    """Clasifica cada entrada por la subcabecera XA de sus sectores.
+
+    Resultado en ACE.SPB (EU): las categorias 0xF3, 0xF4 y 0xFB son sobre
+    todo audio XA-ADPCM (submodo 0x64 = RT|FORM2|AUDIO) entrelazado en varios
+    canales, con ~9 % de sectores Form 2 de datos intercalados (SIN RESOLVER);
+    las dos entradas 0xF8 son datos en tiempo real (submodo 0x48 = RT|DATA,
+    con algunos 0x64 de audio intercalados): probable video STR. Los sectores
+    Form 2 llevan 2324 bytes utiles, no 2048: leerlos con read() no sirve.
+    """
+    import collections
+    if disc.sector_size != 2352:
+        print("hace falta una imagen de 2352 bytes por sector para ver subcabeceras")
+        return
+    idx, pack = load(disc, which)
+    print(f"{'#':>4} {'cat':>4} {'sectores':>9}  submodos (num. sectores) / canales")
+    for i, tag, sec, nbytes in idx.extents(pack.size):
+        nsec = nbytes // SECTOR
+        if nsec == 0:
+            continue
+        modes = collections.Counter()
+        chans = set()
+        for s in range(nsec):
+            disc.f.seek((pack.lba + sec + s) * 2352 + 16)
+            sub = disc.f.read(4)
+            modes[sub[2]] += 1
+            chans.add(sub[1])
+        desc = ", ".join(
+            "%s(%d)" % ("|".join(n for b, n in XA_FLAGS if m & b) or "0", c) for m, c in modes.most_common(3))
+        print(f"{i:>4} 0x{tag >> 24:02X} {nsec:>9}  {desc} / {len(chans)} canales")
+
+
 def cmd_extract(disc, which, outdir):
     idx, pack = load(disc, which)
     os.makedirs(outdir, exist_ok=True)
@@ -192,6 +250,10 @@ def main(argv):
         for which in PAIRS:
             cmd_records(disc, which)
             print()
+    elif cmd == "xa":
+        cmd_xa(disc, argv[3] if len(argv) > 3 else "SPB")
+    elif cmd == "tags":
+        cmd_tags(disc)
     elif cmd == "extract":
         if len(argv) < 5 or argv[3] not in PAIRS:
             print("uso: extract <SPB|BPB> <dir>")

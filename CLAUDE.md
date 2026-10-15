@@ -33,8 +33,8 @@ que **no** hay que repetir.
    reproducible con una herramienta de `tools/`. Marca las hipótesis como
    `SIN RESOLVER`.
 3. **Valida todo heurístico contra un caso positivo conocido** antes de
-   concluir nada con él. Ya nos costó un error: ver la última entrada de
-   `notes/bitacora.md`.
+   concluir nada con él. Ya nos costó dos errores: ver en `notes/bitacora.md`
+   las entradas del heurístico de prólogos MIPS y de los TIM "inexistentes".
 4. **No construyas todavía** renderer, runtime ni proyecto Android. La etapa
    actual es de análisis. Ver `docs/05-hoja-de-ruta.md`.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
