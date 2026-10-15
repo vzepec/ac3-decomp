@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — ENCONTRADO el avión del jugador: el preludio de los registros
+
+Siguiendo en el código quién rellena el modelo 0 de la tabla LOD (el del
+objeto del jugador) se llegó a `0x80035C90`, que no era una variante del
+cargador de misión sino la **carga del registro de tipo 4**: descomprime un
+bloque ULZ situado entre la cabecera y la sección 0 y recoloca sus modelos.
+
+Error de fondo de la etapa 1: `header_size` es el offset de una sección
+inicial (el preludio). Todas las búsquedas anteriores la saltaban.
+
+Formato: 12 `LodModel` por avión (1 clásico, 4 iluminados con normales y
+primitivas de 24 B, 7 de solo vértices = estados de piezas móviles).
+Validado 264/264 entradas y 7.895/7.895 primitivas con la textura y la CLUT
+de la piel del jugador.
+
+Reproducir: `python3 tools/acemodel.py player data/bpb`
+
 ## 2026-10-15 — Overlays en Ghidra: ~580 funciones propias más
 
 Overlays 1-5: 141, 401, 21, 10 y 8 funciones; solo `CdMix` es de librería.

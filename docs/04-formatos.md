@@ -111,7 +111,17 @@ El contenido no empieza con un tag de tipo: son datos crudos de streaming
 Todas de categoría `0xE0`. A diferencia del SPB, el contenido **sí** tiene
 estructura de registro y es legible.
 
-#### Cabecera común de registro ✅ VERIFICADA
+#### Cabecera común de registro ✅ VERIFICADA (corregida: hay un preludio)
+
+> **Corrección (2026-10-15):** el campo que aquí se llama `header_size` es en
+> realidad el **offset de una sección inicial, el preludio**, que va de
+> `header_size` a `section_offset[0]`. El formato real es
+> `u32 tipo; u32 offset[n+1]` con `offset[0] = 4 + 4·(n+1)`. Se mantiene la
+> numeración histórica (sección 0 = la primera tras el preludio);
+> `tools/acerec.py` expone el preludio con `prelude_bounds()`. Preludios:
+> tipo 17 = 116-284 B en ULZ (parámetros de misión, `SIN RESOLVER`); tipo 4 =
+> **modelos del avión del jugador** (ver abajo); tipo 13 = 149 KB `SIN
+> RESOLVER`; tipo 5 = 4-33.156 B.
 
 Reproducible con `make records`. Válida en **122 de los 127** registros:
 
@@ -402,13 +412,21 @@ PCM: 15 millones de muestras sin un solo recorte en EU.
 | 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
 | 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 
-**El modelo 3D del avión del jugador no está en estos registros.** El juego
-carga el tipo 4 del avión elegido junto con el registro de misión (tabla
-`0x800AF79C` de `ACE.BIN`, índice en `+0x392` del estado), pero no trae
-geometría. En la tabla de modelos con LOD (s2 del tipo 17) los huecos 0-7
-(ids 0 y 1) están **vacíos en las 41 misiones**: se rellenan en tiempo de
-ejecución, presumiblemente con el avión del jugador, desde una fuente aún sin
-localizar.
+**Modelos del avión del jugador ✅** — en el **preludio** del registro
+(`0x14` hasta la sección 0), comprimido en ULZ: una tabla de 12 `LodModel`.
+Los carga `player_aircraft_load` (`0x80035C90`) y el objeto del jugador usa el
+modelo 0 de la tabla LOD (huecos 0-3, vacíos en los datos de misión).
+
+| Entradas por avión | Tipo |
+|---|---|
+| 1 | `LodModel` clásico (colores precalculados) |
+| 4 | **iluminado**: el cuarto campo de cabecera es `off_normals` (bloque de `SVECTOR` sin contador); primitivas de 24 B en los dos bloques: `u32 0`, `u8 vértices[4]`, `u8 normales[4]`, `uv0`+CLUT, `uv1`+tpage, `uv2`, `uv3` |
+| 7 | **solo vértices** (`0xFFFFFFFF` en los tres últimos campos): posiciones alternativas de las piezas móviles |
+
+Validación (`python3 tools/acemodel.py player data/bpb`): **264/264**
+entradas en los 22 aviones; **7.895/7.895** primitivas texturizan desde la
+página de la piel del jugador (704,256) con su CLUT (336, 312-319).
+Renderizado, el registro 0047 es un ala volante coherente.
 
 #### Tipo 13 — interfaz (1 registro, 0072)
 
@@ -445,14 +463,9 @@ entradas por idioma. La sección 3 contiene TIM.
 
 ## Lo que queda sin resolver
 
-1. **Dónde está el modelo 3D del avión del jugador.** Descartados con
-   análisis estático: tipo 4, tipo 17 s02/s03 (huecos 0-7 siempre vacíos),
-   SPB (incluidos sus 28.446 sectores de datos, sin ULZ ni TIM), tipo 13,
-   tipo 1 (demos), registros 0 y 69, y `ACE.BIN`. Una búsqueda exhaustiva de
-   bloques de vértices en todo el BPB descomprimido solo encuentra los de
-   t17 s1-s4. En la versión japonesa los aviones jugables sí son entradas
-   propias, con normales por vértice (Krishty, ver `03-versiones.md`).
-   Siguiente paso: análisis dinámico (volcado de RAM en misión).
+1. ✅ Resuelto: el avión del jugador está en el preludio del tipo 4 (no lo
+   veíamos porque el modelo de registro ignoraba esa sección). Pendiente:
+   cómo se ensamblan las piezas y se interpolan los estados alternativos.
 3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
    teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
 4. Secciones 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.

@@ -11,6 +11,14 @@ CABECERA COMUN DE REGISTRO (ver docs/04-formatos.md):
 La seccion k ocupa [offset[k], offset[k+1]) y la ultima llega al final del
 registro (el final incluye el relleno hasta sector de 2048 del pack).
 
+CORRECCION (2026-10-15): `header_size` es en realidad el offset de una
+seccion inicial, el PRELUDIO, que va de header_size a offset[0]. El formato
+real es `u32 tipo; u32 offset[n+1]` con offset[0] = 4 + 4*(n+1). Aqui se
+mantiene la numeracion historica (seccion 0 = la primera tras el preludio) y
+el preludio se expone con `prelude_bounds()`. En el tipo 4 el preludio
+contiene los modelos del avion del jugador (ver tools/acemodel.py player);
+en el tipo 17, 140 bytes que el cargador guarda en g_mission + 0x18.
+
 Cada seccion puede estar comprimida en ULZ (magic "Ulz\\x1a", ver
 tools/ulz.py) o venir en claro.
 
@@ -50,6 +58,11 @@ class Record:
         if any(o >= len(raw) for o in offs) or any(offs[k] > offs[k + 1] for k in range(len(offs) - 1)):
             return None
         return rec
+
+    def prelude_bounds(self):
+        """[header_size, offset[0]): el preludio (puede estar vacio)."""
+        end = self.offsets[0] if self.offsets else len(self.raw)
+        return self.header_size, end
 
     def bounds(self):
         ends = self.offsets[1:] + [len(self.raw)]

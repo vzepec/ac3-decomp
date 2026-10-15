@@ -168,7 +168,8 @@ punteros) y decompilado con `tools/ghidra/decomp.sh`:
 | `0x8002A34C` | arranque de streaming | descodifica el `tag` del SPB (modo, canal XA, longitud): ver `04-formatos.md` |
 | `0x800AE118` | **descompresor ULZ** | variantes 0, 1 y 2 |
 | `0x80026E50` | descomprimir + cargar TIM | ULZ y luego `FUN_80026D8C` (la de `"Can't open TIM"`) |
-| `0x80035730` | **cargador de registro de misión** (tipo 17) | ver §6; `0x80035C90` es una variante |
+| `0x80035730` | **cargador de registro de misión** (tipo 17) | ver §6 |
+| `0x80035C90` | **carga del avión del jugador** (tipo 4) | sonido (s2), piel (s1) y modelos del preludio, recolocados con 6 offsets |
 
 Esto confirma desde el código el formato de índice de la etapa 1 (magic,
 contador en `0x10`, entradas desde `0x14`, sector relativo al pack) y ha

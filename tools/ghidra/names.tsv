@@ -14,7 +14,7 @@
 0x80026EE0	f	model_relocate	suma la base del modelo a n offsets de cabecera
 0x800354B8	f	load_sequencer	reconoce registro de mision / avion del jugador
 0x80035730	f	mission_load	cargador de registro de tipo 17
-0x80035C90	f	mission_load_alt	variante del cargador de mision
+0x80035C90	f	player_aircraft_load	carga el registro de tipo 4: sonido, piel y modelos del jugador (preludio)
 0x80035C10	f	player_record_load	pide el registro de tipo 4 del avion elegido
 0x80035E78	f	demo_record_load	pide el registro de tipo 1 de la demo
 0x80035EF8	f	demo_start	arranca la reproduccion de la demo
@@ -41,3 +41,6 @@
 0x800BACC0	d	g_mission	puntero a la estructura de mision (0x800BE168)
 0x800BACC4	d	g_render	puntero a la estructura de render
 0x800BACD0	d	g_state	puntero al estado del juego
+0x800BACCC	d	g_aircraft	puntero al array de 32 objetos avion (el jugador usa el modelo 0)
+0x800AE544	d	mode_table	tabla de modos {pasos, id overlay, inicio, fin}
+0x80025EB0	f	mode_dispatch	despachador de modos del juego

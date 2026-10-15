@@ -74,6 +74,7 @@ Uso:
     python3 tools/acemodel.py check <dir_bpb>               # validacion global
     python3 tools/acemodel.py tilemap <dir_bpb>             # base del indice del mapa
     python3 tools/acemodel.py normals <dir_bpb>             # h1/e0/e1 y normales (s5)
+    python3 tools/acemodel.py player <dir_bpb>              # aviones del jugador (tipo 4)
 """
 import os
 import struct
@@ -180,6 +181,16 @@ class LodModel:
          uv0+CLUT, uv1+tpage, uv2+pad.
     GT4: u32 n ; n x 36 B = u32 0, u8 i0..i3, 4 x (rgb + 0x3C),
          uv0+CLUT, uv1+tpage, uv2, uv3.
+
+    Variantes de los AVIONES DEL JUGADOR (registro de tipo 4, bloque inicial;
+    ver la funcion `player_models`):
+      - iluminada: el cuarto campo (0 en los de la IA) es off_normals, un
+        bloque de SVECTOR (8 B) sin contador hasta off_gt3. Primitivas de
+        24 B en los dos bloques: u32 0, u8 vertices[4], u8 normales[4],
+        uv0+CLUT, uv1+tpage, uv2, uv3 (sin colores: luz en tiempo real).
+        En triangulos el cuarto indice es 0.
+      - solo vertices: off_normals, off_gt3 y off_gt4 valen 0xFFFFFFFF; son
+        posiciones alternativas de una pieza movil (mismo numero de vertices).
     """
 
     def __init__(self, raw):
@@ -187,15 +198,20 @@ class LodModel:
             raise ValueError("no es un modelo")
         (self.extent, ov, self.off_x2, self.off_x4, unk,
          self.off_gt3, self.off_gt4) = struct.unpack_from("<HIIIIII", raw, 2)
-        if ov != 0x1C or unk != 0:
+        if ov != 0x1C:
             raise ValueError("cabecera de modelo LOD no reconocida")
+        self.off_normals = unk
+        self.morph_only = unk == self.off_gt3 == self.off_gt4 == 0xFFFFFFFF
+        self.lit = unk != 0 and not self.morph_only
+        self.normals = []
         self.raw = raw
         base, end = _vertex_block(raw, 0x1C)
         self.scaled = self.off_x2 != 0x1C
         if self.scaled:
             x2, end2 = _vertex_block(raw, self.off_x2)
             x4, end4 = _vertex_block(raw, self.off_x4)
-            if end != self.off_x2 or end2 != self.off_x4 or end4 != self.off_gt3:
+            nxt = len(raw) if self.morph_only else (self.off_normals if self.lit else self.off_gt3)
+            if end != self.off_x2 or end2 != self.off_x4 or end4 != nxt:
                 raise ValueError("bloques de vertices incoherentes")
             if not len(base) == len(x2) == len(x4):
                 raise ValueError("bloques de escala con distinto numero de vertices")
@@ -206,6 +222,15 @@ class LodModel:
             self.vertices = [(4 * x, 4 * y, 4 * z) for x, y, z in base]
         self.base_vertices = base
         self.prims = []
+        if self.morph_only:
+            return
+        if self.lit:
+            if (self.off_gt3 - self.off_normals) % 8:
+                raise ValueError("bloque de normales incoherente")
+            self.normals = [struct.unpack_from("<3h", raw, o)
+                            for o in range(self.off_normals, self.off_gt3, 8)]
+            self._lit_prims()
+            return
         n3 = struct.unpack_from("<I", raw, self.off_gt3)[0]
         n4 = struct.unpack_from("<I", raw, self.off_gt4)[0]
         if self.off_gt3 + 4 + 32 * n3 != self.off_gt4 or self.off_gt4 + 4 + 36 * n4 != len(raw):
@@ -217,6 +242,23 @@ class LodModel:
             a = self.off_gt4 + 4 + 36 * k
             ok = all(raw[a + 11 + 4 * j] == 0x3C for j in range(4))
             self._prim(tuple(raw[a + 4:a + 8]), ok, a + 24, a + 28)
+
+    def _lit_prims(self):
+        raw = self.raw
+        n3 = struct.unpack_from("<I", raw, self.off_gt3)[0]
+        n4 = struct.unpack_from("<I", raw, self.off_gt4)[0]
+        if self.off_gt3 + 4 + 24 * n3 != self.off_gt4 or self.off_gt4 + 4 + 24 * n4 != len(raw):
+            raise ValueError("bloques de primitivas iluminadas incoherentes")
+        for blk, n, nv in ((self.off_gt3, n3, 3), (self.off_gt4, n4, 4)):
+            for k in range(n):
+                a = blk + 4 + 24 * k
+                idx = tuple(raw[a + 4:a + 4 + nv])
+                nidx = tuple(raw[a + 8:a + 8 + nv])
+                if max(idx) >= len(self.vertices) or max(nidx) >= len(self.normals):
+                    raise ValueError("primitiva iluminada incoherente")
+                clut = struct.unpack_from("<H", raw, a + 14)[0]
+                tpage = struct.unpack_from("<H", raw, a + 18)[0]
+                self.prims.append({"idx": idx, "normals": nidx, "clut": clut, "tpage": tpage})
 
     def _prim(self, idx, code_ok, a_uv0, a_uv1):
         if not code_ok or max(idx) >= len(self.vertices):
@@ -235,6 +277,23 @@ class LodModel:
     def real_bbox(self):
         xs, ys, zs = zip(*self.vertices)
         return (max(xs), min(xs), max(ys), min(ys), max(zs), min(zs))
+
+
+def player_models(record_raw):
+    """Modelos del avion del jugador de un registro de tipo 4.
+
+    Estan en el bloque inicial del registro (de offset[0] = 0x14 a la primera
+    seccion "clasica"), comprimido en ULZ: una tabla de offsets de LodModel.
+    Lo carga mission_load_alt (0x80035C90 en ACE.BIN EU) en los huecos del
+    modelo 0 de la tabla LOD, que es el que usa el objeto del jugador.
+    """
+    import ulz
+    first = struct.unpack_from("<I", record_raw, 4)[0]
+    start = struct.unpack_from("<I", record_raw, 8)[0]
+    if record_raw[first:first + 4] != ulz.MAGIC:
+        raise ValueError("el bloque inicial no es ULZ")
+    data = ulz.decompress(record_raw, first, start)
+    return data, models(data)
 
 
 def parse_model(raw):
@@ -397,6 +456,42 @@ def cmd_normals(directory):
     return 0
 
 
+def cmd_player(directory):
+    """Valida los modelos de avion del jugador de los 22 registros de tipo 4."""
+    import collections
+    import ulz
+    c = collections.Counter()
+    for name in sorted(os.listdir(directory)):
+        if not name.endswith("_t04.bin"):
+            continue
+        raw = open(os.path.join(directory, name), "rb").read()
+        if struct.unpack_from("<2I", raw, 0) != (4, 0x14):
+            continue  # p. ej. la entrada 1, que es un overlay de codigo
+        c["registros"] += 1
+        try:
+            data, ms = player_models(raw)
+        except (ValueError, struct.error, IndexError, ulz.UlzError) as e:
+            print(f"{name}: {e}")
+            continue
+        n = len(offset_table(data))
+        c["entradas"] += n
+        c["entradas validas"] += len(ms)
+        for _, m in ms:
+            kind = "solo vertices" if getattr(m, "morph_only", False) else (
+                "iluminada" if getattr(m, "lit", False) else "clasica")
+            c[f"  {kind}"] += 1
+            for p in m.prims:
+                c["primitivas"] += 1
+                tp, cl = p["tpage"], p["clut"]
+                c["  textura en la pagina de la piel (704,256)"] += int(tp & 0x1F == 0x1B)
+                c["  CLUT en (336, 312..319)"] += int((cl & 63) * 16 == 336 and 312 <= cl >> 6 < 320)
+        if len(ms) != n:
+            print(f"{name}: {n - len(ms)} entradas no validan")
+    for k, v in c.items():
+        print(f"{k}: {v}")
+    return 0
+
+
 def cmd_check(directory):
     from acerec import Record
     total = size_ok = bbox_n = bbox_ok = lod_n = lod_ok = 0
@@ -441,6 +536,8 @@ def cmd_check(directory):
 def main(argv):
     if len(argv) >= 3 and argv[1] == "check":
         return cmd_check(argv[2])
+    if len(argv) >= 3 and argv[1] == "player":
+        return cmd_player(argv[2])
     if len(argv) >= 3 and argv[1] == "normals":
         return cmd_normals(argv[2])
     if len(argv) >= 3 and argv[1] == "tilemap":
