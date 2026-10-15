@@ -446,8 +446,27 @@ Renderizado con textura (`python3 tools/acemodel.py export-player
 <registro> <dir>` produce `.obj` + `.mtl` + una PNG por fila de CLUT), el
 registro 0047 es un ala volante blanca y roja (igual que una de las vistas del
 hangar) y el 0055 un F-15 azul con todos sus detalles en su sitio: geometría,
-UV, CLUT y piel validados de extremo a extremo. La correspondencia registro →
-nombre del avión está `SIN RESOLVER`.
+UV, CLUT y piel validados de extremo a extremo.
+
+**Registro → avión** (`python3 tools/acemodel.py hangar data/bpb`: silueta
+cenital frente a las 21 vistas del hangar, IoU 0,77-0,95, siempre en orden):
+el índice `i` (registro `47 + i`) es el avión `i − 1` del hangar para
+`i = 1..21`. El índice 0 (registro 0047) es otro **XR-900 Geopelia** (IoU
+0,93): probablemente el prototipo oculto que menciona Krishty.
+
+| Registro | Avión | Registro | Avión |
+|---|---|---|---|
+| 0047 | XR-900 Geopelia (¿prototipo?) | 0058 | Su-37 Super Flanker |
+| 0048 | EF2000E Typhoon II | 0059 | R-102 Delphinus#2 |
+| 0049 | MiG-33 Fulcrum SS | 0060 | R-211 Orcinus |
+| 0050 | F/A-18U Hornet ADV | 0061 | Su-43 Berkut |
+| 0051 | F-16XFU Gyrfalcon | 0062 | R-103 Delphinus#3 |
+| 0052 | R-101 Delphinus#1 | 0063 | XFA-36A Game |
+| 0053 | R-201 Asterozoa | 0064 | RF-12A2 Blackbird |
+| 0054 | F-16XA Sakerfalcon | 0065 | R-352 Sepia |
+| 0055 | F-15S/MT Eagle+ | 0066 | XR-900 Geopelia |
+| 0056 | F-22C Raptor II | 0067 | X-49 Night Raven |
+| 0057 | F/A-32C Erne | 0068 | UI-4054 Aurora |
 
 #### Tipo 13 — interfaz (1 registro, 0072)
 

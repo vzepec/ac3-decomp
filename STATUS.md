@@ -33,6 +33,8 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
+- ✅ **Registro → nombre de avión** resuelto por silueta (`acemodel.py
+  hangar`): 0048-0068 = los 21 del hangar en orden; 0047 = Geopelia oculto
 - ✅ **Avión del jugador exportable con texturas** (`acemodel.py
   export-player`): validado a ojo (F-15 del registro 0055)
 - ✅ **Avión del jugador encontrado**: en el preludio del registro de tipo 4
@@ -63,14 +65,19 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-1. Ensamblado del avión del jugador: ✅ mecanismo general (tabla de 12
-   piezas en el hueco id 0 / nivel 3; el render elige entradas/estados).
-   Queda la lógica que elige cada estado de pieza.
-2. ✅ Preludios: tipo 17 = parámetros de entorno y animación de paletas;
-   tipo 13 = imágenes de las 36 misiones. Queda el del tipo 5 y el detalle
-   campo a campo del tipo 17.
-3. Confirmar el papel de cada overlay; `h0`; formato de las demos; seguir
-   ampliando `tools/ghidra/names.tsv`.
+Etapa 3 en curso. Pendientes, por orden de valor para la etapa 4:
+
+1. **Lógica de los estados de pieza del avión del jugador** (qué decide e6
+   frente a e2, e8 frente a e7…): leer el render de piezas y quién rellena la
+   lista de `lod_parts_draw`.
+2. **Papel de cada overlay**: leer el primer paso de cada modo
+   (`data/ghidra/all_overlay*.c` tras `DumpAll`).
+3. `h0` de las primitivas; formato de las demos; detalle del preludio del
+   tipo 17; seguir ampliando `tools/ghidra/names.tsv`.
+
+Cuando estos estén razonablemente cerrados, valorar con el usuario el paso a
+la etapa 4 (rebanada vertical en Android: ya hay un avión exportable con
+texturas).
 
 ## Bloqueos conocidos
 
