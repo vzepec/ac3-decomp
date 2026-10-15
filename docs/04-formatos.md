@@ -441,8 +441,12 @@ entradas por idioma. La sección 3 contiene TIM.
 
 1. **Dónde está el modelo 3D del avión del jugador.** Descartados con
    análisis estático: tipo 4, tipo 17 s02/s03 (huecos 0-7 siempre vacíos),
-   SPB, tipo 13, tipo 1 (demos), registros 0 y 69, y `ACE.BIN`. Siguiente
-   paso: análisis dinámico (volcado de RAM en misión con un emulador).
+   SPB (incluidos sus 28.446 sectores de datos, sin ULZ ni TIM), tipo 13,
+   tipo 1 (demos), registros 0 y 69, y `ACE.BIN`. Una búsqueda exhaustiva de
+   bloques de vértices en todo el BPB descomprimido solo encuentra los de
+   t17 s1-s4. En la versión japonesa los aviones jugables sí son entradas
+   propias, con normales por vértice (Krishty, ver `03-versiones.md`).
+   Siguiente paso: análisis dinámico (volcado de RAM en misión).
 3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
    teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
 4. Secciones 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.

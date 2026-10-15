@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Revisión de proyectos externos; el SPB no tiene modelos
+
+No hay decompilación pública de AC3. `loadwordteam/ac3es-tools` confirma los
+ULZ de tipos 0 y 2. Krishty extrajo los aviones jugables de la versión
+**japonesa** (37 carpetas; tres juegos de vértices; normales por vértice),
+pero nadie ha documentado la internacional. Ver `docs/03-versiones.md`.
+
+Descartado el SPB: sus 28.446 sectores de datos (los Form 2 intercalados con
+el audio, leídos con 2324 bytes) no contienen ULZ, TIM ni modelos; parecen
+marcas de sincronía por canal. Una búsqueda exhaustiva de bloques de vértices
+en todo el BPB descomprimido solo encuentra los de t17 s1-s4.
+
 ## 2026-10-15 — Render de aviones jerárquico, demos, y el avión del jugador sigue sin aparecer
 
 - `0x80061408`: render de modelos LOD por piezas con matriz propia (aviones

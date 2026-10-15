@@ -75,7 +75,34 @@ basar ninguna planificación en ellos.**
   the R.A.I.D. community". Ese patrón de duplicación masiva es
   característico de repos fabricados.
 
-### Lo que sí existe
+### Revisión de GitHub y fuentes externas (2026-10-15)
+
+| Fuente | Qué es | Utilidad |
+|---|---|---|
+| `i5han/ac3-remix` (43★) | Solo README y licencia; promete un `.exe` en releases | Ninguna: no hay código |
+| `psxports/AceCombat3-xport` | Solo README | Ninguna |
+| `sal063/Ace-Combat-3-static-recompilation` | 1 commit; traduce el ejecutable **japonés** Rev 1 a C en la máquina del usuario | No documenta formatos |
+| `alexbeavs-ps1-ports/*-recomp` | Red R.A.I.D. / psxrecomp (ver arriba) | Ninguna |
+| `JasonBreen/project-swallow` | **Incluye imágenes de disco en el repo** | No usar |
+| `zezuel101/AC2AC3-Library` | Assets extraídos y ejecutables de Krishty | No usar (assets); apunta a Krishty |
+| `loadwordteam/ac3es-tools` (desde 2017) | Herramientas del equipo de traducción italiano: ULZ, BPB, `bin` | **Serio.** Soporta ULZ de tipos **0 y 2**: confirma nuestras variantes |
+| Krishty (`krishty.com/acecombat_en`, hilo ZFX "Extracting Ace Combat") | Extrajo modelos y niveles de la versión **japonesa**; publica en dominio público su desempaquetador (solo archivos, sin modelos) | Ver abajo |
+
+Lo que aporta Krishty (sobre la versión japonesa, sin verificar por nosotros):
+
+- 37 carpetas de estructura idéntica con los aviones jugables, con más
+  resolución de textura que los de la IA.
+- "Tres juegos de vértices, los dos primeros distorsionados": coincide con
+  los tres bloques a escala ×1/×2/×4 de nuestros `LodModel`.
+- Son "los únicos modelos sin iluminación precalculada y con normales por
+  vértice"; "muchos objetos sin triángulos" (estados alternativos).
+- El mapa de teselas se descodifica con `& 511` y restando 1: coincide con
+  nuestra base 1.
+- Cita `0xA6E2BA6C` como la "clave" de la protección anticopia (comunidad de
+  trucos): es la suma de control de la salida de `ACE.BIN` US (etapa 2).
+
+**Nadie ha documentado dónde están los aviones jugables en la versión
+internacional.**
 
 **RecompOne**, de Flaffy, es el único proyecto de recompilación estática de
 PS1 con evidencia de funcionar: el recompilador está terminado y Castlevania
