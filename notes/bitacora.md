@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Callbacks por pieza; t04 s0 = parámetros del avión (motores)
+
+Las piezas de `lod_parts_draw` llevan un callback tomado de dos tablas
+(`0x800B09B8`, `0x800B09D0`) según el tipo de avión. El callback 1,
+`0x8008A874`, dibuja el efecto de los motores con datos de t04 s0: su
+`+0xC` byte 0 es el número de motores, verificado contra la realidad (F-16 =
+1, bimotores reales = 2). Corrige la descripción anterior de esa función como
+"iluminación".
+
+Reproducir: tabla de `+0xC` de t04 s0 con `tools/acerec.py` (ver
+`docs/04-formatos.md`).
+
 ## 2026-10-15 — Papel de los overlays 1 y 2 desde el código
 
 Su primer paso de modo inicializa una máquina de subpantallas de menú según
