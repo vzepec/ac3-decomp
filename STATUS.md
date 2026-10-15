@@ -1,15 +1,15 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-3`; integración en `develop`)
+**Última actualización:** 2026-10-15 (rama `etapa-4`; integración en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). Las etapas 1 y 2
-están fusionadas en `develop`. Primer corte de los tres criterios de salida
-cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
+**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). La etapa 4
+(rebanada vertical) cumplió su criterio de salida: el APK corre en la Retroid
+(ver `android/README.md` y `docs/05-hoja-de-ruta.md`).
 
 ## Hecho
 
@@ -65,20 +65,14 @@ cumplido (ver `docs/09-codigo.md`); queda nombrar el árbol de llamadas.
 
 ## Siguiente tarea concreta
 
-Etapa 3 en curso. Pendientes, por orden de valor para la etapa 4:
+Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
 
-1. **Estados de pieza**: callbacks localizados (tablas `0x800B09B8` y
-   `0x800B09D0`); el 1 es el efecto de motores. Quedan por leer los demás
-   (`0x8008BCBC`, `0x8008BE4C`, `0x8008B914`, `0x8008BA18`, `0x8008BB1C`,
-   `0x8008B1A8`) para ver cuál elige/interpola estados de pieza.
-2. Overlays: ✅ 1 = menú principal, 2 = interfaz de campaña (probable, con
-   evidencia de código); quedan las subpantallas y los overlays 3-5.
-3. `h0` de las primitivas; formato de las demos; detalle del preludio del
-   tipo 17; seguir ampliando `tools/ghidra/names.tsv`.
-
-Cuando estos estén razonablemente cerrados, valorar con el usuario el paso a
-la etapa 4 (rebanada vertical en Android: ya hay un avión exportable con
-texturas).
+1. **Efectos**: localizar en el código cómo se dibujan explosiones, estelas
+   de misil y humo (texturas de efecto en VRAM, primitivas `SPRT`/`POLY_FT4`
+   semitransparentes) y sus datos.
+2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
+3. **Callbacks de estado de pieza** (superficies móviles del avión).
+4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.
 
 ## Bloqueos conocidos
 
