@@ -140,7 +140,13 @@ los casos aplicables no es casualidad: la interpretación es correcta.
 Los tipos 17 (41 registros, ~600-765 KB cada uno) y 5 (40 registros) son el
 volumen real del pack y el objetivo prioritario.
 
-#### Las 5 entradas especiales
+#### Las 5 entradas especiales — son overlays de código (corregido)
+
+**Corrección:** las entradas 1-5 son los **overlays de código** de `ACE.BIN`
+(ver `09-codigo.md` §2 y `tools/aceovl.py`): se cargan en `0x800C9DC0` y su
+"cabecera" (`u32` de secuencia + punteros `0x800CBxxx`) es el comienzo de su
+sección de datos ya enlazada. Lo que sigue es la descripción original de la
+etapa 1, válida como observación de bytes pero no como interpretación.
 
 Las entradas 1 a 5 **no** siguen esa convención: su `u32[1]` no es un tamaño
 de cabecera sino un puntero o datos directos. Son tablas de sistema:

@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin ghidra-import ghidra-stats check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays ghidra-import ghidra-stats check
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -24,6 +24,7 @@ help:
 	@echo "make sounds     - valida los bancos de sonido del SPU"
 	@echo "make textures   - vuelca a data/png/ las TIM del registro REC (def. 0006)"
 	@echo "make acebin     - descomprime ACE.BIN (EU y US) a data/exe/"
+	@echo "make overlays   - lista y extrae los overlays de codigo a data/exe/ovl/"
 	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
 	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"
@@ -79,6 +80,9 @@ acebin:
 	@$(PY) tools/acebin.py "$(EU)" data/exe/ace_eu.exe --psexe
 	@$(PY) tools/acebin.py "$(US)" data/exe/ace_us.exe --psexe
 
+overlays:
+	@$(PY) tools/aceovl.py extract data/exe/ace_eu.bin data/bpb data/exe/ovl
+
 ghidra-import:
 	@mkdir -p data/ghidra
 	@$(HEADLESS) data/ghidra ac3 -import data/exe/ace_eu.exe -overwrite -max-cpu 4 \
@@ -110,4 +114,4 @@ brief:
 	@echo "  para el flujo de trabajo desde terminal."
 
 check:
-	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel, acesnd, acebin; print('herramientas OK')"
+	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel, acesnd, acebin, aceovl; print('herramientas OK')"

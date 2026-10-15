@@ -48,15 +48,29 @@ Pruebas: referencias a las cadenas de nombre de archivo de cada ejecutable,
 decompilación de `main` de `SCES_020.66` y de su función de arranque, y la
 TIM de `ACE.EXE` exportada con `tools/tim2png.py`.
 
-**CORRECCIÓN (2026-10-15): sí hay overlays de código.** La tabla de modos
-del juego (`0x800AE544`, registros de 16 B `{pasos, id, carga, fin}`) tiene
-modos con código fuera de `ACE.BIN`: modo 3 = id 2, `0x800C9DC0`-`0x800F9E18`;
-modo 4 = id 1, `0x800C9DC0`-`0x800DB010`. Las entradas 1 y 2 del BPB (las
-"tablas de sistema" de la etapa 1) son código (1,54 y 1,65 prólogos/KiB) y
-sus tamaños casan con esos rangos. Hipótesis fuerte, `SIN VERIFICAR` del todo:
-el desplazamiento exacto de carga no se ha confirmado (la cabecera de esas
-entradas es `u32 n` + tabla de punteros `0x800CBxxx`/`0x800CCxxx`). Las
-entradas 3-5 tienen poca densidad de código.
+**CORRECCIÓN (2026-10-15): sí hay overlays de código** — verificado con
+`python3 tools/aceovl.py list data/exe/ace_eu.bin data/bpb`.
+
+La tabla de modos (`0x800AE544`, registros `{pasos, id, inicio, fin}` de
+16 B) que recorre el despachador `FUN_80025EB0`:
+
+| Modo | Código | Rango | Tamaño |
+|---|---|---|---|
+| 0, 1, 2, 5, 6 | residente (`ACE.BIN`); el 2 es la carga de misión | `0x80010000`- | |
+| 3 | **overlay 2** = entrada 2 del BPB | `0x800C9DC0`-`0x800F9E18` | 196.696 |
+| 4 | **overlay 1** = entrada 1 | `0x800C9DC0`-`0x800DB010` | 70.224 |
+| 7 | **overlay 3** = entrada 3 | `0x800C9DC0`-`0x800DECE8` | 85.800 |
+| 8 | **overlay 4** = entrada 4 | `0x800C9DC0`-`0x800D96C0` | 63.744 |
+| 9 | **overlay 5** = entrada 5 | `0x800C9DC0`-`0x800CBA38` | 7.288 |
+
+Pruebas: el tamaño del registro según su `tag` coincide exactamente con el
+rango en 4 de 5 overlays (en el 4 difiere en 4 bytes); los punteros de pasos
+caen tras un `jr ra` (inicios de función) con base `0x800C9DC0`; el código de
+los overlays referencia globales del residente (`0x800BACD0`). Las entradas
+1-5 del BPB no son "tablas de sistema": son estos overlays. El overlay 1
+contiene las cadenas de la tarjeta de memoria. Ninguno contiene modelos,
+TIM (salvo uno en el 5) ni ULZ. `make overlays` los extrae como PS-X EXE a
+`data/exe/ovl/`.
 
 ## 3. Cifras de funciones ✅
 

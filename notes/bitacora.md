@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Overlays confirmados: las entradas 1-5 del BPB son código
+
+La tabla de modos de `ACE.BIN` (`0x800AE544`) lista 10 modos; los 3, 4, 7, 8 y
+9 cargan los overlays 2, 1, 3, 4 y 5 en `0x800C9DC0`. Overlay k = entrada k
+del BPB: tamaño según el tag == rango de memoria en 4/5 (el otro, 4 bytes de
+diferencia); punteros de pasos en inicios de función. Corrige la etapa 1 (que
+las llamó "tablas de sistema") y la etapa 3 (que dijo que no había overlays).
+
+Ningún overlay contiene modelos. El avión elegido (`+0x392` del estado) pasa
+al objeto del jugador (`+0x48`) por una tabla identidad en `0x800234E4`.
+
+Reproducir: `make overlays`
+
 ## 2026-10-15 — Hay overlays de código (corrige la etapa 3) y nombrado reproducible
 
 La tabla de modos (`0x800AE544`) revela modos con código cargado en
