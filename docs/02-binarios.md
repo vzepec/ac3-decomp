@@ -43,50 +43,62 @@ memoria mientras intercambia módulos de juego en la zona baja.
 reservado. La cadena de licencia japonesa no se regeneró al hacer la
 conversión regional.
 
-## `ACE.BIN` — módulo principal, **comprimido**
+## `ACE.BIN` — módulo principal ✅ DESCOMPRIMIDO
 
-Cabecera **propietaria de Namco**, no PS-EXE. Magic `PS-Y4a\xe3w`.
+Reproducible con `make acebin`. Implementado en `tools/acebin.py`.
 
-| Offset | Valor | Significado | Estado |
-|---|---|---|---|
-| `0x00` | `PS-Y4a\xe3w` | magic (8 bytes) | — |
-| `0x08` | `0x800BB000` | dirección final = carga + tamaño descomprimido | ✅ verificado |
-| `0x0C` | `0x6504C` = 413.772 | **tamaño del archivo, exacto** | ✅ verificado |
-| `0x10` | `0xAB000` = 700.416 | tamaño descomprimido | ✅ verificado |
-| `0x14` | `0x5C` = 92 | offset del inicio de los datos comprimidos (la cabecera mide 0x5C; ahí empiezan literales legibles como `Can't ope`) | ⚠️ probable, sin verificar con un descompresor |
-| `0x1C` | `0x8002521C` | punto de entrada | ✅ verificado |
-| `0x24` | `0x80010000` | dirección de carga | ✅ verificado |
-| `0x28` | `0xAB000` | tamaño | ✅ verificado |
-| `0x3C` | `0x801FFFF0` | pila | ✅ verificado |
+Cabecera **propietaria de Namco** de `0x5C` bytes, no PS-EXE:
 
-Coherencia que valida la lectura: `0x80010000 + 0xAB000 = 0x800BB000`, que es
-exactamente el campo `0x08`.
+| Offset | EU | US | Significado | Estado |
+|---|---|---|---|---|
+| `0x00` | `PS-Y` | `PS-Y` | magic | ✅ |
+| `0x04` | `0x77E36134` | `0x3E7035AA` | no es CRC32 ni suma de entrada/salida | ⚠️ sin resolver |
+| `0x08` | `0x800BB000` | `0x800BC000` | dirección final = carga + tamaño descomprimido | ✅ |
+| `0x0C` | 413.772 | 415.530 | tamaño útil del archivo (US: 2 bytes de relleno extra) | ✅ |
+| `0x10` | 700.416 | 704.512 | tamaño descomprimido | ✅ |
+| `0x14` | `0x5C` | `0x5C` | tamaño de la cabecera | ✅ |
+| `0x1C` | `0x8002521C` | `0x8002539C` | punto de entrada | ✅ |
+| `0x24` | `0x80010000` | `0x80010000` | dirección de carga | ✅ |
+| `0x28` | = `0x10` | = `0x10` | tamaño (repetido) | ✅ |
+| `0x3C` | `0x801FFFF0` | | pila | ✅ |
+| `0x58` | `0x4288FFB0` | `0xA6E2BA6C` | **suma de las palabras `u32` de la salida** | ✅ |
+| `0x5C` | `0x0C` | `0x0C` | ? | ⚠️ sin resolver |
 
-**Está empaquetado.** Dos evidencias independientes:
+### Formato de compresión
 
-- Entropía del cuerpo: **7,42 bits/byte** (un binario MIPS normal ronda 6,5)
-- Solo **6** prólogos `addiu sp, sp, -N` en 400 KB (0,01 por KiB), frente a
-  0,47 y 0,42 por KiB en los otros dos módulos
+Un LZ de un solo flujo desde `0x5D`:
 
-413.772 bytes en disco se expanden a 700.416 en RAM: ratio 1,69:1.
+```
+repetir hasta producir `tamaño descomprimido` bytes:
+    u8 flags                     # bits 0..6 = 7 elementos (el bit 7 vale 1)
+    por cada bit, del 0 al 6:
+        1 -> 1 byte literal
+        0 -> b0, b1:
+             longitud  = b0 >> 4             (0 significa 16)
+             distancia = b1 | (b0 & 0xF)<<8  (0 significa 4096)
+```
 
-### Consecuencia para el proyecto
+Se descifró a mano siguiendo cadenas conocidas (`"Can't open TIM"`,
+`"Error: MemAlloc: Overflow %d bytes (REQ: %d bytes)\n"`).
 
-**Este es el bloqueo principal del análisis de código.** El juego de verdad
-—vuelo, IA, renderizado, misiones— está aquí dentro, y no se puede
-desensamblar, ni recompilar estáticamente, ni medir, hasta desempaquetarlo.
+**Validación:**
 
-Dos vías, ambas válidas:
+- La salida mide exactamente el tamaño declarado, en EU y en US.
+- Se consume toda la entrada salvo 1 y 3 bytes de relleno.
+- **La suma `u32` de la salida coincide exactamente con el campo `0x58`** en
+  los dos discos. Con "distancia 0 = ceros" en vez de 4096, no coincide.
+- El punto de entrada cae tras un `jr ra; nop` y empieza con el bucle de
+  limpieza de BSS típico de PsyQ.
+- El 51,7 % de los `jal` apuntan a un prólogo, frente al 53,7 % de
+  `SCES_020.66` y el 54,3 % de `ACE.EXE`, que están en claro.
+- Densidad de prólogos: 1,57 por KiB. Es más alta que la de `SCES_020.66`
+  (0,47) porque `ACE.BIN` es casi todo código, y `SCES` arrastra tablas.
 
-1. **Localizar el descompresor** dentro de `SCES_020.66` (que sí está en
-   claro) y reimplementarlo. Es la vía limpia y la que deja herramienta.
-2. **Volcar la RAM desde un emulador** (DuckStation, PCSX-Redux o no$psx
-   tienen volcado de memoria y depurador) justo después de que el loader
-   descomprima, leyendo `0x80010000`..`0x800BB000`. Es la vía rápida para
-   empezar a analizar.
+Ratio de compresión 1,69:1. El resultado **no se versiona**: va a `data/exe/`,
+como binario plano o envuelto en una cabecera PS-X EXE estándar
+(`--psexe`), lista para cargarse en Ghidra (etapa 3).
 
-Lo pragmático es hacer (2) para desbloquear el análisis y (1) después, para
-tener una herramienta reproducible que no dependa de un emulador.
+No contiene TIM ni modelos en los formatos conocidos de `ACE.BPB`.
 
 ## Buena noticia: librerías PsyQ de stock
 
@@ -115,7 +127,7 @@ código propio de Namco.
 
 El coprocesador GTE (COP2) hace la matemática 3D. Medido sobre el código en
 claro: `SCES_020.66` usa **64** instrucciones COP2 y `ACE.EXE` solo **1**.
-Es decir, **toda la matemática de vuelo y cámara está dentro del blob
-comprimido** y aún no se puede medir. El GTE tendrá que reimplementarse con
+Es decir, **toda la matemática de vuelo y cámara está en `ACE.BIN`**, que
+ya está descomprimido (ver arriba) y se puede medir en la etapa 3. El GTE tendrá que reimplementarse con
 precisión exacta (es aritmética de punto fijo con saturación), o el modelo
 de vuelo derivará de forma sutil.

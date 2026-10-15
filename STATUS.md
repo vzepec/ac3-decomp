@@ -1,15 +1,15 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-1`)
+**Última actualización:** 2026-10-15 (rama `etapa-2`; integración en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 1 — Arqueología de assets: criterio de salida CUMPLIDO** (rama
-`etapa-1`). Quedan tareas de cierre antes de pasar a la etapa 2. Ver
-`docs/05-hoja-de-ruta.md`.
+**Etapa 2 — Desempaquetar `ACE.BIN`: HECHA** (rama `etapa-2`). La etapa 1
+está fusionada en `develop`, que es la rama de integración de etapas. La
+siguiente es la **etapa 3 — análisis estático**. Ver `docs/05-hoja-de-ruta.md`.
 
 ## Hecho
 
@@ -33,49 +33,39 @@
 - ✅ **Aviones de misión con LOD** (tipo 17 s02/s03), vértices ×1/×2/×4 y
   POLY_GT3/GT4: 578/578 — `make models`
 - ✅ `ACE.SPB` = audio XA + vídeo, por subcabeceras de sector — `acepack.py xa`
-- ⚠️ El **modelo del avión del jugador no está localizado** (ver abajo)
+- ⚠️ El **modelo del avión del jugador no está localizado**: tampoco está en
+  `ACE.BIN`. Candidatos: registros de tipo 1 grandes y ULZ variante 0
+- ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
+  validado con la suma de control de la cabecera — `make acebin`
 
 ## Siguiente tarea concreta
 
-La etapa 1 tiene su criterio de salida cumplido y la rebanada vertical (etapa
-4) ya tiene un avión que dibujar: el modelo 8 de la sección 2 del registro
-0006. Dos opciones; **la recomendada es la A**:
+**Etapa 3: preparar el análisis estático de `ACE.BIN`.**
 
-**A. Empezar la etapa 2: descomprimir `ACE.BIN` de forma estática.** Pista
-nueva (sin verificar): el campo `0x14` de la cabecera (`0x5C`) es el offset
-de los datos comprimidos, y en ellos se lee `"Can't" FF " ope"`, es decir,
-literales en claro con un byte de flags `0xFF` intercalado: patrón de un LZ con
-flags de 8 bits. Un LZSS clásico (Okumura, ventana de 4 KB) **no** lo
-descomprime bien (consume solo ~206 KB de 413 KB): es una variante.
+1. Instalar **Ghidra** (necesita JDK 17+) y la extensión de PSX
+   (`ghidra_psx_ldr`, con soporte de COP2/GTE). Dejar en `docs/` la versión
+   exacta y cómo instalarla.
+2. Cargar `data/exe/ace_eu.exe` (generado con `make acebin`; es un PS-X EXE
+   estándar con carga en `0x80010000` y entrada en `0x8002521C`).
+3. Primera medición, sin entrar todavía en las funciones:
+   - número de funciones que detecta Ghidra
+   - matching de firmas PsyQ: cuántas son de librería y cuántas de Namco
+   - instrucciones COP2 (GTE) en `ACE.BIN`, con la misma métrica que
+     `docs/02-binarios.md` usa para los otros dos ejecutables
+4. Valorar `rea` (`morluto/rea`) como capa sobre Ghidra para el ciclo de
+   "explícame esta función". No sustituye a Ghidra.
 
-```bash
-python3 -c "import sys; sys.path.insert(0,'tools'); from psxiso import Disc; \
-b=Disc('Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Electrosphere (Europe) (En,Fr,De,Es,It).bin').read_file('ACE.BIN'); \
-open('data/ace_bin.raw','wb').write(b)"
-xxd -s 0x5c data/ace_bin.raw | head -40
-```
+Criterio de salida de la etapa 3 (hoja de ruta): número de funciones propias,
+mapa de overlays y bucle principal identificado.
 
-Criterio de validación: la salida debe medir exactamente 700.416 bytes,
-consumir exactamente los 413.772 − 0x5C de entrada, y dar una densidad de
-prólogos MIPS comparable a `SCES_020.66` (`tools/psexe.py` la mide). Si el
-formato no sale por análisis, buscar el descompresor en `SCES_020.66` (que
-está en claro) o volcar la RAM con un emulador.
-
-**B. Seguir buscando el modelo del avión del jugador.** Descartados: tipo 4,
-tipo 17 s02/s03, SPB. Candidatos: los 16 registros de tipo 1 (0111-0126,
-formato desconocido) y las entradas ULZ de variante 0 del tipo 13. Si no
-aparece en los datos, puede estar dentro de `ACE.BIN`, con lo que A lo
-desbloquea también.
-
-Pendientes menores de la etapa 1: ULZ variante 0; campos `h0/h1/e0/e1` de las
-primitivas; bits altos del mapa de teselas; campos sin resolver de los bancos
-de sonido; frecuencia de muestreo de las muestras; `.obj` con UV y atlas.
+Pendientes que siguen abiertos de etapas anteriores: el avión del jugador;
+ULZ variante 0; campos `0x04` y `0x5C` de la cabecera de `ACE.BIN`; campos
+sin resolver de primitivas, mapa de teselas y bancos de sonido.
 
 ## Bloqueos conocidos
 
 | Bloqueo | Impacto | Cómo se levanta |
 |---|---|---|
-| `ACE.BIN` comprimido | **No se puede analizar ni medir el código del juego** | Etapa 2: hay pista de formato (ver arriba); si no, volcado de RAM o descompresor de `SCES_020.66` |
 | Ghidra no instalado | Etapa 3 no puede empezar | Instalarlo con el loader de PSX y soporte COP2/GTE |
 | Semántica del `tag` en el SPB | Menor: la extracción ya funciona sin ella | Comparar con subcabeceras XA de cada entrada |
 

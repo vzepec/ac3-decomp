@@ -13,6 +13,7 @@ CLI. Los atajos están en el `Makefile` de la raíz.
 | `tim2png.py` | Escanea TIM estándar (validadas por `bnum`) y las exporta a PNG sin dependencias |
 | `acemodel.py` | Modelos del tipo 17 (terreno, objetos, aviones con LOD): vértices, caras, `.obj`, validación |
 | `acesnd.py` | Bancos de sonido del SPU: listado, validación y ADPCM a WAV |
+| `acebin.py` | Descomprime `ACE.BIN` (LZ de Namco), valida con la suma de la cabecera, opcionalmente lo envuelve en PS-X EXE |
 | `acedat.py` | Demuestra que `ACE.DAT` es relleno |
 
 ## Uso directo
@@ -36,6 +37,7 @@ python3 tools/acesnd.py  list data/sec/0047_*_s02.bin
 python3 tools/acesnd.py  wav  data/sec/0047_*_s02.bin data/wav
 python3 tools/acepack.py <imagen.bin> xa
 python3 tools/acedat.py  <imagen EU>
+python3 tools/acebin.py  <imagen.bin> data/exe/ace.exe --psexe
 ```
 
 ## Como librería

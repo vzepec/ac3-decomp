@@ -58,7 +58,7 @@ real.
 
 ---
 
-## Etapa 2 — Desempaquetar `ACE.BIN`
+## Etapa 2 — Desempaquetar `ACE.BIN` ✅ HECHO
 
 **Objetivo:** obtener los 700.416 bytes del módulo principal en claro.
 
@@ -78,6 +78,11 @@ del trabajo de código. Esta etapa es la que convierte el proyecto de
 especulación en planificable.
 
 **Esfuerzo:** días para la vía 1, semanas para la vía 2. **Riesgo:** bajo.
+
+**Resultado (2026-10-15):** hecho por una tercera vía, más rápida que las dos
+previstas: descifrar el formato directamente, siguiendo cadenas conocidas en
+el flujo comprimido. `tools/acebin.py` descomprime EU y US, y valida contra
+la suma de control de la cabecera. Ver `02-binarios.md`.
 
 ---
 
