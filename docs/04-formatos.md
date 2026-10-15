@@ -288,15 +288,42 @@ una al azar (variantes de la misión). Las subentradas las consumen:
 La subentrada `+4` empieza con 4 contadores (bytes 0, 4, 8, 0xC) y 14
 offsets en palabras a subtablas (`DAT_800BAD5C`, `…AD7C`, `…AD70`, `…AD9C`,
 `…ADB8`, `…ADB4`, `…ADA8`, `…ADB0`, `…AD74`, `…AD98`, `…ADA0`, `…AD90` y dos
-tablas de punteros). La subtabla `DAT_800BAD70` tiene tantos registros de
-44 B como el contador del byte 8 y contiene **posiciones de mundo en coma
-fija** (<<12). En la misión 6 (11 registros): el 0 tiene byte 0 = 0 y está
-a 7.500 de altura en (48000, −48000) (¿jugador?); los demás tienen byte 0 =
-1 y van **por parejas en formación** (p. ej. (4000, 4000) y (−4000, −4000)),
-con byte 1 = `0x18`, `0x20` o `0x1F`. Apunta a la tabla de aparición de
-entidades (byte 0 = bando, byte 1 = tipo/modelo): `SIN RESOLVER` hasta
-casarlo con el código que la lee. Volcado:
-`python3 tools/acescript.py data/bpb/0006_*.bin`.
+tablas de punteros). Volcado: `python3 tools/acescript.py data/bpb/0006_*.bin`.
+
+**Tablas de aparición** (confirmadas en el código):
+
+| Tabla | Registros | Ranuras de entidad | Inicializa |
+|---|---|---|---|
+| `DAT_800BAD70` | contador del byte 8, 44 B | 0-31 (aviones; la 0 es el jugador) | `FUN_8004C258` |
+| `DAT_800BAD74` | contador del byte 0xC, 36 B | 32-63 (objetos de tierra y otros) | `FUN_8004CDB0` |
+
+| Byte | Campo |
+|---|---|
+| 0 | bando: 0/1/2 → banderas de entidad `0x40`/`0x80`/`0x100` |
+| 1 | tipo (entidad `+0x48`; p. ej. `0x40`/`0x41` objetos, `0x18`/`0x1F`/`0x20` aviones) |
+| 2 | **modelo** (entidad `+4`); `0xFF` = sin modelo |
+| 3 | índice en los registros de 40 B de la subentrada `+8` (parámetros del tipo) |
+| 4-0x0F | posición x, y, z (s32, << 12) |
+| 0x14-0x19 | orientación (s16 ×3; el jugador de la misión 6 lleva `0x3800`); unidad `SIN RESOLVER` |
+| 0x20-0x23 | índices en otras subtablas (`AD9C` ×16 B, `ADB4`/`AD98` ×24 B, …) |
+
+**El modelo indexa tablas distintas** según la tabla de aparición:
+
+- aviones: grupo LOD `id·4 … id·4+3` de s2/s3. Validado en la misión 6: los
+  modelos 2, 3 y 4 caen exactamente en los grupos ocupados de s2 (ranuras
+  8-11, 12-15, 16-17), tres aviones distintos (extent 229, 216, 164).
+- objetos: índice directo en la tabla de s4 (`Model`). Validado: el mismo
+  tipo usa la misma forma en misiones distintas aunque cambie el índice
+  (tipo `0x40` → modelo de 103×43, tipo `0x41` → 90×43, en las misiones 6 y
+  12), y los objetos están a ras de suelo (y = −1.150 con la tesela a −1.126
+  y la base del modelo 29 unidades por debajo del origen). Cada modelo de
+  objeto va precedido de una versión baja (altura 15 frente a 43): con toda
+  probabilidad la versión destruida (`FUN_80050C84` dibuja `modelo +
+  desfase`), `SIN RESOLVER`.
+
+La subentrada `+4` contiene también el **guion de eventos**, que interpreta
+`FUN_80053704` (bytecode: 0x15 activa una entidad, 0x16 la desactiva,
+0x0B-0x14 llaman a subórdenes…), `SIN RESOLVER` en detalle.
 
 Mapa de punteros del cargador (`mission_load`): `ulz_decompress` devuelve el
 final de lo escrito, así que `g_mission + 0x18` = preludio, `+0x1C` = s0 …

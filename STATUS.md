@@ -73,11 +73,10 @@ Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
 sol/destello y bruma (s13 + s8).
 
-1. **Guion de misión (s6)**: confirmar la tabla de aparición
-   (`DAT_800BAD70`, `tools/acescript.py`) leyendo quién la consume; casar el
-   byte 1 con los modelos (¿índice de LOD `id·4`, o sea s3 desde el 0x18?).
-   Daría la colocación real de enemigos (y quizá de unidades de tierra).
-2. **Objetos de tierra**: si están en el guion, su modelo (s4) y posición.
+1. ✅ **Tablas de aparición** (s6): aviones (LOD de s2) y objetos de tierra
+   (s4) con bando, tipo, modelo y posición. Pendiente menor: unidad de la
+   orientación; versión destruida de los objetos.
+2. ✅ Objetos de tierra: salen de la tabla anterior.
 3. **Superficies móviles**: callbacks de estado de pieza (`0x8008BCBC`,
    `0x8008BE4C`, `0x8008B914`, `0x8008BA18`, `0x8008BB1C`, `0x8008B1A8`).
 4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,

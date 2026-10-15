@@ -77,3 +77,8 @@
 0x8005D5FC	f	fog_color_set	color lejano GTE = preludio +0x08
 0x80038818	f	mission_start	toma s6 (guion) e inicializa la mision
 0x8004BBB8	f	mission_script_init	cabecera del guion: contadores y subtablas
+0x8004C258	f	spawn_aircraft_init	tabla de aparicion de aviones (ranuras 0-31)
+0x8004CDB0	f	spawn_objects_init	tabla de aparicion de objetos (ranuras 32-63)
+0x8004BEDC	f	spawn_aircraft_links	enlaza registros de aparicion con subtablas
+0x8004C08C	f	spawn_objects_links	idem para objetos
+0x80053704	f	mission_script_exec	interprete del guion de eventos

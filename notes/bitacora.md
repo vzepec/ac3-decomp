@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Tablas de aparición de la misión: aviones y objetos de tierra
+
+Confirmado en el código (`FUN_8004C258`, `FUN_8004CDB0`): el guion (s6) trae
+dos tablas de aparición, aviones (44 B, ranuras 0-31) y objetos (36 B,
+ranuras 32-63), con bando, tipo, modelo y posición. Casos positivos: los
+modelos de avión de la misión 6 caen justo en los grupos LOD ocupados de s2;
+los objetos usan la tabla de s4, con la misma forma para el mismo tipo en
+misiones distintas, y están a ras del suelo de su tesela.
+
+Reproducir: `python3 tools/acescript.py data/bpb/00{06,12,20}_*.bin`.
+
 ## 2026-10-15 — La sección 6 de la misión es el guion, no textos
 
 `mission_start` (`FUN_80038818`) toma s6 como guion (`DAT_800BADC0`), con
