@@ -225,13 +225,32 @@ hace `flags ^= flags & (flags << 16)`: los bits 9, 10 y 11 de la celda anulan
 los bits 25, 26 y 27. Así se resolvieron (con contraste estadístico) los bits
 altos del mapa.
 
-## 9. Lo que queda (etapa 3, siguientes pasos)
+## 9. Objetos de escena, aviones y recursos ✅
+
+| Dirección (EU) | Qué hace |
+|---|---|
+| `0x80066B64` | render de objetos de escena: reparte (`0x80065CC4`) y llama a los renders |
+| `0x80065CC4` | por objeto: distancia, y **LOD = id·4 + (0, 1 o 2 según distancia)** sobre la tabla de modelos con LOD |
+| `0x80061408` | **render jerárquico de modelos LOD**: lista de piezas de 0x38 B, cada una con matriz propia, callback, bloque de vértices elegido y `LodModel`; usa sus `+0x14`/`+0x18` (`off_gt3`/`off_gt4`) |
+| `0x8006159C`, `0x800616FC` | renders de los bloques GT3 y GT4 de los modelos LOD |
+| `0x8002953C` | **identificador de recurso**: bit 11 = pack (0 BPB, 1 SPB), bits 0-10 = entrada |
+| `0x800354B8` | secuenciador de carga: reconoce el registro de misión (tabla `0x800AF748`, índice `+0x390`) y el del avión del jugador (tabla `0x800AF79C`, índice `+0x392`) |
+| `0x80035E78`, `0x80035EF8` | carga y reproducción de **demos** (tabla `0x800AF7C8`: registro de tipo 1, misión, avión) |
+
+Tablas de datos en `ACE.BIN` con números de entrada del BPB:
+`0x800AF748` (41 misiones: registros 6-46), `0x800AF79C` (22 aviones del
+jugador: registros 47-68) y `0x800AF7C8` (16 demos: registros 111-126).
+
+## 10. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre
    (entrada, lógica, cámara, render, sonido…).
 2. `h0` de las primitivas; qué vecino exacto corresponde a cada bit alto del
-   mapa; qué dibuja los objetos de s4 y los aviones de s2/s3 (otra lista de
-   colocación, probablemente de las secciones 7-9).
+   mapa.
+3. **El modelo del avión del jugador**: por análisis estático no aparece (ver
+   `04-formatos.md`). Propuesta: instalar un emulador con depurador
+   (PCSX-Redux o DuckStation), volcar la RAM en una misión con vista exterior
+   y localizar el `LodModel` del jugador y su origen.
    Buscar por huella (`RTPT` + pasos de 36/48/32 bytes) dio falsos
    candidatos (`0x8008FE38` y `0x8008A874` son efectos e iluminación); mejor
    seguir el flujo desde los 32 accesos a `0x2CC($gp)`.

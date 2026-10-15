@@ -392,12 +392,17 @@ PCM: 15 millones de muestras sin un solo recorte en EU.
 
 | Sec | ULZ | Contenido |
 |---|---|---|
-| 0 | sí | 168-220 B, `SIN RESOLVER` (¿parámetros?) |
+| 0 | sí | 168-220 B: puntos de referencia del avión (vectores `x,y,z,0`; varios en la cola, probablemente toberas) — `SIN RESOLVER` en detalle |
 | 1 | sí | 2 TIM: **piel 256×256** con 8 CLUT (esquemas de color) e **icono 40×40** |
 | 2 | no | **Banco de sonido** (2 muestras: el motor del avión, probablemente) |
 
-**El modelo 3D del avión del jugador no está en estos registros** ni en
-ninguno de formato conocido: ver "Lo que queda sin resolver".
+**El modelo 3D del avión del jugador no está en estos registros.** El juego
+carga el tipo 4 del avión elegido junto con el registro de misión (tabla
+`0x800AF79C` de `ACE.BIN`, índice en `+0x392` del estado), pero no trae
+geometría. En la tabla de modelos con LOD (s2 del tipo 17) los huecos 0-7
+(ids 0 y 1) están **vacíos en las 41 misiones**: se rellenan en tiempo de
+ejecución, presumiblemente con el avión del jugador, desde una fuente aún sin
+localizar.
 
 #### Tipo 13 — interfaz (1 registro, 0072)
 
@@ -414,11 +419,17 @@ independiente de variante 0** (604 en total, todas válidas con
 | 8 | banco de sonido |
 | 2, 6 | `SIN RESOLVER` |
 
-#### Tipo 1 grandes (16 registros, 0111-0126)
+#### Tipo 1 grandes (16 registros, 0111-0126) — demos
 
 `u32 1, u32 8`, luego una tabla de 2 entradas: la primera siempre de 8.276 B,
-la segunda de 140-358 KB. No es código (0 prólogos MIPS), no es ULZ, no es
-ADPCM del SPU (≤ 28 % de bloques válidos frente a ~100 %). `SIN RESOLVER`.
+la segunda de 140-358 KB. No es código (0 prólogos MIPS), ni ULZ, ni ADPCM.
+
+**Son las demos** (confirmado desde el código): `ACE.BIN` tiene en
+`0x800AF7C8` una tabla de 16 entradas `(u16 registro, u8 misión, u8 avión)`
+con los registros 111-126, recorrida por un contador de demo (`+0x3AA` del
+estado, da la vuelta tras 15). `FUN_80035E78` carga el registro y
+`FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`. El formato interno de
+la grabación está `SIN RESOLVER`.
 
 #### Tipo 5 — briefings de misión (40 registros)
 
@@ -428,11 +439,10 @@ entradas por idioma. La sección 3 contiene TIM.
 
 ## Lo que queda sin resolver
 
-1. **Dónde está el modelo 3D del avión del jugador.** Descartados: tipo 4
-   (piel + icono + sonido), tipo 17 s02/s03 (aviones de la misión, que no
-   usan la textura del jugador), SPB (audio/vídeo), tipo 13 (imágenes 2D del
-   hangar) y `ACE.BIN`. Candidato que queda: los 16 registros grandes de
-   tipo 1.
+1. **Dónde está el modelo 3D del avión del jugador.** Descartados con
+   análisis estático: tipo 4, tipo 17 s02/s03 (huecos 0-7 siempre vacíos),
+   SPB, tipo 13, tipo 1 (demos), registros 0 y 69, y `ACE.BIN`. Siguiente
+   paso: análisis dinámico (volcado de RAM en misión con un emulador).
 3. Campos `h0`, `h1`, `e0`, `e1` de las primitivas; bits altos del mapa de
    teselas; campos `b0`, `b2`, `id`, `p0/p1`, `u0` de los bancos de sonido.
 4. Secciones 7-9 del tipo 17; los tipos 1 grandes; las tablas 1-5 del BPB.

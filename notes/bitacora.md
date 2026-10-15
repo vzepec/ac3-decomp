@@ -5,6 +5,21 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Render de aviones jerárquico, demos, y el avión del jugador sigue sin aparecer
+
+- `0x80061408`: render de modelos LOD por piezas con matriz propia (aviones
+  articulados); `0x80065CC4` elige LOD = id·4 + (0-2 según distancia).
+- `0x8002953C`: id de recurso = bit 11 pack + 11 bits de entrada.
+- Tablas en `ACE.BIN`: misiones (`0x800AF748`), aviones del jugador
+  (`0x800AF79C`, registros 47-68) y demos (`0x800AF7C8`, registros 111-126 con
+  misión y avión). **Los registros de tipo 1 grandes son las demos.**
+- Huecos 0-7 de la tabla de modelos LOD vacíos en las 41 misiones: se rellenan
+  en ejecución. El modelo del jugador no está en ningún registro analizado.
+  Propuesta: análisis dinámico con emulador.
+
+Reproducir: `tools/ghidra/decomp.sh ace_eu.exe data/ghidra/x.c 0x80061408 0x80065cc4 0x80035e28 0x800354b8`
+y la tabla con `python3 -c` sobre `data/exe/ace_eu.bin` en `0x800AF79C`.
+
 ## 2026-10-15 — Bits altos del mapa de teselas: no reutilizar vértices vecinos
 
 `FUN_8005CDA4` construye la lista de celdas visibles desde el mapa y copia la
