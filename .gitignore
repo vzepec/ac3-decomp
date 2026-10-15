@@ -1,0 +1,21 @@
+# Imagenes de disco y cualquier dato del juego: NUNCA en git.
+Rom/
+data/
+*.bin
+*.cue
+*.iso
+*.img
+*.SPB
+*.BPB
+*.SPH
+*.BPH
+*.EXE
+SCES_*
+SLUS_*
+SLPS_*
+
+# Herramientas y basura local
+__pycache__/
+*.pyc
+.venv/
+_to_delete/
