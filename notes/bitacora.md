@@ -5,6 +5,33 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — APK 0.4: cielo, guion, efectos y superficies del juego
+
+Portado a la rebanada lo localizado en la etapa 3: cielo por bandas y niebla
+(preludio), inicio/enemigos/objetos según el guion (s6), explosiones y humo
+del registro 0000 con vidas y tamaños del código, estelas de misil y de
+puntas de ala, llama del misil, y los estados de alas/aerofreno/timón.
+Validado en el PC (Mesa) en las misiones 6, 12, 20, 23 y 43.
+
+Bug de la 0.3 corregido (lo reportó el usuario): las misiones 23 y 43 no
+tienen terreno (mapa vacío, s1 de 8 B; son de gran altitud) y el cargador lo
+trataba como error; tras el error la app reintentaba cada fotograma con los
+botones bloqueados. Ahora son válidas y un fallo deja seguir cambiando.
+
+Reproducir: `android/build/test_desktop <imagen> <mision> <avion>` para las
+41 misiones; `android/build.sh`.
+
+## 2026-10-15 — Corrección: unidad de la orientación en el guion
+
+La nota de que "0x10000 = 360° hace que el jugador mire a los enemigos" se
+basaba en una cuenta mal hecha (0x3800 / 0x10000 = 78,75°, no 315°). Lo
+destapó la prueba de carga del APK 0.4. Con la unidad estándar de PS1
+(4096 = 360°, con `& 0xFFF`), `0x3800` y `0x1800` valen 180°: todas las
+entidades de la misión 6 llevan el mismo rumbo. El sentido del giro sigue
+sin resolver.
+
+Reproducir: `android/build/test_desktop <imagen> 6 48` (columna "rumbo").
+
 ## 2026-10-15 — Superficies móviles: estados discretos de alas, aerofreno y timón
 
 Los modelos "solo vértices" del avión del jugador son estados discretos de

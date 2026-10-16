@@ -2,7 +2,9 @@
 
 App nativa de Android (C + OpenGL ES 3, sin Gradle; solo una actividad Java
 mínima para el selector de archivos): un avión del
-jugador volando sobre el terreno de una misión, con el mando físico. Es la
+jugador volando sobre el terreno de una misión, con el mando físico. Desde la
+0.4, con el cielo, los enemigos, los objetos de tierra y los efectos del
+juego. Es la
 **prueba de la verdad** de `docs/05-hoja-de-ruta.md`, no un juego.
 
 **El APK no contiene nada del juego.** En el arranque busca tu propia imagen
@@ -42,7 +44,7 @@ Todavía no hay texto en pantalla:
 | Color | Significado |
 |---|---|
 | azul oscuro | esperando la imagen de disco, o cargando |
-| rojo | fallo al cargar una misión o un avión (ver `adb logcat -s AC3Slice`) |
+| rojo | fallo al cargar una misión o un avión (ver `adb logcat -s AC3Slice`); se puede seguir cambiando de misión (Select) o de avión (Y/X) |
 
 ## Controles
 
@@ -50,8 +52,8 @@ Todavía no hay texto en pantalla:
 |---|---|
 | palanca izquierda | cabeceo invertido como el original (hacia delante = morro abajo) y alabeo |
 | A / B | disparar misil (se guía hacia el blanco del recuadro verde) |
-| R2 / L2 | acelerar / frenar |
-| R1 / L1 | guiñada |
+| R2 / L2 | acelerar / frenar (L2 abre el aerofreno) |
+| R1 / L1 | guiñada (mueve el timón) |
 | palanca derecha | girar la cámara |
 | Y / X | avión siguiente / anterior (los 22) |
 | Select | misión siguiente (registros 6-46) |
@@ -62,13 +64,14 @@ Todavía no hay texto en pantalla:
 
 - Arriba a la derecha, discreto: **fps** (media de cada medio segundo).
   Arriba a la izquierda: **K** = derribos.
-- **Enemigos**: hasta 8 aviones de la propia misión (sección 2 del registro,
-  sus modelos y pieles originales) con una IA sencilla que vuela entre puntos
-  de paso alrededor del jugador. Al ser alcanzados explotan y reaparecen a
-  los 5 s.
-- **Misiles**: modelo real del juego (sección 3, entrada 3). Se fija el
-  enemigo más centrado en un cono de ~35° y a menos de 14.000 unidades
-  (recuadro verde); el misil acelera y se guía hacia él.
+- **Inicio, enemigos y objetos de tierra salen del guion de la misión**
+  (sección 6): empiezas donde empieza el jugador; los aviones enemigos
+  aparecen en sus posiciones y formaciones, con sus modelos; los edificios y
+  unidades de tierra, en su sitio y a ras de suelo. La IA es propia y
+  sencilla (vuelan entre puntos alrededor de su posición inicial, o de ti si
+  estás cerca). Si los derribas a todos, reaparecen a los 6 s.
+- **Misiles**: se fija el blanco (avión u objeto) más centrado en un cono de
+  ~35° y a menos de 14.000 unidades (recuadro verde).
 - El texto del HUD usa una fuente propia de 5×7 (no es la del juego).
 
 ## Rendimiento
@@ -96,18 +99,28 @@ build/test_desktop <imagen.bin> 6 55
 | Elemento | Origen |
 |---|---|
 | Terreno, texturas, mapa de teselas | disco del usuario (registro de misión) |
-| Avión del jugador y enemigos: modelos, pieles, colores | disco del usuario |
-| Modelo del misil | disco del usuario (s3, entrada 3); mide ~13 unidades |
-| Estela del misil (cuadrado claro detrás) | **propio**, provisional |
-| Explosiones | **propias** (cuadrados de color); las del juego no están localizadas |
-| Cielo, niebla, luz del avión del jugador | **propios** (aproximación); los parámetros de entorno del juego están en el preludio de la misión, sin descifrar campo a campo |
+| Cielo por bandas y color de niebla de cada misión | disco (preludio de la misión); la mezcla "hacia el sol" usa una unidad de ángulo supuesta |
+| Posición inicial, enemigos y objetos de tierra | disco (guion de la misión, s6): posición, bando, modelo, rumbo |
+| Modelos de aviones enemigos, objetos, misil y tu avión | disco (s2/s3/s4 y registro de tipo 4) |
+| Alerones, cabeceo, timón y aerofreno de tu avión | disco (estados de vértices del propio modelo); **qué mando activa cada uno es propio** |
+| Explosiones | disco (registro común 0000): animación de 10 fotogramas, vida (14 ticks) y tamaño (256) del código |
+| Humo oscuro de los restos | disco (texturas y paleta de humo); los restos y su trayectoria son aproximados |
+| Llama del misil | disco (sprite estirado del registro 0000) |
+| Estela de humo del misil y de puntas de ala | forma, frecuencia de puntos y vida del código; **color y transparencia propios** (sin resolver) |
+| Objeto destruido | **hipótesis**: el modelo anterior de s4, más bajo (sin confirmar en el código) |
+| Física de vuelo, IA, combate | **propios** y simplificados |
+| Luz del avión del jugador | **propia** (dirección fija) |
 | Texto del HUD | fuente propia 5×7 |
+
+El ritmo del juego se supone de 30 ticks por segundo (sin resolver: puede
+ser 25 en PAL); afecta a la duración de las animaciones.
 
 ## Limitaciones conocidas
 
-- Vuelo arcade simple, sin física real del juego, sin IA, HUD ni misiones.
-- Solo se dibujan las piezas del avión en su estado base (sin superficies
-  móviles), el terreno, los enemigos y los misiles (no los objetos de s4).
+- Vuelo arcade simple, sin física real del juego, sin HUD ni objetivos de misión.
 - Combate simplificado: los enemigos no disparan ni hay colisiones entre aviones.
-- Iluminación aproximada (luz fija); los colores precalculados del terreno sí
-  son los del juego.
+- Sin nubes, sol ni destello todavía (localizados, no portados).
+- Iluminación del avión aproximada (luz fija); los colores precalculados del
+  terreno, los objetos y los enemigos sí son los del juego.
+- Corregido en la 0.4: al cambiar de misión, las misiones 23 y 43 (de gran
+  altitud, sin terreno) daban pantalla roja y la app quedaba atascada.

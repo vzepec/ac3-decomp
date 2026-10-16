@@ -105,22 +105,27 @@ static void load_data(App *a) {
     double t0 = now();
     if (a->reload_mission) {
         Scene *s = a->scene;
-        free(s->tiles.v);
-        free(s->plane.v);
+        scene_free(s);   /* libera todas las mallas (antes quedaban sin liberar las de enemigos) */
         scene_init(s);
+        if (scene_load_common(s, &a->disc, &a->pack)) LOG("sin texturas de efectos (registro 0000)");
         int r = scene_load_mission(s, &a->disc, &a->pack, a->mission);
-        if (r) { a->status = -2; LOG("fallo cargando la mision %u: %d", a->mission, r); return; }
+        if (r) {  /* no reintentar en cada fotograma: esperar a que se elija otra mision o avion */
+            a->status = -2; a->reload_mission = a->reload_plane = 0;
+            LOG("fallo cargando la mision %u: %d", a->mission, r);
+            return;
+        }
         a->reload_plane = 1;
         a->reload_mission = 0;
         reset_flight(a);
     }
     if (a->reload_plane) {
         int r = scene_load_aircraft(a->scene, &a->disc, &a->pack, a->plane);
-        if (r) { a->status = -2; LOG("fallo cargando el avion %u: %d", a->plane, r); return; }
+        if (r) { a->status = -2; a->reload_plane = 0; LOG("fallo cargando el avion %u: %d", a->plane, r); return; }
         a->reload_plane = 0;
     }
-    LOG("mision %u, avion %u: %u triangulos de terreno, %u de avion, %d TIM, %.0f ms", a->mission, a->plane,
-        a->scene->tiles.n / 3, a->scene->plane.n / 3, a->scene->tims_loaded, (now() - t0) * 1000);
+    LOG("mision %u, avion %u: %u triangulos de terreno, %u de avion, %d TIM, %d aviones y %d objetos, %.0f ms",
+        a->mission, a->plane, a->scene->tiles.n / 3, a->scene->plane.n / 3, a->scene->tims_loaded, a->scene->nair,
+        a->scene->nobj, (now() - t0) * 1000);
     a->status = 1;
     gl_upload(a);
 }
@@ -204,7 +209,9 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         if (k == AKEYCODE_BUTTON_START) a->start = down;
         if (down && a->sel && a->start) { request_picker(); return 1; }
         if (!down || AKeyEvent_getRepeatCount(e)) return 1;
-        if (a->status != 1) return 1;
+        /* tras un fallo de carga (pantalla roja) se puede seguir cambiando de mision o avion;
+         * antes se ignoraban todos los botones y la app quedaba atascada */
+        if (a->status != 1 && a->status != -2) return 1;
         switch (k) {
         case AKEYCODE_BUTTON_Y:   /* siguiente avion */
             a->plane = a->plane >= LAST_PLANE ? FIRST_PLANE : a->plane + 1;
@@ -219,7 +226,7 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             a->reload_mission = 1;
             return 1;
         case AKEYCODE_BUTTON_START:
-            reset_flight(a);
+            if (a->status == 1) reset_flight(a);
             return 1;
         default:
             return 0;
