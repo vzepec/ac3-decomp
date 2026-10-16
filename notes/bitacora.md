@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Unidad de los ángulos: 0x4000 = 360° (segunda corrección)
+
+Historia, para no repetirla: primero se dijo "0x10000 = 360°" (con una
+cuenta mal hecha que, por casualidad, daba la conclusión correcta de que el
+jugador mira a los enemigos); luego se "corrigió" a 4096 suponiendo la
+convención estándar de RotMatrix. Las dos eran hipótesis sin validar. Ahora,
+con dos pruebas independientes: la matriz de entidad (`FUN_80030534`) usa una
+tabla de senos de periodo 0x4000 (comprobado sobre la tabla), y en las demos
+el rumbo grabado coincide con la dirección del movimiento (error mediano
+3-9° con 0x4000, frente a 90-130° con las otras). También queda resuelto el
+sentido: adelante = (sen, cos) en PS1. El APK 0.4/0.5 usa 4096: hay que
+corregirlo.
+
+Además, las instantáneas de clase 1 de las demos quedan descifradas
+(posición y ángulos por entidad y fotograma).
+
+Reproducir: `python3 tools/acedemo.py --heading data/bpb/0117_*.bin` y
+`--track 0 data/bpb/0111_*.bin`.
+
 ## 2026-10-15 — Formato de las demos: grabación de la cola de eventos
 
 Las 16 demos (tipo 1) son la cola de eventos del juego grabada en un búfer

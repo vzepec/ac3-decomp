@@ -104,3 +104,5 @@
 0x8007C548	f	demo_play_setup	coloca el bufer de una demo como cola de eventos
 0x8007C778	f	event_size	tamano = bits 0-3; clase = bits 4-6
 0x8007C7E8	f	event_skip	descarta eventos antiguos al llenarse el bufer
+0x80030534	f	entity_matrix	matriz desde rx,ry,rz (0x4000 = 360; senos en 0x80010498)
+0x8007C6DC	f	event_snapshot	instantanea de entidad (clase 1)

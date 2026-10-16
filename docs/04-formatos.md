@@ -304,7 +304,7 @@ tablas de punteros). Volcado: `python3 tools/acescript.py data/bpb/0006_*.bin`.
 | 2 | **modelo** (entidad `+4`); `0xFF` = sin modelo |
 | 3 | índice en los registros de 40 B de la subentrada `+8` (parámetros del tipo) |
 | 4-0x0F | posición x, y, z (s32, << 12) |
-| 0x14-0x19 | orientación (s16 ×3, a `+0x18` de la entidad, de donde sale su matriz). En la misión 6 todas las entidades llevan `0x3800` (jugador) o `0x1800` en `+0x16`: con la unidad de PS1 (4096 = 360°, `& 0xFFF`) ambos valen 180°, el mismo rumbo, coherente con vuelo en formación. Sentido del giro `SIN RESOLVER`. (Corrección: una versión anterior decía "probable 0x10000 = 360°" por un error de cuenta.) |
+| 0x14-0x19 | orientación rx, ry, rz (s16, a `+0x18` de la entidad). **Unidad: 0x4000 = 360°**, y "adelante" en PS1 es (sen ry, cos ry): la matriz de la entidad (`FUN_80030534`) indexa una tabla de senos de periodo 0x4000 (`0x80010498`, coseno en `+0x1000`), y en las demos el rumbo grabado coincide con la dirección del movimiento con un error mediano de 3-9° (`tools/acedemo.py --heading`; con 4096 o 0x10000, 90-130°). En la misión 6, el jugador (`0x3800` = 315°) y las parejas enemigas (`0x1800` = 135°) se encaran. (Corrige dos versiones anteriores: "0x10000 = 360°" y "4096 = 360°".) |
 | 0x20-0x23 | índices en otras subtablas (`AD9C` ×16 B, `ADB4`/`AD98` ×24 B, …) |
 
 **El modelo indexa tablas distintas** según la tabla de aparición:
@@ -714,7 +714,7 @@ mismo (`FUN_8007C7E8`). Una palabra igual a 1 es una **marca de fotograma**.
 | Clase | Tamaños | Emisor / uso |
 |---|---|---|
 | 0 | 1 | marca de fotograma (valor 1) y estado del jugador (`FUN_8007C948`, subtipo en bits 7-9) |
-| 1 | 4 | ~3,4 por fotograma: instantáneas por fotograma (`FUN_8007C6DC` al reproducir), `SIN RESOLVER` en detalle |
+| 1 | 4 | ~3,4 por fotograma: **instantánea de entidad** (`FUN_8007C6DC`): entidad = bits 9-14; palabras 1-3 = x, y, z (20 bits altos, coma fija << 12) y rx, ry, rz en los 12 bits bajos (ángulo >> 2, 0x4000 = 360°). Validado: la trayectoria del jugador es continua (mediana 25 u por fotograma, máximo 82) |
 | 2 | 1, 4, 6 | entidades (`FUN_8007CC34`: 6 palabras = posición y ángulos) |
 | 3 | 1, 3, 4, 5 | efectos: global, puntual, con velocidad, estela (`FUN_8007D940`, `D66C`, `D720`, `D830`) |
 | 4 | 2 | `FUN_8007CEB4`, `SIN RESOLVER` |

@@ -89,11 +89,13 @@ sol/destello y bruma (s13 + s8).
    (necesita emulador).
 7. ✅ Lista de proyectil: el misil no usa las listas de disparos rectos
    (correcciones para el próximo APK: quitar la llama al misil; interpolar
-   superficies; ritmo de 25/30 ticks).
+   superficies; ritmo de 25/30 ticks; rumbos con 0x4000 = 360°).
 8. ✅ Overlays 3-5 (créditos, reproductor de música, reproductor de prueba)
    y `h0` (descartado en render y colisión).
-9. ✅ Demos: grabación de la cola de eventos (`tools/acedemo.py`, 16/16).
-   Pendiente: el contenido de la clase 1 (instantáneas por fotograma).
+9. ✅ Demos: grabación de la cola de eventos (`tools/acedemo.py`, 16/16),
+   con las instantáneas de entidad (posición y ángulos por fotograma).
+10. ✅ Unidad de ángulos de entidad: 0x4000 = 360° (validada con las demos).
+   Para el próximo APK: corregir rumbos (hoy usa 4096).
 
 ## Bloqueos conocidos
 
