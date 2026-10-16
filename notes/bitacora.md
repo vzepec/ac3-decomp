@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5: emulador de la GTE
+
+`psx/src/gte.c`: registros y 22 órdenes de la GTE según psx-spx, con
+saturaciones, banderas y la división UNR. 27 pruebas bien (proyección a mano,
+RTPT = 3 × RTPS, MVMVA = coma flotante, división 94,5 % exacta con error
+máximo 3 como el hardware). Las pruebas encontraron un error real en SX/SY.
+Validado contra la especificación, no contra hardware.
+
+Reproducir: `make psx-check`.
+
 ## 2026-10-16 — Etapa 5 abierta: inventario de API, oráculo MIPS y primeras funciones exactas
 
 API PsyQ que usa el código propio del juego: 175 funciones, más 2.351 usos de

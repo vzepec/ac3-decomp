@@ -60,7 +60,7 @@ etapa.
 | 1 | Inventario de la API (`tools/psyqapi.py`) | ✅ este documento |
 | 2 | Intérprete MIPS de referencia (`tools/mipsemu.py`) | ✅ ejecuta las funciones de Sony de `ACE.BIN` |
 | 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | ✅ **84.000 casos, 0 diferencias** (`make psx-check`) |
-| 4 | Emulador de la GTE (`psx/src/gte.c`) | especificación + pruebas de coherencia |
+| 4 | Emulador de la GTE (`psx/src/gte.c`) | ✅ especificación + 27 pruebas (`make psx-check`); sin verificar contra hardware |
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | oráculo MIPS con la GTE de `psx/` |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | listas de dibujo reales del juego |
 | 7 | libcd, libpad, libetc | sobre las piezas de `android/` |
@@ -90,3 +90,30 @@ de `rand` cambiada) el comparador detecta miles de diferencias.
 Decisión de diseño: las tablas de Sony se **generan** cuando hay fórmula
 exacta y, si no, se **leen del disco del usuario** en tiempo de ejecución;
 nunca se copian al código ni al APK.
+
+**Paso 4 (2026-10-16): emulador de la GTE.** `psx/src/gte.c` implementa, según
+psx-spx, los 64 registros (con sus lecturas especiales: extensión de signo de
+VZ/IR, FIFO de SXY/SZ/RGB, IRGB/ORGB, LZCS/LZCR, `H` leído con signo) y las 22
+órdenes definidas (todas las que usa el juego y el resto), con las
+saturaciones y banderas de 44 bits (MAC1-3), 32 bits (MAC0), IR, color, SZ/OTZ,
+SX/SY e IR0, la división UNR con su tabla generada por fórmula, y las rarezas
+documentadas: la bandera de IR3 en `RTPS` mira `MAC3 >> 12` sea cual sea `sf`;
+el bit 31 de FLAG no incluye los bits 22-19; `MVMVA` con el vector FC solo usa
+la primera columna para las banderas; la matriz "reservada" de `MVMVA`.
+
+Pruebas (`psx/test/test_gte.c`, 27 comprobaciones, todas bien): proyección
+con valores calculados a mano (incluidos OFX/OFY, traslación, saturación de
+pantalla y z detrás de la cámara), `RTPT` = 3 × `RTPS` en 2.000 casos
+aleatorios, `MVMVA` frente a coma flotante (error 0), `NCLIP`, `AVSZ3/4`,
+`INTPL`, `SQR`, banderas y registros especiales. La división UNR coincide con
+la exacta en el 94,5 % de 327.756 casos y se aparta como mucho 3: es la
+imprecisión que el algoritmo documentado reproduce a propósito.
+
+Al escribir las pruebas aparecieron un error real (SX/SY deben salir del valor
+de 64 bits, no del MAC0 truncado) y dos expectativas mías equivocadas (el bit
+31 de FLAG no incluye la saturación de IR3; el color empujado es `MAC >> 4`).
+
+**Límite honesto:** sin hardware ni un emulador de referencia a mano, la GTE
+queda validada contra la especificación, no contra una PS1. Un siguiente nivel
+sería comparar con la GTE de un emulador maduro (DuckStation, Mednafen) sobre
+entradas aleatorias.

@@ -29,7 +29,7 @@ help:
 	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
 	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"
-	@echo "make psx-check  - etapa 5: compara psx/ con el codigo original de ACE.BIN (oraculo MIPS)"
+	@echo "make psx-check  - etapa 5: pruebas de la GTE y comparacion de psx/ con ACE.BIN (oraculo MIPS)"
 	@echo "make psyq-api   - etapa 5: API PsyQ que usa el juego"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
@@ -124,6 +124,9 @@ check:
 	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel, acesnd, acebin, aceovl; print('herramientas OK')"
 
 psx-check:
+	@mkdir -p psx/build
+	@cc -O2 -Wall -Wextra -Ipsx/include psx/test/test_gte.c psx/src/gte.c -lm -o psx/build/test_gte
+	@psx/build/test_gte
 	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
 
 psyq-api:
