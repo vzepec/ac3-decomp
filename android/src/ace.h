@@ -27,6 +27,7 @@ int disc_open_fd(Disc *d, int fd);
 void disc_close(Disc *d);
 int disc_read(Disc *d, uint32_t lba, void *buf, uint32_t nbytes);
 int disc_find(Disc *d, const char *name, DiscFile *out);
+int disc_find_prefix(Disc *d, const char *name, DiscFile *out);
 int disc_volume_is_ac3(Disc *d);
 
 typedef struct {

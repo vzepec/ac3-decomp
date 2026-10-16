@@ -31,15 +31,18 @@ typedef struct {
 typedef struct {
     float zenith[3], high_sun[3], high_away[3], low_sun[3], low_away[3], fog[3], below[3];
     float band_alt[4];      /* alturas (GL y) de los anillos 0-3; el 4 es el horizonte */
-    float sun_heading;      /* rumbo del sol en radianes (unidad SIN RESOLVER: se supone 4096 = 360) */
-    int sun, ok;
+    float sun_heading;      /* rumbo del sol (preludio +0x3E, 4096 = 360) en radianes */
+    float sun_elev;         /* elevacion del sol (preludio +0x3C, 4096 = 360) en radianes */
+    float sun_dir[3];       /* direccion GL hacia el sol (FUN_80089A08: RotMatrixYXZ(rx, ry) * z) */
+    int sun;                /* preludio +0x6C: byte bajo = disco del sol, alto = destello */
+    int haze, weather, ok;
 } Sky;
 
 /* Registro de las tablas de aparicion del guion (s6): docs/04-formatos.md. */
 typedef struct {
     int team, type, model;  /* model: id de LOD (aviones) o indice de s4 (objetos); -1 = sin modelo */
     float x, y, z;          /* GL */
-    float yaw;              /* radianes (4096 = 360, como RotMatrix; sentido SIN RESOLVER) */
+    float yaw;              /* radianes (0x4000 = 360; adelante PS1 = (sin, cos); validado con las demos) */
     int mesh;               /* indice en Scene.models, -1 si no hay */
     int mesh_dead;          /* objetos: modelo anterior de s4 (hipotesis: version destruida), -1 si no */
 } Spawn;
@@ -74,6 +77,7 @@ typedef struct {
     int nair, nobj;
     Sky sky;
     int tims_loaded;
+    int pal;                            /* 1: disco europeo (PAL, 25 ticks/s); 0: NTSC (30) */
 } Scene;
 
 void scene_init(Scene *s);

@@ -60,8 +60,15 @@ int disc_volume_is_ac3(Disc *d) {
     return memcmp(pvd + 1, "CD001", 5) == 0 && memcmp(pvd + 40, "ACE3ES", 6) == 0;
 }
 
+static int disc_find_ex(Disc *d, const char *name, DiscFile *out, int prefix);
+
 /* Busca un archivo en el directorio raiz (los de AC3 estan todos ahi). */
-int disc_find(Disc *d, const char *name, DiscFile *out) {
+int disc_find(Disc *d, const char *name, DiscFile *out) { return disc_find_ex(d, name, out, 0); }
+
+/* Igual, pero basta con que el nombre empiece por `name` (p. ej. "SCES_"). */
+int disc_find_prefix(Disc *d, const char *name, DiscFile *out) { return disc_find_ex(d, name, out, 1); }
+
+static int disc_find_ex(Disc *d, const char *name, DiscFile *out, int prefix) {
     uint8_t pvd[2048], dir[2048];
     if (disc_read(d, 16, pvd, 2048)) return -1;
     uint32_t rlba = rd32(pvd + 156 + 2), rsize = rd32(pvd + 156 + 10);
@@ -72,7 +79,7 @@ int disc_find(Disc *d, const char *name, DiscFile *out) {
         while (o < 2048 && dir[o]) {
             uint8_t len = dir[o], fl = dir[o + 32];
             const char *fn = (const char *)dir + o + 33;
-            if (fl >= nlen && strncasecmp(fn, name, nlen) == 0 && (fl == nlen || fn[nlen] == ';')) {
+            if (fl >= nlen && strncasecmp(fn, name, nlen) == 0 && (prefix || fl == nlen || fn[nlen] == ';')) {
                 out->lba = rd32(dir + o + 2);
                 out->size = rd32(dir + o + 10);
                 return 0;

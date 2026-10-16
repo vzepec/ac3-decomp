@@ -64,6 +64,11 @@ Todavía no hay texto en pantalla:
 
 - Arriba a la derecha, discreto: **fps** (media de cada medio segundo).
   Arriba a la izquierda: **K** = derribos.
+- **Inicio** (0.6): el del guion, con su rumbo (unidad 0x4000 = 360°,
+  corregida). Ajustes propios de la rebanada: si el guion deja el inicio en
+  (0, 0, 0) (un marcador que rellena en partida) o el enemigo más cercano
+  queda a más de 30.000 u, se empieza a 15.000 u de él, mirándolo; los
+  enemigos con posición marcador aparecen en un anillo cercano.
 - **Inicio, enemigos y objetos de tierra salen del guion de la misión**
   (sección 6): empiezas donde empieza el jugador; los aviones enemigos
   aparecen en sus posiciones y formaciones, con sus modelos; los edificios y
@@ -110,24 +115,29 @@ build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
 | Cielo por bandas y color de niebla de cada misión | disco (preludio de la misión); la mezcla "hacia el sol" usa una unidad de ángulo supuesta |
 | Posición inicial, enemigos y objetos de tierra | disco (guion de la misión, s6): posición, bando, modelo, rumbo |
 | Modelos de aviones enemigos, objetos, misil y tu avión | disco (s2/s3/s4 y registro de tipo 4) |
-| Alerones, cabeceo, timón y aerofreno de tu avión | disco (estados de vértices del propio modelo); **qué mando activa cada uno es propio** |
+| Alerones, cabeceo, timón y aerofreno de tu avión | disco (posiciones extremas del modelo) e **interpolación y suavizado del código** (0.6) |
 | Explosiones | disco (registro común 0000): animación de 10 fotogramas, vida (14 ticks) y tamaño (256) del código |
 | Humo oscuro de los restos | disco (texturas y paleta de humo); los restos y su trayectoria son aproximados |
-| Llama del misil | sprite del juego, pero **mal atribuido**: el análisis posterior mostró que ese sprite es de disparos especiales en línea recta, no del misil (se quitará) |
+| Llama del misil | quitada en la 0.6: ese sprite es de los disparos rectos, no del misil |
+| Sol y su halo | disco y halo del juego (s13), dirección y tamaño del código; el resplandor a pantalla completa es aproximado |
+| Estrías de velocidad (misiones con clima 1) | textura y número de trazos del juego; longitud y anchura aproximadas |
 | Estela de humo del misil y de puntas de ala | forma, frecuencia de puntos y vida del código; **color y transparencia propios** (sin resolver) |
 | Objeto destruido | **hipótesis**: el modelo anterior de s4, más bajo (sin confirmar en el código) |
 | Física de vuelo, IA, combate | **propios** y simplificados |
 | Luz del avión del jugador | **propia** (dirección fija) |
 | Texto del HUD | fuente propia 5×7 |
 
-El ritmo del juego se supone de 30 ticks por segundo (sin resolver: puede
-ser 25 en PAL); afecta a la duración de las animaciones.
+Ritmo del juego (0.6): 25 ticks por segundo con el disco europeo (PAL) y 30
+con el americano (NTSC), como el original; se detecta por el ejecutable de
+arranque del disco (`SCES_`/`SLES_` = PAL).
 
 ## Limitaciones conocidas
 
 - Vuelo arcade simple, sin física real del juego, sin HUD ni objetivos de misión.
 - Combate simplificado: los enemigos no disparan ni hay colisiones entre aviones.
-- Sin nubes, sol ni destello todavía (localizados, no portados).
+- Sin campo de nubes (solo lo usa la misión 16) ni capas de bruma todavía.
+- Corregido en la 0.6: a veces se empezaba mirando en dirección contraria
+  (unidad de ángulo equivocada) o muy lejos de la acción.
 - Iluminación del avión aproximada (luz fija); los colores precalculados del
   terreno, los objetos y los enemigos sí son los del juego.
 - Corregido en la 0.5: el avión chocaba con "el aire" encima de puentes y

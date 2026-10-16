@@ -65,16 +65,10 @@ Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Siguiente tarea concreta
 
-**Decidir con el usuario** entre:
-
-- **APK 0.6** (corto): aplicar las correcciones del análisis (rumbos con
-  0x4000, interpolación de superficies, quitar la llama del misil, ritmo de
-  25/30 ticks) y portar nubes, sol y destello. Opcional: reproducir en el APK
-  una demo del juego (las instantáneas ya están descifradas).
-- **Etapa 5** (larga): capa de compatibilidad PsyQ (`docs/05-hoja-de-ruta.md`).
-
-Pendientes de análisis abiertos (no bloquean): color y mezcla de las estelas
-(emulador), contenido de los eventos de clase 4 de las demos, `h0`.
+**APK 0.6 construido** (rumbos y superficies reales, sol, ritmo 25/30,
+inicio ajustado). Pendiente de prueba en la Retroid. A continuación, por
+petición del usuario: **etapa 5** (capa de compatibilidad PsyQ), en la rama
+`etapa-5`.
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,

@@ -21,7 +21,7 @@ typedef struct { float x, y, z; } V3;
 #define MAX_MISSILES 24
 #define MAX_PARTICLES 384
 #define TRAIL_PTS 32                /* puntos por estela (como el juego) */
-#define TICK (1.0f / 30.0f)         /* tick del juego: SIN RESOLVER (25 o 30 Hz); se usa 30 */
+#define TICK (a->tick)               /* tick del juego: 1/25 s (PAL, EU) o 1/30 s (NTSC, US) */
 
 typedef struct {
     V3 pos, fwd, right, up, wp, home;
@@ -92,6 +92,12 @@ typedef struct {
     int target, kills, fire_side, ndead_wait, crashes;
     float respawn_t;
     float crash_t;          /* > 0: el jugador se ha estrellado y reaparece al llegar a 0 */
+    float tick;             /* duracion de un tick del juego (s) */
+    /* superficies moviles: valores del juego (FUN_8006B90C), -1..1; 0 alabeo, 1 cabeceo,
+     * 2 timon, 4 aerofreno (0..1); se acercan a su objetivo |dif|/4 + 2/4096 por tick */
+    float surf[5], surf_tick;
+    V3 player_start;        /* inicio usado (tras los ajustes de la rebanada) */
+    float player_yaw;
     float fire_cd;
     uint32_t rng;
     /* tiempo y contador de fps */

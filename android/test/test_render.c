@@ -85,6 +85,23 @@ int main(int argc, char **argv) {
                     a.right.x * a.fwd.y - a.right.y * a.fwd.x};
         printf("objeto %d: modelo %d malla %d en (%.0f, %.0f, %.0f)\n", atoi(argv[8]), o->model, o->mesh, o->x, o->y, o->z);
     }
+    if (getenv("SURF")) {  /* valores de superficie fijos: "alabeo,cabeceo,timon,aerofreno" */
+        sscanf(getenv("SURF"), "%f,%f,%f,%f", &a.surf[0], &a.surf[1], &a.surf[2], &a.surf[4]);
+        a.cam_yaw = 2.6f; a.cam_pitch = 0.5f;   /* vista de tres cuartos desde delante */
+    }
+    if (getenv("SUNVIEW")) {  /* mirar hacia el sol (desplazado SUNVIEW grados a un lado) */
+        const float *d = a.scene->sky.sun_dir;
+        float off = atof(getenv("SUNVIEW")) * 0.0174533f;
+        float hx = d[0] * cosf(off) - d[2] * sinf(off), hz = d[0] * sinf(off) + d[2] * cosf(off);
+        float l = sqrtf(hx * hx + hz * hz);
+        a.fwd = (V3){hx / l, 0.12f, hz / l};
+        a.right = (V3){-a.fwd.z, 0, a.fwd.x};
+        float rl = sqrtf(a.right.x * a.right.x + a.right.z * a.right.z);
+        a.right.x /= rl; a.right.z /= rl;
+        a.up = (V3){a.right.y * a.fwd.z - a.right.z * a.fwd.y, a.right.z * a.fwd.x - a.right.x * a.fwd.z,
+                    a.right.x * a.fwd.y - a.right.y * a.fwd.x};
+        printf("sol: dir (%.2f, %.2f, %.2f) banderas %#x\n", d[0], d[1], d[2], a.scene->sky.sun);
+    }
     draw(&a);
     int vivos = 0, part = 0;
     for (int i = 0; i < MAX_ENEMIES; i++) vivos += a.enemies[i].alive;

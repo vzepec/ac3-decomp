@@ -283,6 +283,9 @@ static void new_waypoint(App *a, Enemy *e) {
     e->wp_timer = 6 + frand(a) * 6;
 }
 
+/* Posicion (0, *, 0) en el guion: marcador que el guion rellena durante la partida. */
+static int spawn_is_marker(const Spawn *o) { return o->x == 0 && o->z == 0; }
+
 static void spawn_enemies(App *a) {
     Scene *s = a->scene;
     for (int i = 0; i < MAX_ENEMIES; i++) {
@@ -291,6 +294,10 @@ static void spawn_enemies(App *a) {
         if (i == 0 || i >= s->nair || s->air[i].mesh < 0) continue;
         const Spawn *sp = &s->air[i];
         e->pos = e->home = v3(sp->x, sp->y, sp->z);
+        if (spawn_is_marker(sp)) {   /* el guion lo coloca en partida: aqui, en un anillo cercano */
+            float ang = i * 2.3999632f, r = 7000 + 600 * (i % 5);
+            e->pos = e->home = v3(a->player_start.x + cosf(ang) * r, a->player_start.y, a->player_start.z + sinf(ang) * r);
+        }
         float g = scene_ground(s, e->pos.x, e->pos.z) + 300;
         if (e->pos.y < g) e->pos.y = e->home.y = g;
         e->fwd = yaw_dir(sp->yaw);
@@ -305,26 +312,67 @@ static void spawn_enemies(App *a) {
     for (int i = 0; i < s->nobj; i++) a->ground[i].alive = s->obj[i].mesh >= 0;
 }
 
-/* Coloca al jugador en el inicio del guion (sin tocar enemigos ni objetos). */
+/* Inicio del jugador: registro 0 de la tabla de aviones del guion. Ajustes propios de la
+ * rebanada (no del juego): una posicion (0,0,0) es un marcador que el guion rellena en
+ * partida, y si el enemigo mas cercano queda a mas de 30.000 u se acerca el inicio a
+ * 15.000 u de el, mirandolo (el original hace volar hasta alli). */
+static void choose_start(App *a) {
+    Scene *s = a->scene;
+    V3 p = v3(1024, 3000, -1024);
+    float yaw = 0;
+    int have = s->nair > 0 && !spawn_is_marker(&s->air[0]);
+    if (have) { p = v3(s->air[0].x, s->air[0].y, s->air[0].z); yaw = s->air[0].yaw; }
+    /* enemigo (avion u objeto) mas cercano con posicion real */
+    float best = 1e30f; V3 tgt = p;
+    for (int i = 1; i < s->nair; i++) {
+        const Spawn *o = &s->air[i];
+        if (o->team == 0 || o->mesh < 0 || spawn_is_marker(o)) continue;
+        V3 q = v3(o->x, o->y, o->z), d = vsub(q, p);
+        float dd = d.x * d.x + d.z * d.z;
+        if (dd < best) { best = dd; tgt = q; }
+    }
+    for (int i = 0; i < s->nobj; i++) {
+        const Spawn *o = &s->obj[i];
+        if (o->team == 0 || o->mesh < 0) continue;
+        V3 q = v3(o->x, o->y, o->z), d = vsub(q, p);
+        float dd = d.x * d.x + d.z * d.z;
+        if (dd < best) { best = dd; tgt = q; }
+    }
+    if (best < 1e29f && (!have || best > 30000.0f * 30000.0f)) {
+        V3 d = vsub(tgt, p);
+        d.y = 0;
+        float l = sqrtf(d.x * d.x + d.z * d.z);
+        if (l > 1) {
+            V3 n = vmul(d, 1.0f / l);
+            p = vsub(tgt, vmul(n, 15000));
+            p.y = fmaxf(p.y, tgt.y + 500);
+            yaw = atan2f(n.x, -n.z);   /* inversa de yaw_dir: (sin, 0, -cos) */
+        }
+    }
+    a->player_start = p;
+    a->player_yaw = yaw;
+}
+
+/* Coloca al jugador en el inicio (sin tocar enemigos ni objetos). */
 static void player_respawn(App *a) {
     Scene *s = a->scene;
-    /* inicio del jugador: registro 0 de la tabla de aviones del guion */
-    float yaw = 0;
-    if (s->nair > 0) { a->pos = v3(s->air[0].x, s->air[0].y, s->air[0].z); yaw = s->air[0].yaw; }
-    else a->pos = v3(1024, 0, -1024);
+    a->pos = a->player_start;
     float g = scene_ground(s, a->pos.x, a->pos.z);
     if (a->pos.y < g + 800) a->pos.y = g + 2500;
-    a->fwd = yaw_dir(yaw);
+    a->fwd = yaw_dir(a->player_yaw);
     a->right = vnorm(vcross(a->fwd, WORLD_UP));
     a->up = vcross(a->right, a->fwd);
     a->speed = 450;
     a->cam_yaw = a->cam_pitch = 0;
     a->crash_t = 0;
+    memset(a->surf, 0, sizeof a->surf);
     memset(a->wing_trail[0], 0, sizeof a->wing_trail[0]);
 }
 
 void reset_flight(App *a) {
     if (!a->rng) a->rng = 12345;
+    a->tick = a->scene->pal ? 1.0f / 25 : 1.0f / 30;
+    choose_start(a);
     player_respawn(a);
     memset(a->missiles, 0, sizeof a->missiles);
     memset(a->parts, 0, sizeof a->parts);
@@ -617,6 +665,23 @@ static void player_collisions(App *a, V3 prev) {
     if (!s->ntiles && a->pos.y < -1500) a->pos.y = -1500;
 }
 
+/* Valores de superficie del juego: cada tick se acercan al objetivo |dif|/4 + 2 (en 1/4096),
+ * el aerofreno 0x80/4096 por tick (FUN_8006B90C). Objetivos: palanca y gatillo L2. */
+static void update_surfaces(App *a, float dt, float roll, float pitch, float yaw) {
+    float tgt[5] = {roll, pitch, yaw, 0, fmaxf(0.0f, 2.0f * (a->lt - 0.5f))};
+    a->surf_tick += dt;
+    while (a->surf_tick >= TICK) {
+        a->surf_tick -= TICK;
+        for (int k = 0; k < 5; k++) {
+            if (k == 3) continue;
+            float d = tgt[k] - a->surf[k];
+            float step = k == 4 ? 128.0f / 4096 : fabsf(d) / 4 + 2.0f / 4096;
+            if (fabsf(d) <= step) a->surf[k] = tgt[k];
+            else a->surf[k] += d > 0 ? step : -step;
+        }
+    }
+}
+
 void update(App *a, float dt) {
     if (a->crash_t > 0) {  /* estrellado: solo siguen el mundo y los efectos */
         update_enemies(a, dt);
@@ -649,6 +714,7 @@ void update(App *a, float dt) {
     update_enemies(a, dt);
     update_combat(a, dt);
     update_wing_trails(a, dt, fabsf(pitch));
+    update_surfaces(a, dt, roll, pitch, yaw);
 }
 
 /* ------------------------------------------------------------------ HUD */
@@ -896,16 +962,7 @@ static void draw_effects(App *a, const Mat4 *vp, V3 eye, V3 cr, V3 cu) {
         case FX_SPARK: fx_cell(0, p->pos, cr, cu, size, 6, 0x4016, 1 - t); break;
         }
     }
-    /* llama del misil (FUN_8008F388): estela alargada de 0000 s1 (16x64 texeles en u=0xB0,
-     * v=0x60, tpage 0x18, CLUT 0x4496), estirada de la cola a la cabeza, aditiva */
-    for (int i = 0; i < MAX_MISSILES; i++) {
-        Missile *m = &a->missiles[i];
-        if (!m->active) continue;
-        V3 head = m->pos, tail = vsub(m->pos, vmul(m->dir, 26));
-        V3 mid = vmul(vadd(head, tail), 0.5f);
-        V3 side = vnorm(vcross(m->dir, vsub(eye, mid)));
-        fx_quad(0, mid, vmul(side, 3.5f), vmul(m->dir, 13), 0xB0, 0x60, 15.9f, 63.9f, 0x18, 0x4496, 1);
-    }
+    /* (0.6) sin llama en el misil: ese sprite estirado es de los disparos rectos, no del misil */
     fx_flush(a, vp);
 
     /* estelas: bandas Gouraud semitransparentes (FUN_8007A990 / FUN_8007B928). Color y modo de
@@ -942,15 +999,89 @@ static void draw_effects(App *a, const Mat4 *vp, V3 eye, V3 cr, V3 cu) {
     glDisable(GL_BLEND);
 }
 
-/* estado de cada pieza movil segun los mandos (la logica real del juego esta SIN RESOLVER) */
-static int wing_state(App *a) {
+/* ---- superficies moviles: interpolacion de vertices como el juego ----
+ * FUN_800652CC: v = base + (extremo - base) * t. Alas (FUN_80065728 + FUN_80065448):
+ * mezcla = lerp(alabeo, cabeceo, r) segun la proporcion de |v0| y |v1|, y despues
+ * lerp(neutra, mezcla, m) con m = (|v0| + |v1|) * max(r, 1 - r). */
+static Vtx *g_part_tmp, *g_part_mix;
+static uint32_t g_part_cap;
+
+static void vtx_lerp(Vtx *o, const Vtx *a0, const Vtx *b0, uint32_t n, float t) {
+    for (uint32_t i = 0; i < n; i++) {
+        o[i] = a0[i];
+        o[i].x = a0[i].x + (b0[i].x - a0[i].x) * t;
+        o[i].y = a0[i].y + (b0[i].y - a0[i].y) * t;
+        o[i].z = a0[i].z + (b0[i].z - a0[i].z) * t;
+    }
+}
+
+static void part_upload(App *a, int slot, const Vtx *v, uint32_t n) {
+    glBindBuffer(GL_ARRAY_BUFFER, a->vbo_part[slot]);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, n * sizeof(Vtx), v);
+}
+
+static void surfaces_build(App *a) {
     Scene *s = a->scene;
-    float roll = dz(a->lx), pitch = dz(a->ly);
-    if (roll > 0.35f && s->wing_roll_right) return s->wing_roll_right;
-    if (roll < -0.35f && s->wing_roll_left) return s->wing_roll_left;
-    if (pitch > 0.35f && s->wing_nose_up) return s->wing_nose_up;
-    if (pitch < -0.35f && s->wing_nose_down) return s->wing_nose_down;
-    return 0;
+    uint32_t n = s->wing.state[0].n;
+    if (n > g_part_cap || s->dorsal.state[0].n > g_part_cap || s->rudder.state[0].n > g_part_cap) {
+        g_part_cap = n;
+        if (s->dorsal.state[0].n > g_part_cap) g_part_cap = s->dorsal.state[0].n;
+        if (s->rudder.state[0].n > g_part_cap) g_part_cap = s->rudder.state[0].n;
+        g_part_tmp = realloc(g_part_tmp, g_part_cap * sizeof(Vtx));
+        g_part_mix = realloc(g_part_mix, g_part_cap * sizeof(Vtx));
+    }
+    /* alas */
+    float v0 = a->surf[0], v1 = a->surf[1], a0 = fabsf(v0), a1 = fabsf(v1);
+    int ia = v0 >= 0 ? s->wing_roll_right : s->wing_roll_left;
+    int ib = v1 >= 0 ? s->wing_nose_up : s->wing_nose_down;
+    float r = a0 == a1 ? 0.5f : a1 < a0 ? a1 * 0.5f / a0 : 1.0f - a0 * 0.5f / a1;
+    float m = fminf(1.0f, (a0 + a1) * (r < 0.5f ? 1 - r : r));
+    const Vtx *A = s->wing.state[ia ? ia : 0].v, *B = s->wing.state[ib ? ib : 0].v;
+    vtx_lerp(g_part_tmp, A, B, n, r);
+    vtx_lerp(g_part_mix, s->wing.state[0].v, g_part_tmp, n, m);
+    part_upload(a, 0, g_part_mix, n);
+    /* aerofreno */
+    n = s->dorsal.state[0].n;
+    vtx_lerp(g_part_mix, s->dorsal.state[0].v, s->dorsal.state[1].v, n, a->surf[4]);
+    part_upload(a, 5, g_part_mix, n);
+    /* timon */
+    n = s->rudder.state[0].n;
+    int ir = a->surf[2] >= 0 ? s->rudder_right : s->rudder_left;
+    vtx_lerp(g_part_mix, s->rudder.state[0].v, s->rudder.state[ir].v, n, fabsf(a->surf[2]));
+    part_upload(a, 7, g_part_mix, n);
+}
+
+/* ---- sol y destello (FUN_8008A310): s13 TIM 2, disco con CLUT 316 y halo con CLUT 317,
+ * tpage 0x39 aditivo. Diametro aparente ~3 grados (esquinas +-0x1BA a 0x4000). La forma
+ * exacta del destello a pantalla completa es una aproximacion. ---- */
+static void sun_screen(const Mat4 *vp, V3 p, float *nx, float *ny, float *w) {
+    float cx = vp->m[0] * p.x + vp->m[4] * p.y + vp->m[8] * p.z + vp->m[12];
+    float cy = vp->m[1] * p.x + vp->m[5] * p.y + vp->m[9] * p.z + vp->m[13];
+    *w = vp->m[3] * p.x + vp->m[7] * p.y + vp->m[11] * p.z + vp->m[15];
+    *nx = *w > 0 ? cx / *w : 9;
+    *ny = *w > 0 ? cy / *w : 9;
+}
+
+/* ---- estrias de velocidad (clima 1, FUN_8008C7C8): 16 trazos tenues aditivos en un cubo
+ * de 16.384 u que se repite alrededor de la camara, estirados segun la velocidad; textura de
+ * humo de 0000 s0 (u 0-63, v 192-255, CLUT 0x40D6). Longitud y anchura aproximadas. ---- */
+static void speed_streaks(App *a, V3 eye, V3 cr, V3 cu) {
+    if (a->scene->sky.weather != 1 || a->crash_t > 0) return;
+    float k = fminf(1.0f, fmaxf(0.0f, (a->speed - 200) / 800));
+    if (k <= 0) return;
+    for (int i = 0; i < 16; i++) {
+        uint32_t h = 2654435761u * (uint32_t)(i + 1);
+        V3 r = v3((float)(h & 0x3FFF), (float)((h >> 9) & 0x3FFF), (float)((h >> 17) & 0x3FFF));
+        V3 c;
+        c.x = eye.x + fmodf(fmodf(r.x - eye.x, 16384) + 16384, 16384) - 8192;
+        c.y = eye.y + fmodf(fmodf(r.y - eye.y, 16384) + 16384, 16384) - 8192;
+        c.z = eye.z + fmodf(fmodf(r.z - eye.z, 16384) + 16384, 16384) - 8192;
+        V3 dir = a->fwd;
+        V3 side = vnorm(vcross(dir, vsub(eye, c)));
+        fx_quad(0, c, vmul(side, 25), vmul(dir, 60 + a->speed * 0.25f), 0, 192, 63.9f, 63.9f, 0x17, 0x40D6,
+                (15.0f / 131.0f) * 4 * k);
+    }
+    (void)cr; (void)cu;
 }
 
 void draw(App *a) {
@@ -978,6 +1109,20 @@ void draw(App *a) {
     Mat4 proj = perspective(1.05f, aspect, 3.0f, 2048.0f * (VIEW_CELLS + 2));
     Mat4 vp = mmul(proj, view);
     if (s->sky.ok) draw_sky(a, eye, vnorm(vsub(look, eye)), aspect, view);
+    V3 cf0 = vnorm(vsub(look, eye)), cr0 = vnorm(vcross(cf0, a->up)), cu0 = vcross(cr0, cf0);
+    V3 sun_p = eye;
+    int sun_on = s->sky.ok && (s->sky.sun & 0xFF) && s->sky.sun_dir[1] > -0.05f;
+    if (sun_on) {   /* disco del sol: lejos, detras de todo (sin escribir profundidad) */
+        V3 sd = v3(s->sky.sun_dir[0], s->sky.sun_dir[1], s->sky.sun_dir[2]);
+        sun_p = vadd(eye, vmul(sd, 30000));
+        float h = 30000.0f * (442.0f / 16384.0f);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, a->vram_tex);
+        glDisable(GL_DEPTH_TEST);
+        fx_quad(0, sun_p, vmul(cr0, h), vmul(cu0, h), 128, 32, 31.9f, 31.9f, 0x39, 0x4F16, 1);
+        fx_flush(a, &vp);
+        glEnable(GL_DEPTH_TEST);
+    }
 
     glUseProgram(a->prog);
     glActiveTexture(GL_TEXTURE0);
@@ -1035,19 +1180,49 @@ void draw(App *a) {
     Mat4 pm = basis(a->right, a->up, a->fwd, a->pos);
     if (a->crash_t <= 0) draw_mesh(a, a->vao_plane, s->plane.n, pm, 1);
     if (s->wing.nstates == 5 && a->crash_t <= 0) {
-        int w = wing_state(a);
-        draw_mesh(a, a->vao_part[w], s->wing.state[w].n, pm, 1);
-        int db = a->lt > 0.4f ? 1 : 0;
-        draw_mesh(a, a->vao_part[5 + db], s->dorsal.state[db].n, pm, 1);
-        int ru = a->r1 ? s->rudder_right : a->l1 ? s->rudder_left : 0;
-        draw_mesh(a, a->vao_part[7 + ru], s->rudder.state[ru].n, pm, 1);
+        surfaces_build(a);   /* vertices interpolados en las ranuras 0, 5 y 7 */
+        draw_mesh(a, a->vao_part[0], s->wing.state[0].n, pm, 1);
+        draw_mesh(a, a->vao_part[5], s->dorsal.state[0].n, pm, 1);
+        draw_mesh(a, a->vao_part[7], s->rudder.state[0].n, pm, 1);
     }
     glBindVertexArray(0);
 
     /* efectos: sprites del registro 0000 orientados a la camara, y estelas */
     V3 cf = vnorm(vsub(look, eye));
     V3 cr = vnorm(vcross(cf, a->up)), cu = vcross(cr, cf);
+    speed_streaks(a, eye, cr, cu);
     draw_effects(a, &vp, eye, cr, cu);
+
+    /* destello del sol: halo segun lo centrado que este el sol (FUN_8008A310:
+     * intensidad = (320 - (|x| + |y|)) / 320 en coordenadas de pantalla de 320x256) */
+    if (sun_on && (s->sky.sun & 0xFF00)) {
+        float nx, ny, w;
+        sun_screen(&vp, sun_p, &nx, &ny, &w);
+        float I = w > 0 ? 1.0f - (fabsf(nx) * 160 + fabsf(ny) * 128) / 320 : 0;
+        if (I > 0) {
+            float h = 30000.0f * (442.0f / 16384.0f) * 4;
+            glDisable(GL_DEPTH_TEST);
+            /* la celda del halo es un cuarto de circulo (brillo en su esquina inferior derecha):
+             * cuatro copias reflejadas alrededor del sol */
+            for (int q = 0; q < 4; q++) {
+                float sx = (q & 1) ? 1.0f : -1.0f, sy = (q & 2) ? -1.0f : 1.0f;
+                V3 c = vadd(sun_p, vadd(vmul(cr, sx * h * 0.5f), vmul(cu, sy * h * 0.5f)));
+                float u0 = (q & 1) ? 191.9f : 160.0f, uw = (q & 1) ? -31.9f : 31.9f;
+                float v0 = (q & 2) ? 63.9f : 32.0f, vh = (q & 2) ? -31.9f : 31.9f;
+                fx_quad(0, c, vmul(cr, h * 0.5f), vmul(cu, h * 0.5f), u0, v0, uw, vh, 0x39, 0x4F56, I);
+            }
+            fx_flush(a, &vp);
+            glEnable(GL_DEPTH_TEST);
+            Mat4 ortho = {{2.0f / a->w, 0, 0, 0, 0, -2.0f / a->h, 0, 0, 0, 0, 1, 0, -1, 1, 0, 1}};
+            int n = push_rect(g_solid, 0, 0, 0, a->w, a->h);
+            glDisable(GL_DEPTH_TEST);
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_ONE, GL_ONE);
+            draw_solid(a, g_solid, n, &ortho, 0.18f * I * I, 0.16f * I * I, 0.12f * I * I, 1);
+            glDisable(GL_BLEND);
+            glEnable(GL_DEPTH_TEST);
+        }
+    }
 
     draw_hud(a, &vp);
 }
