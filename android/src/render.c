@@ -305,9 +305,9 @@ static void spawn_enemies(App *a) {
     for (int i = 0; i < s->nobj; i++) a->ground[i].alive = s->obj[i].mesh >= 0;
 }
 
-void reset_flight(App *a) {
+/* Coloca al jugador en el inicio del guion (sin tocar enemigos ni objetos). */
+static void player_respawn(App *a) {
     Scene *s = a->scene;
-    if (!a->rng) a->rng = 12345;
     /* inicio del jugador: registro 0 de la tabla de aviones del guion */
     float yaw = 0;
     if (s->nair > 0) { a->pos = v3(s->air[0].x, s->air[0].y, s->air[0].z); yaw = s->air[0].yaw; }
@@ -319,6 +319,13 @@ void reset_flight(App *a) {
     a->up = vcross(a->right, a->fwd);
     a->speed = 450;
     a->cam_yaw = a->cam_pitch = 0;
+    a->crash_t = 0;
+    memset(a->wing_trail[0], 0, sizeof a->wing_trail[0]);
+}
+
+void reset_flight(App *a) {
+    if (!a->rng) a->rng = 12345;
+    player_respawn(a);
     memset(a->missiles, 0, sizeof a->missiles);
     memset(a->parts, 0, sizeof a->parts);
     memset(a->wing_trail, 0, sizeof a->wing_trail);
@@ -450,7 +457,7 @@ static void update_combat(App *a, float dt) {
     }
     /* disparo: al pulsar, alternando ala */
     a->fire_cd -= dt;
-    if (a->fire && !a->fire_prev && a->fire_cd <= 0) {
+    if (a->fire && !a->fire_prev && a->fire_cd <= 0 && a->crash_t <= 0) {
         for (int i = 0; i < MAX_MISSILES; i++) {
             Missile *m = &a->missiles[i];
             if (m->active || m->smoke.count) continue;
@@ -479,6 +486,7 @@ static void update_combat(App *a, float dt) {
                 V3 desired = vnorm(vsub(tp, m->pos));
                 m->dir = vnorm(vadd(m->dir, vmul(vsub(desired, m->dir), fminf(1.0f, 3.2f * dt))));
             }
+            V3 prev = m->pos;
             m->pos = vadd(m->pos, vmul(m->dir, m->speed * dt));
             m->life -= dt;
             /* estela de humo (sistema A): 3 posiciones alrededor del eje, un punto cada 4 ticks
@@ -510,7 +518,8 @@ static void update_combat(App *a, float dt) {
                     m->active = 0;
                 }
             }
-            if (m->active && m->pos.y < scene_ground(s, m->pos.x, m->pos.z)) { missile_impact(a, m->pos, 0); m->active = 0; }
+            float q0[3] = {prev.x, prev.y, prev.z}, q1[3] = {m->pos.x, m->pos.y, m->pos.z};
+            if (m->active && scene_hit_segment(s, q0, q1)) { missile_impact(a, m->pos, 0); m->active = 0; }
             if (m->life <= 0) m->active = 0;
         }
         trail_age(&m->smoke, 90 * TICK, dt);   /* vida de 90 ticks */
@@ -558,7 +567,64 @@ static void update_wing_trails(App *a, float dt, float pull) {
 
 static float dz(float v) { return fabsf(v) < 0.12f ? 0 : v; }
 
+/* Choque con un objeto de tierra: el punto pasa al espacio del objeto (sin su rumbo) y se
+ * compara con su caja envolvente ampliada en `r`. */
+static int hit_object(App *a, int i, V3 p, float r) {
+    Scene *s = a->scene;
+    const Spawn *o = &s->obj[i];
+    int mi = a->ground[i].alive ? o->mesh : o->mesh_dead;
+    if (mi < 0) return 0;
+    const Mesh *m = &s->models[mi];
+    V3 d = vsub(p, v3(o->x, o->y, o->z));
+    if (vdot(d, d) > (m->radius + r) * (m->radius + r) * 3) return 0;
+    V3 f = yaw_dir(o->yaw), rt = vnorm(vcross(f, WORLD_UP));
+    /* basis(): x = derecha, y = arriba, z = -adelante */
+    float l[3] = {vdot(d, rt), d.y, -vdot(d, f)};
+    for (int k = 0; k < 3; k++)
+        if (l[k] < m->bmin[k] - r || l[k] > m->bmax[k] + r) return 0;
+    return 1;
+}
+
+static void player_crash(App *a) {
+    missile_impact(a, a->pos, 1);
+    a->crash_t = 3.0f;
+    a->crashes++;
+    a->speed = 0;
+}
+
+/* Choques del jugador: terreno (triangulos: suelo, puentes, edificios), objetos y aviones.
+ * Radio del jugador: 8 unidades (aprox. el fuselaje); la colision real del juego esta SIN RESOLVER. */
+static void player_collisions(App *a, V3 prev) {
+    Scene *s = a->scene;
+    const float R = 8.0f;
+    float q0[3] = {prev.x, prev.y, prev.z}, q1[3] = {a->pos.x, a->pos.y, a->pos.z};
+    if (scene_hit_segment(s, q0, q1) || scene_hit_sphere(s, a->pos.x, a->pos.y, a->pos.z, R)) { player_crash(a); return; }
+    for (int i = 0; i < s->nobj; i++)
+        if (hit_object(a, i, a->pos, R)) { player_crash(a); return; }
+    for (int i = 1; i < MAX_ENEMIES; i++) {
+        Enemy *e = &a->enemies[i];
+        if (!e->alive) continue;
+        float rr = s->models[e->mesh].radius * 0.6f + R;
+        V3 d = vsub(e->pos, a->pos);
+        if (vdot(d, d) < rr * rr) {
+            e->alive = 0;
+            missile_impact(a, e->pos, 1);
+            player_crash(a);
+            return;
+        }
+    }
+    /* misiones sin terreno (23, 43): suelo de seguridad, sin choque */
+    if (!s->ntiles && a->pos.y < -1500) a->pos.y = -1500;
+}
+
 void update(App *a, float dt) {
+    if (a->crash_t > 0) {  /* estrellado: solo siguen el mundo y los efectos */
+        update_enemies(a, dt);
+        update_combat(a, dt);
+        update_wing_trails(a, dt, 0);
+        if ((a->crash_t -= dt) <= 0) player_respawn(a);
+        return;
+    }
     float pitch = dz(a->ly), roll = dz(a->lx), yaw = (float)(a->r1 - a->l1);
     /* controles invertidos, como el original: palanca hacia delante (ly < 0) = morro abajo */
     float pr = pitch * 1.6f * dt, rr = roll * 2.8f * dt, yr = yaw * 0.6f * dt;
@@ -574,9 +640,10 @@ void update(App *a, float dt) {
     a->speed += (a->rt - a->lt) * 500 * dt;
     if (a->speed < 150) a->speed = 150;
     if (a->speed > 1800) a->speed = 1800;
+    V3 prev = a->pos;
     a->pos = vadd(a->pos, vmul(a->fwd, a->speed * dt));
-    float g = scene_ground(a->scene, a->pos.x, a->pos.z) + 40;
-    if (a->pos.y < g) a->pos.y = g;
+    player_collisions(a, prev);
+    if (a->crash_t > 0) return;
     a->cam_yaw = dz(a->rx) * 3.1f;
     a->cam_pitch = dz(a->ry) * 1.2f;
     update_enemies(a, dt);
@@ -966,8 +1033,8 @@ void draw(App *a) {
     }
     /* avion del jugador: piezas fijas + estado de alas, aerofreno y timon */
     Mat4 pm = basis(a->right, a->up, a->fwd, a->pos);
-    draw_mesh(a, a->vao_plane, s->plane.n, pm, 1);
-    if (s->wing.nstates == 5) {
+    if (a->crash_t <= 0) draw_mesh(a, a->vao_plane, s->plane.n, pm, 1);
+    if (s->wing.nstates == 5 && a->crash_t <= 0) {
         int w = wing_state(a);
         draw_mesh(a, a->vao_part[w], s->wing.state[w].n, pm, 1);
         int db = a->lt > 0.4f ? 1 : 0;

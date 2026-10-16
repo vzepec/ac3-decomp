@@ -39,6 +39,19 @@ int main(int argc, char **argv) {
     reset_flight(&a);
     /* vuelo de prueba: un poco de alabeo y cabeceo para ver el avion inclinado */
     float secs = atof(argv[4]);
+    if (argc > 9) {  /* picado: 300 por encima del suelo, morro 30 grados abajo, sin mandos */
+        a.pos.y = scene_ground(a.scene, a.pos.x, a.pos.z) + 300;
+        a.fwd = (V3){a.fwd.x * 0.866f, -0.5f, a.fwd.z * 0.866f};
+        a.up = (V3){a.right.y * a.fwd.z - a.right.z * a.fwd.y, a.right.z * a.fwd.x - a.right.x * a.fwd.z,
+                    a.right.x * a.fwd.y - a.right.y * a.fwd.x};
+        for (float t = 0; t < secs; t += 1.0f / 60) {
+            float y0 = a.pos.y;
+            update(&a, 1.0f / 60);
+            if (a.crash_t > 0 && a.crashes == 1) { printf("estrellado en t=%.2f s a y=%.0f (suelo %.0f)\n", t, y0, scene_ground(a.scene, a.pos.x, a.pos.z)); a.crashes = 2; }
+        }
+        printf("choques %d, crash_t %.2f, pos y %.0f\n", a.crashes > 1 ? 1 : a.crashes, a.crash_t, a.pos.y);
+        return 0;
+    }
     for (float t = 0; t < secs; t += 1.0f / 60) {
         if (argc > 6) { a.lx = t < secs * 0.5f ? 0.3f : 0.0f; a.ly = 0.35f; }
         a.fire = ((int)(t * 4) % 2) == 0;   /* dispara a rafagas */

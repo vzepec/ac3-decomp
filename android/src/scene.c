@@ -45,7 +45,13 @@ void scene_free(Scene *s) {
 
 static void mesh_bounds(Mesh *m) {
     float r = 0;
+    for (int k = 0; k < 3; k++) { m->bmin[k] = 1e9f; m->bmax[k] = -1e9f; }
     for (uint32_t i = 0; i < m->n; i++) {
+        float p[3] = {m->v[i].x, m->v[i].y, m->v[i].z};
+        for (int k = 0; k < 3; k++) {
+            if (p[k] < m->bmin[k]) m->bmin[k] = p[k];
+            if (p[k] > m->bmax[k]) m->bmax[k] = p[k];
+        }
         float a = fabsf(m->v[i].x), b = fabsf(m->v[i].y), c = fabsf(m->v[i].z);
         if (a > r) r = a;
         if (b > r) r = b;
@@ -585,4 +591,110 @@ float scene_ground(const Scene *s, float x, float z) {
     if (cx < 0 || cx > 255 || cz < 0 || cz > 255) return -2000.0f;
     uint32_t t = s->tilemap[cz * 256 + cx] & 0x1FF;
     return (t && t <= s->ntiles) ? s->tile_top[t] : -2000.0f;
+}
+
+/* ---- colisiones contra los triangulos de las teselas ----
+ * Cada tesela esta en coordenadas locales al centro de su celda (como en el dibujo). */
+
+static void vsub3(float o[3], const float a[3], const float b[3]) { o[0] = a[0] - b[0]; o[1] = a[1] - b[1]; o[2] = a[2] - b[2]; }
+static float vdot3(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+
+/* Punto del triangulo abc mas cercano a p (Ericson, "Real-Time Collision Detection" 5.1.5). */
+static void closest_on_tri(float o[3], const float p[3], const float a[3], const float b[3], const float c[3]) {
+    float ab[3], ac[3], ap[3], bp[3], cp[3];
+    vsub3(ab, b, a); vsub3(ac, c, a); vsub3(ap, p, a);
+    float d1 = vdot3(ab, ap), d2 = vdot3(ac, ap);
+    if (d1 <= 0 && d2 <= 0) { memcpy(o, a, 12); return; }
+    vsub3(bp, p, b);
+    float d3 = vdot3(ab, bp), d4 = vdot3(ac, bp);
+    if (d3 >= 0 && d4 <= d3) { memcpy(o, b, 12); return; }
+    float vc = d1 * d4 - d3 * d2;
+    if (vc <= 0 && d1 >= 0 && d3 <= 0) {
+        float v = d1 / (d1 - d3);
+        for (int k = 0; k < 3; k++) o[k] = a[k] + v * ab[k];
+        return;
+    }
+    vsub3(cp, p, c);
+    float d5 = vdot3(ab, cp), d6 = vdot3(ac, cp);
+    if (d6 >= 0 && d5 <= d6) { memcpy(o, c, 12); return; }
+    float vb = d5 * d2 - d1 * d6;
+    if (vb <= 0 && d2 >= 0 && d6 <= 0) {
+        float w = d2 / (d2 - d6);
+        for (int k = 0; k < 3; k++) o[k] = a[k] + w * ac[k];
+        return;
+    }
+    float va = d3 * d6 - d5 * d4;
+    if (va <= 0 && (d4 - d3) >= 0 && (d5 - d6) >= 0) {
+        float w = (d4 - d3) / ((d4 - d3) + (d5 - d6));
+        for (int k = 0; k < 3; k++) o[k] = b[k] + w * (c[k] - b[k]);
+        return;
+    }
+    float den = 1.0f / (va + vb + vc), v = vb * den, w = vc * den;
+    for (int k = 0; k < 3; k++) o[k] = a[k] + ab[k] * v + ac[k] * w;
+}
+
+/* Recorre los triangulos de las celdas que toca la caja [x0,x1]x[z0,z1] (GL). */
+typedef int (*tri_fn)(const float a[3], const float b[3], const float c[3], void *ctx);
+
+static int for_tris(const Scene *s, float x0, float x1, float z0, float z1, tri_fn fn, void *ctx) {
+    /* PS1: celda = floor(coord / 2048) + 128 ; GL z = -z PS1 */
+    int cx0 = (int)floorf(x0 / 2048.0f) + 128, cx1 = (int)floorf(x1 / 2048.0f) + 128;
+    int cz0 = (int)floorf(-z1 / 2048.0f) + 128, cz1 = (int)floorf(-z0 / 2048.0f) + 128;
+    for (int cz = cz0; cz <= cz1; cz++) {
+        if (cz < 0 || cz > 255) continue;
+        for (int cx = cx0; cx <= cx1; cx++) {
+            if (cx < 0 || cx > 255) continue;
+            uint32_t t = s->tilemap[cz * 256 + cx] & 0x1FF;
+            if (!t || t > s->ntiles) continue;
+            float ox = (cx - 128) * 2048.0f + 1024, oz = -((cz - 128) * 2048.0f + 1024);
+            const Vtx *v = s->tiles.v + s->tile_first[t];
+            for (uint32_t i = 0; i + 2 < s->tile_count[t]; i += 3) {
+                float a[3] = {v[i].x + ox, v[i].y, v[i].z + oz}, b[3] = {v[i + 1].x + ox, v[i + 1].y, v[i + 1].z + oz},
+                      c[3] = {v[i + 2].x + ox, v[i + 2].y, v[i + 2].z + oz};
+                if (fn(a, b, c, ctx)) return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+typedef struct { float p[3], r2; } SphereCtx;
+
+static int tri_sphere(const float a[3], const float b[3], const float c[3], void *ctx) {
+    SphereCtx *q = ctx;
+    float o[3], d[3];
+    closest_on_tri(o, q->p, a, b, c);
+    vsub3(d, o, q->p);
+    return vdot3(d, d) <= q->r2;
+}
+
+int scene_hit_sphere(const Scene *s, float x, float y, float z, float r) {
+    SphereCtx q = {{x, y, z}, r * r};
+    return for_tris(s, x - r, x + r, z - r, z + r, tri_sphere, &q);
+}
+
+typedef struct { float p0[3], d[3]; } SegCtx;
+
+/* Moller-Trumbore: el segmento p0 + t*d (0 <= t <= 1) corta el triangulo? */
+static int tri_segment(const float a[3], const float b[3], const float c[3], void *ctx) {
+    SegCtx *q = ctx;
+    float e1[3], e2[3], pv[3], tv[3], qv[3];
+    vsub3(e1, b, a); vsub3(e2, c, a);
+    pv[0] = q->d[1] * e2[2] - q->d[2] * e2[1]; pv[1] = q->d[2] * e2[0] - q->d[0] * e2[2]; pv[2] = q->d[0] * e2[1] - q->d[1] * e2[0];
+    float det = vdot3(e1, pv);
+    if (fabsf(det) < 1e-9f) return 0;
+    float inv = 1.0f / det;
+    vsub3(tv, q->p0, a);
+    float u = vdot3(tv, pv) * inv;
+    if (u < 0 || u > 1) return 0;
+    qv[0] = tv[1] * e1[2] - tv[2] * e1[1]; qv[1] = tv[2] * e1[0] - tv[0] * e1[2]; qv[2] = tv[0] * e1[1] - tv[1] * e1[0];
+    float v = vdot3(q->d, qv) * inv;
+    if (v < 0 || u + v > 1) return 0;
+    float t = vdot3(e2, qv) * inv;
+    return t >= 0 && t <= 1;
+}
+
+int scene_hit_segment(const Scene *s, const float p0[3], const float p1[3]) {
+    SegCtx q = {{p0[0], p0[1], p0[2]}, {p1[0] - p0[0], p1[1] - p0[1], p1[2] - p0[2]}};
+    return for_tris(s, fminf(p0[0], p1[0]), fmaxf(p0[0], p1[0]), fminf(p0[2], p1[2]), fmaxf(p0[2], p1[2]), tri_segment, &q);
 }

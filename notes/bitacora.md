@@ -5,6 +5,21 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — APK 0.5: choques contra los triángulos del terreno
+
+El usuario reportó que el avión no podía estrellarse y que "chocaba con el
+aire" al pasar bajo puentes o entre edificios. Causa: el suelo era la altura
+máxima de la tesela de cada celda (2048 u), así que una estructura convertía
+la celda entera en una losa. Ahora el jugador y los misiles chocan con los
+triángulos reales (esfera de 8 u + segmento del fotograma), con los objetos
+de tierra (caja envolvente en su espacio) y con los aviones. Validado:
+`test_collide` encuentra huecos bajo estructuras (misión 20: estructura a
+1.280 con aire hasta el suelo a 1.132), y un picado se estrella a 11 u del
+suelo y reaparece. La colisión del propio juego (`terrain_raycast`) no se ha
+portado.
+
+Reproducir: `android/build/test_collide <imagen> 20`.
+
 ## 2026-10-15 — APK 0.4: cielo, guion, efectos y superficies del juego
 
 Portado a la rebanada lo localizado en la etapa 3: cielo por bandas y niebla

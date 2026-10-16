@@ -72,6 +72,12 @@ Todavía no hay texto en pantalla:
   estás cerca). Si los derribas a todos, reaparecen a los 6 s.
 - **Misiles**: se fija el blanco (avión u objeto) más centrado en un cono de
   ~35° y a menos de 14.000 unidades (recuadro verde).
+- **Choques** (0.5): te estrellas contra el terreno (sus triángulos reales:
+  suelo, puentes, edificios), los objetos de tierra y los aviones enemigos.
+  Se puede pasar por debajo de puentes y entre edificios si cabes. Tras
+  estrellarte, explosión y reaparición en el inicio a los 3 s. El radio del
+  avión (8 unidades) y la detección son propios: la colisión del juego está
+  sin resolver.
 - El texto del HUD usa una fuente propia de 5×7 (no es la del juego).
 
 ## Rendimiento
@@ -92,6 +98,8 @@ con EGL + GLES3 (Mesa) y `test/test_desktop.c` valida la carga de datos:
 cd android
 cc -O2 -Isrc test/test_desktop.c src/ace.c src/scene.c -lm -o build/test_desktop
 build/test_desktop <imagen.bin> 6 55
+cc -O2 -Isrc test/test_collide.c src/ace.c src/scene.c -lm -o build/test_collide
+build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
 ```
 
 ## Qué es del juego y qué no
@@ -122,5 +130,8 @@ ser 25 en PAL); afecta a la duración de las animaciones.
 - Sin nubes, sol ni destello todavía (localizados, no portados).
 - Iluminación del avión aproximada (luz fija); los colores precalculados del
   terreno, los objetos y los enemigos sí son los del juego.
+- Corregido en la 0.5: el avión chocaba con "el aire" encima de puentes y
+  edificios (el suelo era la altura máxima de cada celda de 2048 unidades) y
+  no podía estrellarse.
 - Corregido en la 0.4: al cambiar de misión, las misiones 23 y 43 (de gran
   altitud, sin terreno) daban pantalla roja y la app quedaba atascada.

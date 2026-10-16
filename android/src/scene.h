@@ -24,6 +24,7 @@ typedef struct {
     Vtx *v;
     uint32_t n, cap;
     float radius;           /* max |coordenada| (para choques y estelas) */
+    float bmin[3], bmax[3]; /* caja envolvente en espacio de modelo */
 } Mesh;
 
 /* Cielo y niebla: preludio del tipo 17 (docs/04-formatos.md, tools/acesky.py). */
@@ -85,6 +86,11 @@ int scene_load_mission(Scene *s, Disc *d, AcePack *p, uint32_t record);
 int scene_load_aircraft(Scene *s, Disc *d, AcePack *p, uint32_t record);
 /* Altura del suelo (GL y) aproximada en una posicion GL. */
 float scene_ground(const Scene *s, float x, float z);
+/* Choque de una esfera (GL) con los triangulos del terreno (teselas, incluidos puentes y
+ * edificios). Devuelve 1 si toca alguno. */
+int scene_hit_sphere(const Scene *s, float x, float y, float z, float r);
+/* Choque de un segmento p0-p1 (GL) con los triangulos del terreno. */
+int scene_hit_segment(const Scene *s, const float p0[3], const float p1[3]);
 /* Libera los vertices de las mallas (para recargar). */
 void scene_clear_meshes(Scene *s);
 

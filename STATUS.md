@@ -65,8 +65,8 @@
 
 ## Siguiente tarea concreta
 
-**APK 0.4 construido** (`android/build/ac3slice.apk`, rama `etapa-4`):
-pendiente de que el usuario lo pruebe en la Retroid. Después, volver a la
+**APK 0.5 construido** (choques reales contra el terreno, objetos y aviones;
+0.4 probado por el usuario: funciona). Pendiente de prueba en la Retroid. Después, volver a la
 etapa 3 (rama `etapa-3`) con los pendientes de abajo, priorizando lo que se
 note en el APK: nubes, sol y destello (ya localizados), qué mando activa cada
 superficie, color de las estelas, ritmo de ticks.

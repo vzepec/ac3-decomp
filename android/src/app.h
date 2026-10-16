@@ -89,8 +89,9 @@ typedef struct {
     Missile missiles[MAX_MISSILES];
     Particle parts[MAX_PARTICLES];
     Trail wing_trail[MAX_ENEMIES][2];       /* ranura 0 = jugador */
-    int target, kills, fire_side, ndead_wait;
+    int target, kills, fire_side, ndead_wait, crashes;
     float respawn_t;
+    float crash_t;          /* > 0: el jugador se ha estrellado y reaparece al llegar a 0 */
     float fire_cd;
     uint32_t rng;
     /* tiempo y contador de fps */
