@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Superficies móviles: estados discretos de alas, aerofreno y timón
+
+Los modelos "solo vértices" del avión del jugador son estados discretos de
+tres piezas: alas (neutra, alabeo ×2, cabeceo ×2), aerofreno (2) y timón (3).
+El render usa por defecto el primero de cada grupo. Medido en los 22
+aviones; 3 diseños ficticios no tienen superficies móviles. Un primer conteo
+salió mal por culpa de la herramienta (umbral fijo de |x| > 40 que no servía
+para aviones estrechos), no de los datos: corregido con un umbral relativo a
+la envergadura.
+
+Reproducir: `python3 tools/acesurf.py data/bpb/00{47..68}_*.bin`.
+
 ## 2026-10-15 — Corrección: el misil sí deja estela de humo
 
 Buscando la interpolación de las superficies móviles aparecieron dos

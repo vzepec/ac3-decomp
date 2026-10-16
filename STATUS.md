@@ -77,9 +77,9 @@ sol/destello y bruma (s13 + s8).
    (s4) con bando, tipo, modelo y posición. Pendiente menor: unidad de la
    orientación; versión destruida de los objetos.
 2. ✅ Objetos de tierra: salen de la tabla anterior.
-3. **Superficies móviles**: las callbacks de pieza resultaron ser luces y
-   rotores (ver `docs/09-codigo.md`). Buscar quién usa los modelos "solo
-   vértices" del avión del jugador (interpolación entre posiciones).
+3. ✅ **Superficies móviles**: estados discretos (alas, aerofreno, timón),
+   `tools/acesurf.py`. Pendiente menor: qué control elige cada estado.
+   ✅ Estelas de humo del misil y de puntas de ala (búferes circulares).
 4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
    overlays 3-5.
 

@@ -676,6 +676,28 @@ estado, da la vuelta tras 15). `FUN_80035E78` carga el registro y
 `FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`. El formato interno de
 la grabación está `SIN RESOLVER`.
 
+#### Superficies móviles del avión del jugador
+
+Los 12 modelos del preludio del tipo 4 tienen un orden fijo. El render
+(`scene_objects_sort`) pasa los modelos 2-11 como **10 bloques de vértices
+alternativos** y asigna por defecto el 0, el 5 y el 7 (el primer estado de
+cada grupo). Son **estados discretos**, no una interpolación:
+
+| Modelo | Pieza | Estados (medidos con `tools/acesurf.py`) |
+|---|---|---|
+| 0 | tobera | — |
+| 1 | fuselaje | — |
+| 2 | alas, posición neutra | — |
+| 3 / 4 | alas: alerones a un lado / al otro (antisimétrico) | 19 de 22 aviones |
+| 5 / 6 | alas: cabeceo (simétrico; el signo cambia según el avión) | 18 de 22 |
+| 7 / 8 | pieza dorsal: **aerofreno** recogido / abierto (sube 30-42 u.) | 10 de 22 |
+| 9 / 10 / 11 | deriva: timón neutro / a +x / a −x | 17 de 22 |
+
+Los registros 47, 65 y 66 (diseños ficticios) tienen todos los estados
+idénticos: sin superficies móviles. `SIN RESOLVER`: qué control elige cada
+estado y con qué umbral (probablemente la callback de pieza de `0x800B09D0`
+o la lógica de vuelo), y qué estado de 3/4 es alabeo a la izquierda.
+
 #### Tipo 5 — briefings de misión (40 registros)
 
 Sin comprimir. Textos de briefing ("Neuwork air unit transporting military
