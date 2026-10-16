@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5, paso 7: libcd/libetc/libpad validadas con el código del juego
+
+Reimplementadas libcd (sobre la imagen de disco), libetc (VSync y modelo de
+tiempo por fotogramas) y libpad (modo directo). La validación ejecuta el
+código original del juego en el intérprete, sobre la misma RAM que la capa
+de C, y desvía sus llamadas de librería a la implementación:
+- `packs_init` abre y valida los packs;
+- el lector por streaming del juego (Setloc/Setmode/ReadN, callback por
+  sector, Pause) carga los **127 registros del BPB idénticos** a los
+  extraídos, a 3 sectores por fotograma;
+- la rutina de mando del juego lee bien botones, pulsaciones y ejes.
+
+Dato de paso: en `packs_open` el campo +0x0C del estado vale 1 sin error
+(copia el campo "kind" del SPH); el error es 5.
+
+Seis mutaciones detectadas. La de la velocidad de lectura no se detectaba
+hasta que se añadió una comprobación de tiempo.
+
+Reproducir: `make psx-check` (o `python3 tools/psxcheck_io.py <imagen>
+data/exe/ace_eu.bin $(seq 0 126)` para todos los registros).
+
 ## 2026-10-16 — Etapa 5: GPU por software y primer render con la capa PsyQ
 
 GPU de la PS1 por software (`psx/src/gpu.c`) con 75 pruebas, entre ellas 72

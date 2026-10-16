@@ -63,7 +63,7 @@ etapa.
 | 4 | Emulador de la GTE (`psx/src/gte.c`) | ✅ especificación + 27 pruebas (`make psx-check`); sin verificar contra hardware |
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | ✅ funciones de memoria (6, oráculo) + GPU por software (75 pruebas, 72 texturas reales idénticas) + terreno real dibujado (`make psx-scene`) |
-| 7 | libcd, libpad, libetc | sobre las piezas de `android/` |
+| 7 | libcd, libpad, libetc | ✅ validadas ejecutando el código del juego: apertura de packs, 127/127 registros por streaming idénticos, mando (`tools/psxcheck_io.py`) |
 | 8 | libspu | bancos de sonido de las misiones (`tools/acesnd.py`) |
 
 **Esfuerzo:** meses. **Riesgo:** medio (la GTE es delicada; el resto es
@@ -206,3 +206,91 @@ punta a punta.
 Límites: la interpolación de color y UV dentro de los polígonos sigue la idea
 del hardware pero no está verificada contra una PS1; `ClearOTagR` termina la
 lista en `0xFFFFFF` en vez de en el paquete interno de la librería.
+
+**Paso 7 (2026-10-16): libcd, libetc, libpad, validadas con el código del juego.**
+
+`psx/src/libcd.c`, `libetc.c` y `libpad.c`.
+
+*Modelo de tiempo e interrupciones* (`psx_libetc.h`). No hay hilos ni
+interrupciones reales: el tiempo avanza por fotogramas (`psx_vblank`). Cada
+fotograma incrementa el contador de VSync, actualiza los mandos, hace avanzar
+el CD en 8 pasos y llama al callback de VSync. El CD entrega en cada paso los
+comandos pendientes y los sectores a la velocidad de lectura (150 por segundo
+a doble velocidad: 3 por fotograma en PAL). Las funciones que esperan en la
+PS1 (`VSync`, `CdSync(0)`, `CdControlB`) hacen avanzar ese tiempo ellas
+mismas, así que los callbacks llegan "durante la espera", como harían las
+interrupciones.
+
+*Callbacks como direcciones.* El juego guarda sus punteros a función como
+palabras de 32 bits dentro de sus estructuras (p. ej. `0x80029BB0` en el
+estado del lector de CD). La capa los trata como direcciones PS1 y los
+invoca a través de una función de despacho del anfitrión (`psx_set_call`).
+El código recompilado de la etapa 6 traducirá la dirección a su función; las
+pruebas la traducen al intérprete.
+
+*Direcciones fijas.* Los búferes de resultado que reciben los callbacks y el
+`CdlLOC` de `CdLastPos` están en la RAM simulada, en las mismas direcciones
+que usa la libcd original del ACE.BIN europeo (0x800C5C98, 0x800C5CA0,
+0x800B40F4), porque el juego recibe esos punteros.
+
+*libcd.*
+- Imagen `.bin` (2352 B por sector) o `.iso` (2048).
+- Comandos Setloc, Setmode, Setfilter, ReadN, ReadS, Pause, Stop, Standby,
+  GetlocL/P y GetTN, con terminación diferida que se notifica a
+  `CdSyncCallback`.
+- Un callback de `CdReadyCallback` por sector; `CdGetSector` lee 2048 o 2340
+  bytes según el modo.
+- ReadS con filtro XA: los sectores de audio no llegan al programa; van a un
+  sumidero para libspu.
+- `CdSearchFile` sobre el ISO9660.
+
+*libpad.* Modo directo: cada fotograma escribe en los búferes de
+`PadInitDirect` el estado, el id (0x41/0x73), los botones activos a nivel
+bajo y los ejes. El mando se presenta ya identificado como estándar
+(`PadGetState` = 2), sin negociación de DualShock ni vibración (SIN HACER).
+
+**Validación (`tools/psxcheck_io.py`, en `make psx-check`).**
+- `tools/mipsemu.py` admite ahora RAM externa (la misma `psx_ram` de la capa,
+  por ctypes), desvíos de funciones de librería a Python/C (hooks) y llamadas
+  reentrantes para los callbacks.
+- El intérprete ejecuta el código original del juego, y sus llamadas a
+  libcd/libetc/libpad van a la implementación en C.
+
+Resultados:
+1. `CdIntToPos`/`CdPosToInt`: 40.000 casos idénticos a las originales (oráculo).
+2. `CdSearchFile`: LBA y tamaño de 5 archivos iguales a los de `tools/psxiso.py`.
+3. `packs_init` del juego (0x8002AC0C):
+   - busca los 4 packs, lee los índices con `CdRead` y los valida (marca
+     AC3E, códigos 0x1019 y 0x19991019) sin mensajes de error;
+   - la tabla BPH reubicada coincide en sus 127 entradas con `tools/acepack.py`.
+4. El lector por streaming del juego (`spb_stream_start`, 0x8002A34C):
+   - secuencia: Setloc, Setmode 0xA0, ReadN, un callback por sector que
+     comprueba el número de sector de la cabecera y copia con `CdGetSector`,
+     y al final Pause;
+   - **127/127 registros del BPB idénticos** byte a byte a los extraídos,
+     sin escribir más allá del final;
+   - unos 3 sectores por fotograma.
+5. El mando, con la inicialización (0x800260AC) y la lectura por fotograma
+   (0x800269E4) del juego:
+   - botones, pulsaciones nuevas, cambio a analógico con los cuatro ejes y
+     desconexión.
+
+Método validado con 6 mutaciones; todas se detectan:
+- desplazamiento de los datos del sector;
+- saltarse sectores;
+- BCD mal calculado;
+- velocidad de lectura a la mitad (no se detectaba hasta añadir la
+  comprobación de tiempo);
+- ejes intercambiados;
+- byte de estado del mando.
+
+`psx/test/test_etc.c` comprueba la semántica de `VSync` (-1, 0, 1, n) y el
+callback de VSync.
+
+Simplificaciones y límites:
+- `CdRead` es síncrono;
+- no hay tiempos de búsqueda;
+- `PadChkVsync` sigue la descripción de la referencia de PsyQ, sin verificar
+  contra el original;
+- el streaming de XA (modos 1 y 2 de `spb_stream_start`, con ReadS) solo se
+  ejercitará con libspu (paso 8).

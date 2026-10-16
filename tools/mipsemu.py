@@ -59,12 +59,19 @@ def s32(v):
 
 
 class Machine:
-    def __init__(self, gte=None):
+    def __init__(self, gte=None, ram=None, scratch=None):
         """gte: objeto con read_data/write_data/read_ctrl/write_ctrl/command (p. ej.
-        PsxGteLib, la GTE de psx/ por ctypes). Sin el, solo movimientos y LZCS/LZCR."""
+        PsxGteLib, la GTE de psx/ por ctypes). Sin el, solo movimientos y LZCS/LZCR.
+        ram/scratch: buferes externos (p. ej. psx_ram de psx/ por ctypes) para que el
+        interprete y la capa de C trabajen sobre LA MISMA memoria.
+        hooks: {direccion: funcion(maquina) -> v0}; al llegar a esa direccion se ejecuta
+        la funcion de Python en lugar del codigo MIPS y se vuelve a $ra (sustitucion de
+        alto nivel de funciones de libreria)."""
         self.gte = gte
-        self.ram = bytearray(RAM_SIZE)
-        self.scratch = bytearray(1024)
+        self.ram = memoryview(ram).cast('B') if ram is not None else bytearray(RAM_SIZE)
+        self.scratch = memoryview(scratch).cast('B') if scratch is not None else bytearray(1024)
+        self.hooks = {}
+        self.depth = 0
         self.r = [0] * 32
         self.hi = self.lo = 0
         self.c2d = [0] * 32         # registros de datos de la GTE (solo movimientos y LZCS/LZCR)
@@ -72,8 +79,8 @@ class Machine:
         self.steps = 0
 
     @classmethod
-    def from_acebin(cls, path, base=0x80010000, gp=GP_EU, gte=None):
-        m = cls(gte)
+    def from_acebin(cls, path, base=0x80010000, gp=GP_EU, gte=None, ram=None, scratch=None):
+        m = cls(gte, ram, scratch)
         d = open(path, 'rb').read()
         if d[:8] == b'PS-X EXE':
             base = struct.unpack_from('<I', d, 0x18)[0]
@@ -123,29 +130,48 @@ class Machine:
 
     # ---- ejecucion ----
     def call(self, addr, args=(), max_steps=2000000):
-        """Llama a la funcion `addr` (argumentos 5+ en la pila, como en MIPS O32); devuelve v0."""
+        """Llama a la funcion `addr` (argumentos 5+ en la pila, como en MIPS O32); devuelve v0.
+        Es reentrante: un hook puede llamar a codigo MIPS (callbacks) con su propia pila."""
         r = self.r
+        saved = (list(r), self.hi, self.lo) if self.depth else None
+        sp = ((r[29] - 0x400) & ~7) if self.depth else 0x801FFF00   # pila al final de la RAM
         for i in range(32):
             r[i] = 0
         for i, v in enumerate(args[:4]):
             r[4 + i] = v & 0xFFFFFFFF
         r[28] = self.gp
-        r[29] = 0x801FFF00          # pila al final de la RAM
+        r[29] = sp
         r[31] = RETURN_MAGIC
         for k, v in enumerate(args[4:]):      # argumentos 5+ en la pila (sp + 16 + 4k)
             self.sw(r[29] + 16 + 4 * k, v)
         pc, npc = addr, addr + 4
         steps = 0
-        while pc != RETURN_MAGIC:
-            steps += 1
-            if steps > max_steps:
-                raise MipsError('demasiados pasos (bucle?) en %08x' % pc)
-            ins = self.lw(pc)
-            target = self._exec(ins, pc, npc)
-            pc, npc = npc, (target if target is not None else npc + 4)
-            r[0] = 0
+        hooks = self.hooks
+        self.depth += 1
+        try:
+            while pc != RETURN_MAGIC:
+                steps += 1
+                if steps > max_steps:
+                    raise MipsError('demasiados pasos (bucle?) en %08x' % pc)
+                if pc in hooks:
+                    ra = r[31]
+                    v = hooks[pc](self)
+                    r = self.r
+                    r[2] = (v or 0) & 0xFFFFFFFF
+                    pc, npc = ra, ra + 4
+                    continue
+                ins = self.lw(pc)
+                target = self._exec(ins, pc, npc)
+                pc, npc = npc, (target if target is not None else npc + 4)
+                r[0] = 0
+        finally:
+            self.depth -= 1
         self.steps = steps
-        return s32(r[2])
+        v0 = s32(r[2])
+        if saved:
+            r[:] = saved[0]
+            self.hi, self.lo = saved[1], saved[2]
+        return v0
 
     def _exec(self, ins, pc, npc):
         r = self.r

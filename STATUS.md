@@ -65,16 +65,25 @@ código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
 
 ## Siguiente tarea concreta
 
-Etapa 5, paso 7 de `docs/10-etapa5.md`: **libcd, libpad, libetc** sobre las
-piezas de `android/` (lectura de la imagen de disco, mando, VSync). Después,
-paso 8 (libspu: mezclador ya hecho en `android/src/audio.c`, falta la
-interfaz de PsyQ) y una salida GLES de la VRAM para Android.
+Etapa 5, paso 8 de `docs/10-etapa5.md`: **libspu**.
+- Interfaz PsyQ (`SpuSetVoiceAttr`, `SpuSetKey`, transferencias a la RAM de
+  sonido, reverberación como mínimo sin efecto) sobre el mezclador de
+  `android/src/audio.c`.
+- El sumidero XA de libcd (`psx_cd_set_xa_sink`) para la música en streaming.
+- Validar con el código de sonido del juego en el intérprete, como en
+  `tools/psxcheck_io.py`.
 
-Hecho en la etapa 5: inventario de API, oráculo MIPS con GTE, emulador de la
-GTE, **libgte completa** (25/26 idénticas al original), modelo de memoria
-PS1, **libgpu** (6 funciones idénticas al original + GPU por software con 75
-pruebas) y el terreno de la misión 6 dibujado de punta a punta con la capa
-(`make psx-scene`).
+Después: salida GLES de la VRAM en Android.
+
+Hecho en la etapa 5:
+- inventario de API, oráculo MIPS con GTE y emulador de la GTE;
+- **libgte completa** (25/26 idénticas al original);
+- modelo de memoria PS1;
+- **libgpu** (6 funciones idénticas + GPU por software, 75 pruebas) y
+  terreno de la misión 6 dibujado con la capa (`make psx-scene`);
+- **libcd/libetc/libpad**, validadas ejecutando el código del juego: packs
+  abiertos, 127/127 registros por streaming idénticos y mando
+  (`tools/psxcheck_io.py`).
 
 APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
 en la Retroid. Música: pendiente (qué pista XA suena en cada misión).
