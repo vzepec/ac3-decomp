@@ -92,7 +92,8 @@ sol/destello y bruma (s13 + s8).
    superficies; ritmo de 25/30 ticks).
 8. ✅ Overlays 3-5 (créditos, reproductor de música, reproductor de prueba)
    y `h0` (descartado en render y colisión).
-9. Pendientes menores: demos (formato de grabación).
+9. ✅ Demos: grabación de la cola de eventos (`tools/acedemo.py`, 16/16).
+   Pendiente: el contenido de la clase 1 (instantáneas por fotograma).
 
 ## Bloqueos conocidos
 

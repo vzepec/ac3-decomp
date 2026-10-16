@@ -694,8 +694,34 @@ la segunda de 140-358 KB. No es código (0 prólogos MIPS), ni ULZ, ni ADPCM.
 `0x800AF7C8` una tabla de 16 entradas `(u16 registro, u8 misión, u8 avión)`
 con los registros 111-126, recorrida por un contador de demo (`+0x3AA` del
 estado, da la vuelta tras 15). `FUN_80035E78` carga el registro y
-`FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`. El formato interno de
-la grabación está `SIN RESOLVER`.
+`FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`.
+
+**Formato de la grabación** ✅ (`tools/acedemo.py`): una demo es la
+grabación de la **cola de eventos** del juego (`FUN_8007C8AC`, la misma que
+alimenta efectos y entidades durante la partida). El registro tiene un solo
+bloque con una tabla de 2 offsets:
+
+| Bloque | Contenido |
+|---|---|
+| 0 (0x2054 B) | estructura del grabador (`DAT_800BAF40`): `+0` número de marcas de fotograma, `+0xC` posición de escritura, `+0x10` evento más antiguo (relativas al bloque 1; −1 = sin usar), `+0x2050` longitud |
+| 1 | búfer circular de palabras; la vuelta está en `longitud − 0x40` |
+
+Evento: tamaño = bits 0-3 de la primera palabra (en palabras), clase = bits
+4-6 (`FUN_8007C778`). El grabador escribe el evento entero aunque pase del
+final (de ahí los 0x40 B de margen) y vuelve al principio; el lector hace lo
+mismo (`FUN_8007C7E8`). Una palabra igual a 1 es una **marca de fotograma**.
+
+| Clase | Tamaños | Emisor / uso |
+|---|---|---|
+| 0 | 1 | marca de fotograma (valor 1) y estado del jugador (`FUN_8007C948`, subtipo en bits 7-9) |
+| 1 | 4 | ~3,4 por fotograma: instantáneas por fotograma (`FUN_8007C6DC` al reproducir), `SIN RESOLVER` en detalle |
+| 2 | 1, 4, 6 | entidades (`FUN_8007CC34`: 6 palabras = posición y ángulos) |
+| 3 | 1, 3, 4, 5 | efectos: global, puntual, con velocidad, estela (`FUN_8007D940`, `D66C`, `D720`, `D830`) |
+| 4 | 2 | `FUN_8007CEB4`, `SIN RESOLVER` |
+
+Validación: en las 16 demos, las marcas contadas recorriendo el búfer
+coinciden exactamente con `+0` (de 842 a 5.477 fotogramas: de 34 s a 3,6 min
+a 25 ticks/s).
 
 #### Superficies móviles del avión del jugador
 

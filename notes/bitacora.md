@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Formato de las demos: grabación de la cola de eventos
+
+Las 16 demos (tipo 1) son la cola de eventos del juego grabada en un búfer
+circular, con una cabecera de 0x2054 B. Caso de validación: el número de
+marcas de fotograma de la cabecera. El primer recorrido coincidía en 10 de
+16 demos; faltaba imitar al lector del juego (vuelta en `longitud − 0x40`,
+eventos que se pasan del final, parar en la posición de escritura). Con eso,
+16 de 16 exactas.
+
+Reproducir: `python3 tools/acedemo.py data/bpb/01{11..26}_*.bin`.
+
 ## 2026-10-15 — Overlays 3-5: créditos y dos reproductores de música
 
 Overlay 3 = créditos (197 líneas desde "NAMCO STAFF"; lo lanza el residente

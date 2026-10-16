@@ -101,3 +101,6 @@
 0x80069864	f	shot_queue	encola un disparo recto (clase, posicion, orientacion)
 0x80069940	f	shot_spawn	crea los disparos encolados segun su clase 0-5
 0x8006FD2C	f	player_shot	disparo recto del jugador desde s0 +0x90
+0x8007C548	f	demo_play_setup	coloca el bufer de una demo como cola de eventos
+0x8007C778	f	event_size	tamano = bits 0-3; clase = bits 4-6
+0x8007C7E8	f	event_skip	descarta eventos antiguos al llenarse el bufer
