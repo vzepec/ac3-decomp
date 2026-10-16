@@ -1,5 +1,6 @@
 /* Mezclador de efectos y salida AAudio. Ver audio.h. */
 #include "audio.h"
+#include "music.h"
 
 #include <math.h>
 #include <pthread.h>
@@ -94,6 +95,7 @@ void audio_mix(int16_t *out, int frames) {
             }
         }
         pthread_mutex_unlock(&g_lock);
+        music_mix(acc, nf, 0.6f);
         for (int f = 0; f < 2 * nf; f++) {
             float x = acc[f] * 0.7f;
             out[f] = (int16_t)(x > 32767 ? 32767 : x < -32768 ? -32768 : x);

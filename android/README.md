@@ -105,6 +105,9 @@ cc -O2 -Isrc test/test_desktop.c src/ace.c src/scene.c -lm -o build/test_desktop
 build/test_desktop <imagen.bin> 6 55
 cc -O2 -Isrc test/test_collide.c src/ace.c src/scene.c -lm -o build/test_collide
 build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
+cc -O2 -Isrc -I../psx/include test/test_music.c src/ace.c src/music.c ../psx/src/xa.c -lpthread -o build/test_music
+build/test_music <imagen.bin> 6 20 musica.raw   # y luego, desde la raiz:
+python3 tools/psxcheck_music.py <imagen.bin> 6 android/musica.raw
 ```
 
 ## Qué es del juego y qué no
@@ -125,9 +128,9 @@ build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
 | Objeto destruido | **hipótesis**: el modelo anterior de s4, más bajo (sin confirmar en el código) |
 | Física de vuelo, IA, combate | **propios** y simplificados |
 | Luz del avión del jugador | **propia** (dirección fija) |
-| Efectos de sonido (0.7) | bancos del juego (común 0000 s3, avión, misión), decodificados del disco; ids del código: lanzamiento 0x0E, impacto 0x1D, fallo 0x1C, avión destruido 0x1B, motor 84/85; frecuencia por notas como la SPU |
+| Efectos de sonido (0.7) | bancos del juego (común 0000 s3, avión, misión), decodificados del disco; ids del código: lanzamiento 0x0E, impacto 0x1D, fallo 0x1C, avión destruido 0x1B, motor 84/85; frecuencia por notas como la SPU (**afinación fina corregida en la 0.8**: en la 0.7 los sonidos con afinación fina sonaban hasta 1,3 semitonos desafinados) |
 | Volumen por distancia, panorama, curva del motor | **propios** (aproximación de `FUN_8002EFA4` / `FUN_8002FFAC`) |
-| Música | **todavía no**: está en XA en `ACE.SPB` y falta saber qué pista suena en cada misión |
+| Música (0.8) | XA del disco (`ACE.SPB`), decodificada con el decodificador de la etapa 5 (`psx/src/xa.c`, idéntico a libav), en bucle. Pista de cada misión: la que el juego usa **en las demostraciones** (tablas de `ACE.BIN`, `tools/acemusic.py`); la de la partida la elige el guion y está sin resolver. Solo con imágenes `.bin` de 2352 bytes por sector (las `.iso` no llevan el audio) |
 | Texto del HUD | fuente propia 5×7 |
 
 Ritmo del juego (0.6): 25 ticks por segundo con el disco europeo (PAL) y 30

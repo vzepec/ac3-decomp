@@ -22,7 +22,8 @@ void psx_xa_reset(PsxXa *x);
 int psx_xa_decode(PsxXa *x, const uint8_t *raw, int16_t *out, int *stereo, int *rate);
 /* decodifica y remuestrea a 44100 Hz estereo intercalado; devuelve las muestras estereo */
 int psx_xa_decode44(PsxXa *x, const uint8_t *raw, int16_t *out, int max_frames);
-/* sumidero para libcd: decodifica y empuja a la entrada de CD de la SPU de libspu */
+/* sumidero para libcd: decodifica y empuja a la entrada de CD de la SPU de libspu
+ * (implementadas en libspu.c para que xa.c no dependa del resto de la capa) */
 void psx_xa_to_spu(const uint8_t *raw);
 /* conecta libcd -> XA -> SPU */
 void psx_audio_connect(void);

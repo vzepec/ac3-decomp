@@ -76,6 +76,7 @@ typedef struct {
     AcePack pack;
     Scene *scene;
     int status;            /* 0 cargando, 1 listo, -1 sin disco, -2 error */
+    int music_entry;       /* pista del SPH que suena (-1 ninguna) */
     uint32_t mission, plane;
     int reload_mission, reload_plane, loaded_gl;
     /* vuelo */

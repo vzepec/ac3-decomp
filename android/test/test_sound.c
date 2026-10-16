@@ -1,5 +1,5 @@
 /* Prueba de los bancos de sonido y del mezclador (no entra en el APK).
- *   cc -O2 -Isrc test/test_sound.c src/ace.c src/scene.c src/sound.c src/audio.c -lm -lpthread -o build/test_sound
+ *   cc -O2 -Isrc -I../psx/include test/test_sound.c src/ace.c src/scene.c src/sound.c src/audio.c src/music.c ../psx/src/xa.c -lm -lpthread -o build/test_sound
  *   build/test_sound <imagen.bin> <mision> <avion> <ranura> <salida.wav> */
 #include <stdio.h>
 #include <stdlib.h>

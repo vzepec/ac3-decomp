@@ -19,7 +19,8 @@ KS=${KS:-../data/android/debug.keystore}
 rm -rf build/apk && mkdir -p build/apk/lib/arm64-v8a
 # 16 KB: segmentos alineados a 16384 (exigido por Android reciente)
 $CC -O2 -fPIC -shared -Wall -Wextra -Wno-unused-parameter \
-    -I"$GLUE" -Isrc src/main.c src/render.c src/ace.c src/scene.c src/sound.c src/audio.c "$GLUE/android_native_app_glue.c" \
+    -I"$GLUE" -Isrc -I../psx/include src/main.c src/render.c src/ace.c src/scene.c src/sound.c src/audio.c src/music.c \
+    ../psx/src/xa.c "$GLUE/android_native_app_glue.c" \
     -landroid -llog -lEGL -lGLESv3 -laaudio -lm \
     -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 \
     -u ANativeActivity_onCreate \

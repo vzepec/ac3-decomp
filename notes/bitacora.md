@@ -5,6 +5,32 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Pista de música de cada misión; APK 0.8 con música y afinación corregida
+
+La música de una misión se elige en `FUN_8007DDCC`:
+- la encola en la cola de órdenes del CD (`FUN_8002C4B0`, orden de tipo 3,
+  que reproduce `FUN_8002BABC` con `spb_stream_start` en modo XA);
+- en las **demostraciones** (`g_state+0x3A9` ≠ 0) el descriptor es
+  `0x800B049C[0x800B0540[i]]`, con i el índice de misión (registro − 6);
+- en partida arranca con un descriptor fijo (recurso 0x822) y el guion
+  cambia la pista con `FUN_800550F0` (SIN RESOLVER qué índice pide cada
+  misión).
+
+Validación: las 41 entradas de la tabla son pistas de música (modo 2 del
+SPH); ninguna es de vídeo, aunque el SPH tiene 32 de vídeo frente a 40 de
+música. Son 24 pistas distintas, de 100 a 170 s.
+
+APK 0.8:
+- música XA con el decodificador de la etapa 5;
+- afinación de los efectos corregida (ver la entrada de la SPU).
+
+La salida del mezclador de la rebanada coincide muestra a muestra
+(1.764.846) con la decodificación directa de la pista por otro camino
+(`tools/psxcheck_music.py`).
+
+Reproducir: `python3 tools/acemusic.py data/exe/ace_eu.bin`; prueba de la
+rebanada en `android/README.md`.
+
 ## 2026-10-16 — Etapa 5 cerrada: audio XA idéntico a libav y música del juego por la capa
 
 Decodificador XA-ADPCM (`psx/src/xa.c`) **idéntico muestra a muestra al de

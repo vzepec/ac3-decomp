@@ -29,6 +29,7 @@
 #include <time.h>
 
 #include "app.h"
+#include "music.h"
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "AC3Slice", __VA_ARGS__)
 
@@ -87,7 +88,7 @@ static int take_disc(App *a) {
     }
     AcePack p;
     if (pack_open(&d, &p)) { disc_close(&d); LOG("no se puede abrir ACE.BPB"); request_picker(); return 0; }
-    if (a->disc.f) { pack_free(&a->pack); disc_close(&a->disc); }
+    if (a->disc.f) { music_stop(); a->music_entry = -1; pack_free(&a->pack); disc_close(&a->disc); }
     a->disc = d;
     a->pack = p;
     a->reload_mission = 1;
@@ -130,6 +131,10 @@ static void load_data(App *a) {
     a->status = 1;
     gl_upload(a);
     if (audio_init(a->scene->sounds)) LOG("sin salida de audio");
+    if (a->music_entry != music_track_for_mission(a->mission)) {
+        a->music_entry = music_track_for_mission(a->mission);
+        if (music_start(&a->disc, a->music_entry)) LOG("sin musica (hace falta una imagen .bin de 2352 bytes)");
+    }
 }
 
 /* ------------------------------------------------------------------ EGL */
@@ -266,6 +271,7 @@ void android_main(struct android_app *app) {
     P.app = app; a.platform = &P;
     P.dpy = EGL_NO_DISPLAY;
     a.mission = FIRST_MISSION;
+    a.music_entry = -1;
     a.plane = 55;  /* F-15S/MT Eagle+ (acemodel.py hangar) */
     a.reload_mission = 1;
     app->userData = &a;

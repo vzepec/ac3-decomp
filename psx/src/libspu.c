@@ -3,7 +3,9 @@
 #include <math.h>
 #include <string.h>
 
+#include "psx_libcd.h"
 #include "psx_libspu.h"
+#include "psx_xa.h"
 
 static PsxSpu g_spu;
 static struct {
@@ -226,3 +228,17 @@ int32_t SpuSetReverbModeParam(const SpuReverbAttr *a) {
 }
 
 int32_t SpuClearReverbWorkArea(int32_t mode) { return 0; }
+
+/* ---- audio de CD: libcd -> XA -> entrada de CD de la SPU (psx_xa.h) ---- */
+static PsxXa g_xa;
+
+void psx_xa_to_spu(const uint8_t *raw) {
+    int16_t out[2 * 6000];
+    int n = psx_xa_decode44(&g_xa, raw, out, 6000);
+    if (n) psx_spu_cd_push(psx_spu(), out, n);
+}
+
+void psx_audio_connect(void) {
+    psx_xa_reset(&g_xa);
+    psx_cd_set_xa_sink(psx_xa_to_spu);
+}

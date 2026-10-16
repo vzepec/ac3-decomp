@@ -10,7 +10,7 @@
 **Etapas 1-5 cerradas.** La etapa 5 dejó la capa de compatibilidad PsyQ en
 `psx/` (resultados en `docs/10-etapa5.md`). La etapa 6 (recompilar el juego)
 **no está abierta**: la decide el dueño del proyecto. Mientras, la rebanada de
-Android sigue como medición (APK 0.8).
+Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 
 ## Hecho
 
@@ -66,9 +66,11 @@ Android sigue como medición (APK 0.8).
 
 ## Siguiente tarea concreta
 
-1. **APK 0.8** (rebanada de Android): afinación corregida de los efectos y,
-   si da tiempo, música XA con el decodificador validado de `psx/src/xa.c`.
-2. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
+1. **Probar el APK 0.8 en la Retroid** (`~/Escritorio/ac3slice-0.8.apk`):
+   música XA de cada misión y afinación corregida de los efectos.
+2. Pendiente de la rebanada: la pista que elige el guion en partida
+   (`FUN_800550F0`, SIN RESOLVER); ahora suena la de las demostraciones.
+3. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
    llevar la VRAM de la GPU por software a GLES en Android y sustituir las
    aproximaciones marcadas SIN HACER en `psx/`.
 

@@ -1,8 +1,6 @@
 /* XA-ADPCM (ver psx_xa.h). */
 #include <string.h>
 
-#include "psx_libcd.h"
-#include "psx_libspu.h"
 #include "psx_xa.h"
 
 static const int K[4][2] = {{0, 0}, {60, 0}, {115, -52}, {98, -55}};
@@ -67,17 +65,4 @@ int psx_xa_decode44(PsxXa *x, const uint8_t *raw, int16_t *out, int max_frames) 
     x->last[0] = pcm[st ? 2 * (n - 1) : n - 1];
     x->last[1] = pcm[st ? 2 * (n - 1) + 1 : n - 1];
     return k;
-}
-
-static PsxXa g_xa;
-
-void psx_xa_to_spu(const uint8_t *raw) {
-    int16_t out[2 * 6000];
-    int n = psx_xa_decode44(&g_xa, raw, out, 6000);
-    if (n) psx_spu_cd_push(psx_spu(), out, n);
-}
-
-void psx_audio_connect(void) {
-    psx_xa_reset(&g_xa);
-    psx_cd_set_xa_sink(psx_xa_to_spu);
 }

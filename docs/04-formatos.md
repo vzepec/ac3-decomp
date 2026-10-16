@@ -614,6 +614,13 @@ desafinación aleatoria de ±2 semitonos (`FUN_8002ECB8`). Ids identificados:
 0x1B avión destruido, 0x1C explosión sin impacto, 0x1D impacto de misil,
 0x3B-0x3D menús; el motor (84/85) lo gestiona `FUN_8002FFAC`.
 
+**Música de cada misión** (`tools/acemusic.py`). La elige `FUN_8007DDCC` con
+descriptores de 12 bytes: recurso `0x800 | entrada del SPH`, fundido,
+tiempo, desplazamiento de inicio y siguiente (se apunta a sí mismo: bucle).
+En las demostraciones se usa `0x800B049C[0x800B0540[registro − 6]]`; las 41
+son pistas de música (modo 2). En partida se arranca con el recurso 0x822 y
+el guion cambia la pista con `FUN_800550F0` (SIN RESOLVER).
+
 
 Implementado en `tools/acesnd.py`. Verificado en **63/63** (EU) y **63/63**
 (US).
