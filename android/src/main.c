@@ -105,6 +105,7 @@ static void load_data(App *a) {
     double t0 = now();
     if (a->reload_mission) {
         Scene *s = a->scene;
+        audio_stop_all();   /* antes de liberar: el mezclador lee las muestras de la escena */
         scene_free(s);   /* libera todas las mallas (antes quedaban sin liberar las de enemigos) */
         scene_init(s);
         if (scene_load_common(s, &a->disc, &a->pack)) LOG("sin texturas de efectos (registro 0000)");
@@ -128,6 +129,7 @@ static void load_data(App *a) {
         a->scene->nobj, (now() - t0) * 1000);
     a->status = 1;
     gl_upload(a);
+    if (audio_init(a->scene->sounds)) LOG("sin salida de audio");
 }
 
 /* ------------------------------------------------------------------ EGL */
@@ -246,6 +248,12 @@ static void on_cmd(struct android_app *app, int32_t cmd) {
         break;
     case APP_CMD_TERM_WINDOW:
         egl_term(a);
+        break;
+    case APP_CMD_PAUSE:
+        audio_pause(1);
+        break;
+    case APP_CMD_RESUME:
+        audio_pause(0);
         break;
     default:
         break;

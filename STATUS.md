@@ -65,8 +65,9 @@ Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Siguiente tarea concreta
 
-**APK 0.6 construido** (rumbos y superficies reales, sol, ritmo 25/30,
-inicio ajustado). Pendiente de prueba en la Retroid. A continuación, por
+**APK 0.7 construido** (efectos de sonido originales; 0.6: rumbos y
+superficies reales, sol, ritmo 25/30, inicio ajustado). Pendiente de prueba
+en la Retroid. Música: pendiente (qué pista XA suena en cada misión). A continuación, por
 petición del usuario: **etapa 5** (capa de compatibilidad PsyQ), en la rama
 `etapa-5`.
 

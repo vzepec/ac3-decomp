@@ -5,6 +5,30 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — APK 0.7: efectos de sonido originales
+
+Los tres bancos que el juego usa en misión (común 0000 s3, avión, misión) se
+decodifican del disco del usuario (port a C de `tools/acesnd.py`, idéntico
+muestra a muestra a la versión Python) y suenan con un mezclador propio de
+16 voces sobre AAudio: lanzamiento, impactos, derribos, choque y motor en
+bucle, con la frecuencia de la SPU y la desafinación aleatoria del juego. La
+música no entra: falta localizar qué pista XA suena en cada misión.
+
+Reproducir: `android/build/test_sound <imagen> 6 48 29 salida.wav`.
+
+## 2026-10-16 — Sonidos: ranuras, frecuencia e ids de los efectos
+
+El primer byte de los bancos (antes sin resolver) es la primera ranura de la
+tabla de sonidos; el registro común 0000 trae en s3 el banco principal (76
+sonidos). El campo "vol" es la nota de reproducción: frecuencia =
+44.100·2^((nota − nota_base)/12), validada porque 436 de 963 sonidos dan
+11.025 o 22.050 Hz exactos. Ids del código: lanzamiento 0x0E, impacto 0x1D,
+fallo 0x1C, avión destruido 0x1B, motor 84/85. La música (XA) queda
+pendiente: falta saber qué pista suena en cada misión.
+
+Reproducir: `python3 tools/acesnd.py` y las llamadas a `FUN_8002D724` /
+`FUN_8002EFA4` en `data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-16 — APK 0.6: rumbos, superficies, sol y ritmo reales
 
 Aplicadas las correcciones del cierre de la etapa 3: rumbos con 0x4000 =

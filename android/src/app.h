@@ -8,6 +8,7 @@
 #include <string.h>
 #include "ace.h"
 #include "scene.h"
+#include "audio.h"
 
 #define FIRST_MISSION 6     /* registros de mision: 6..46 (tabla 0x800AF748 de ACE.BIN) */
 #define LAST_MISSION 46
@@ -46,6 +47,7 @@ typedef struct {
     V3 pos, dir;
     float speed, life;
     int target, active;             /* target: >= 0 avion, <= -2 objeto (-2 - indice) */
+    int voice;                      /* voz del sonido de lanzamiento (-1 si no hay) */
     Trail smoke;
 } Missile;
 
@@ -97,6 +99,8 @@ typedef struct {
      * 2 timon, 4 aerofreno (0..1); se acercan a su objetivo |dif|/4 + 2/4096 por tick */
     float surf[5], surf_tick;
     V3 player_start;        /* inicio usado (tras los ajustes de la rebanada) */
+    int eng_voice[2];       /* motor: ranuras 84 y 85 en bucle */
+    V3 ear, ear_right;      /* posicion y derecha de la camara (para el panorama) */
     float player_yaw;
     float fire_cd;
     uint32_t rng;

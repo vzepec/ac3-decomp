@@ -1,9 +1,12 @@
 #!/bin/sh
 # Compila y empaqueta el APK de la rebanada vertical sin Gradle:
-# NDK (clang) + aapt2 + zipalign + apksigner. Salida: android/build/ac3slice.apk
+# NDK (clang) + aapt2 + zipalign + apksigner. Salida: android/build/ac3slice-<version>.apk
+# (la version sale de android:versionName del manifiesto).
 # El APK no contiene datos del juego.
 set -e
 cd "$(dirname "$0")"
+VERSION=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml)
+APK="ac3slice-$VERSION.apk"
 SDK=${ANDROID_HOME:-$HOME/tools/android-sdk}
 NDK=${NDK:-$SDK/ndk/30.0.16248370}
 BT=${BT:-$SDK/build-tools/37.0.0}
@@ -16,8 +19,8 @@ KS=${KS:-../data/android/debug.keystore}
 rm -rf build/apk && mkdir -p build/apk/lib/arm64-v8a
 # 16 KB: segmentos alineados a 16384 (exigido por Android reciente)
 $CC -O2 -fPIC -shared -Wall -Wextra -Wno-unused-parameter \
-    -I"$GLUE" -Isrc src/main.c src/render.c src/ace.c src/scene.c "$GLUE/android_native_app_glue.c" \
-    -landroid -llog -lEGL -lGLESv3 -lm \
+    -I"$GLUE" -Isrc src/main.c src/render.c src/ace.c src/scene.c src/sound.c src/audio.c "$GLUE/android_native_app_glue.c" \
+    -landroid -llog -lEGL -lGLESv3 -laaudio -lm \
     -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 \
     -u ANativeActivity_onCreate \
     -o build/apk/lib/arm64-v8a/libac3slice.so
@@ -39,6 +42,6 @@ if [ ! -f "$KS" ]; then
         -alias debug -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=AC3 Slice debug" >/dev/null 2>&1
 fi
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android \
-    --key-pass pass:android --out build/ac3slice.apk build/aligned.apk
-"$BT/zipalign" -c -P 16 4 build/ac3slice.apk
-echo "APK: $(pwd)/build/ac3slice.apk ($(du -h build/ac3slice.apk | cut -f1))"
+    --key-pass pass:android --out "build/$APK" build/aligned.apk
+"$BT/zipalign" -c -P 16 4 "build/$APK"
+echo "APK: $(pwd)/build/$APK ($(du -h "build/$APK" | cut -f1))"
