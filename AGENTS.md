@@ -107,10 +107,10 @@ de código en inglés, sin tildes dentro de los archivos `.py` (compatibilidad).
 
 ## 6. Qué NO hacer
 
-- No empieces a escribir un renderer, un runtime o un proyecto Android
-  todavía. La etapa actual es de análisis (ver `STATUS.md`). Construir el
-  armazón del port antes de entender los datos es la forma más rápida de
-  tirar meses.
+- No construyas más de lo que pide la etapa en curso (ver `STATUS.md`). La
+  etapa 5 (capa de compatibilidad `psx/`) está cerrada; recompilar el juego
+  es la etapa 6 y no se empieza sin que la abra el dueño del proyecto. Construir el armazón del port
+  antes de entender los datos es la forma más rápida de tirar meses.
 - `ACE.BIN` está comprimido en el disco: trabaja siempre sobre la salida de
   `make acebin` (`data/exe/`), y nunca la subas a git.
 - No añadas dependencias a las herramientas sin una razón fuerte. Deben

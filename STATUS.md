@@ -1,15 +1,16 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-4`; integración en `develop`)
+**Última actualización:** 2026-10-16 (etapa 5 cerrada e integrada en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: CRITERIO CUMPLIDO** (2026-10-16). Etapa 4
-(rebanada vertical) también cumplida: APK 0.5 probado en la Retroid.
-Siguiente etapa por decidir con el usuario (ver abajo).
+**Etapas 1-5 cerradas.** La etapa 5 dejó la capa de compatibilidad PsyQ en
+`psx/` (resultados en `docs/10-etapa5.md`). La etapa 6 (recompilar el juego)
+**no está abierta**: la decide el dueño del proyecto. Mientras, la rebanada de
+Android sigue como medición (APK 0.8).
 
 ## Hecho
 
@@ -65,11 +66,30 @@ Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Siguiente tarea concreta
 
-**APK 0.7 construido** (efectos de sonido originales; 0.6: rumbos y
-superficies reales, sol, ritmo 25/30, inicio ajustado). Pendiente de prueba
-en la Retroid. Música: pendiente (qué pista XA suena en cada misión). A continuación, por
-petición del usuario: **etapa 5** (capa de compatibilidad PsyQ), en la rama
-`etapa-5`.
+1. **APK 0.8** (rebanada de Android): afinación corregida de los efectos y,
+   si da tiempo, música XA con el decodificador validado de `psx/src/xa.c`.
+2. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
+   llevar la VRAM de la GPU por software a GLES en Android y sustituir las
+   aproximaciones marcadas SIN HACER en `psx/`.
+
+Hecho en la etapa 5:
+- inventario de API, oráculo MIPS con GTE y emulador de la GTE;
+- **libgte completa** (25/26 idénticas al original);
+- modelo de memoria PS1;
+- **libgpu** (6 funciones idénticas + GPU por software, 75 pruebas) y
+  terreno de la misión 6 dibujado con la capa (`make psx-scene`);
+- **libcd/libetc/libpad**, validadas ejecutando el código del juego: packs
+  abiertos, 127/127 registros por streaming idénticos y mando
+  (`tools/psxcheck_io.py`);
+- **SPU por software y libspu** (8 funciones idénticas al original) con el
+  driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`).
+  De paso se corrigió la fórmula de frecuencia de los sonidos (afecta al APK
+  0.7);
+- **audio XA** idéntico a libav y música del juego sonando por la capa
+  (`tools/psxcheck_xa.py`).
+
+APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
+en la Retroid. Música: pendiente (qué pista XA suena en cada misión).
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,

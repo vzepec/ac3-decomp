@@ -22,3 +22,4 @@ _to_delete/
 
 # salida de compilacion del APK
 android/build/
+psx/build/

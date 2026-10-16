@@ -5,6 +5,105 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5 cerrada: audio XA idéntico a libav y música del juego por la capa
+
+Decodificador XA-ADPCM (`psx/src/xa.c`) **idéntico muestra a muestra al de
+libav** en 11 millones de muestras de seis entradas del SPB. La referencia
+estaba en el sistema sin instalar nada: GStreamer trae gst-libav con
+`avdemux_psxstr` y `avdec_adpcm_xa`. El disco solo usa estéreo de 4 bits a
+37,8 kHz (0x01) y a 18,9 kHz (0x05).
+
+Con el código del juego en el intérprete, `spb_stream_start` en modo 2
+(ReadS con filtro) y `cd_state_machine` por fotograma reproducen una pista
+de 3 minutos entera: los 3.378 sectores de audio del canal llegan en orden a
+la SPU, que la mezcla por su entrada de CD.
+
+Con esto se cierran los 8 pasos de la etapa 5.
+
+Reproducir: `make psx-check`; para oírla, `XA_WAV=musica.wav python3
+tools/psxcheck_xa.py <imagen>`.
+
+## 2026-10-16 — Etapa 5, paso 8: SPU por software y libspu; frecuencia de los sonidos corregida
+
+SPU por software (`psx/src/spu.c`) y libspu (`psx/src/libspu.c`), leída del
+ensamblador porque Ghidra trocea sus funciones. Validación:
+- **8 funciones idénticas** al original con el oráculo, que ahora enruta los
+  registros de E/S del intérprete a una SPU de psx/;
+- 39/39 muestras del banco común idénticas a `acesnd`;
+- el driver de sonido del juego, ejecutado en el intérprete, carga el banco
+  y toca 40 sonidos correctamente.
+
+**Corrección de un hallazgo anterior.** La fórmula de frecuencia de la
+entrada del 2026-10-15 (`44.100·2^((nota − nota_base)/12)` con
+`nota_base = note + u0/256`) estaba mal para u0 ≠ 0. Se había validado solo
+con los sonidos de 11.025/22.050 Hz exactos, que tienen u0 = 0: un caso
+positivo que no cubría la parte que importaba. `_spu_note2pitch` suma la
+fracción en 1/128 de semitono. Lo detectó la prueba de integración: el tono
+que ponía el juego no coincidía con `acesnd` en 8 de 40 sonidos, hasta un
+7,6 %. Corregidos `acesnd`, `docs/04-formatos.md` y el APK (`sound.c`).
+
+Firmas mal atribuidas en el ACE.BIN:
+- `SsUtReverbOff` es `SpuInit`;
+- la "`SpuRead`" que usa el juego es `SpuWrite`.
+
+Reproducir: `make psx-check`, o `python3 tools/psxcheck_snd.py
+data/exe/ace_eu.bin salida.wav` para oír los sonidos tocados por el driver.
+
+## 2026-10-16 — Etapa 5, paso 7: libcd/libetc/libpad validadas con el código del juego
+
+Reimplementadas libcd (sobre la imagen de disco), libetc (VSync y modelo de
+tiempo por fotogramas) y libpad (modo directo). La validación ejecuta el
+código original del juego en el intérprete, sobre la misma RAM que la capa
+de C, y desvía sus llamadas de librería a la implementación:
+- `packs_init` abre y valida los packs;
+- el lector por streaming del juego (Setloc/Setmode/ReadN, callback por
+  sector, Pause) carga los **127 registros del BPB idénticos** a los
+  extraídos, a 3 sectores por fotograma;
+- la rutina de mando del juego lee bien botones, pulsaciones y ejes.
+
+Dato de paso: en `packs_open` el campo +0x0C del estado vale 1 sin error
+(copia el campo "kind" del SPH); el error es 5.
+
+Seis mutaciones detectadas. La de la velocidad de lectura no se detectaba
+hasta que se añadió una comprobación de tiempo.
+
+Reproducir: `make psx-check` (o `python3 tools/psxcheck_io.py <imagen>
+data/exe/ace_eu.bin $(seq 0 126)` para todos los registros).
+
+## 2026-10-16 — Etapa 5: GPU por software y primer render con la capa PsyQ
+
+GPU de la PS1 por software (`psx/src/gpu.c`) con 75 pruebas, entre ellas 72
+texturas reales del disco idénticas píxel a píxel al dibujarlas como sprites.
+La prueba de relleno encontró la regla de bordes invertida en la primera
+versión. Con libgte + libgpu se dibuja el terreno de la misión 6 (ciudad,
+puente, costa) como lo haría el juego: primera imagen del juego producida por
+la reimplementación de las librerías de Sony.
+
+Reproducir: `make psx-check`, `make psx-scene`.
+
+## 2026-10-16 — Etapa 5: modelo de memoria PS1 y primeras funciones de libgpu
+
+Decidido el modelo de memoria de la capa (RAM de PS1 simulada, punteros como
+direcciones PS1). Seis funciones de libgpu que solo escriben en memoria,
+idénticas al original en 500 casos cada una. Un fallo de `SetDrawArea` en el
+comparador resultó ser error mío al leer el ensamblador (desplazamiento
+negativo: la variable está en `0x800B97E8`, no en `0x800C97E8`);
+`tools/mipsdis.py` ahora anota las direcciones efectivas.
+
+Reproducir: `python3 tools/psyqcheck_gpu.py data/exe/ace_eu.bin`.
+
+## 2026-10-16 — Etapa 5: libgte completa e idéntica al original
+
+La GTE de `psx/` se conecta al intérprete MIPS por ctypes y el código
+original de Sony se ejecuta como oráculo. 21 funciones de libgte con GTE dan
+0 diferencias en memoria, retorno y estado completo de la GTE (300 casos
+cada una); con las 5 del paso anterior, 25 de las 26 funciones de libgte del
+juego son idénticas al original (la otra, `InitGeom`, usa la BIOS). El
+comparador detecta los cinco errores introducidos a propósito, incluido uno
+que solo altera un registro interno de la GTE.
+
+Reproducir: `make psx-check`.
+
 ## 2026-10-16 — APK 0.7: efectos de sonido originales
 
 Los tres bancos que el juego usa en misión (común 0000 s3, avión, misión) se
@@ -28,6 +127,28 @@ pendiente: falta saber qué pista suena en cada misión.
 
 Reproducir: `python3 tools/acesnd.py` y las llamadas a `FUN_8002D724` /
 `FUN_8002EFA4` en `data/ghidra/all_ace_eu.c`.
+## 2026-10-16 — Etapa 5: emulador de la GTE
+
+`psx/src/gte.c`: registros y 22 órdenes de la GTE según psx-spx, con
+saturaciones, banderas y la división UNR. 27 pruebas bien (proyección a mano,
+RTPT = 3 × RTPS, MVMVA = coma flotante, división 94,5 % exacta con error
+máximo 3 como el hardware). Las pruebas encontraron un error real en SX/SY.
+Validado contra la especificación, no contra hardware.
+
+Reproducir: `make psx-check`.
+
+## 2026-10-16 — Etapa 5 abierta: inventario de API, oráculo MIPS y primeras funciones exactas
+
+API PsyQ que usa el código propio del juego: 175 funciones, más 2.351 usos de
+la GTE en línea (`tools/psyqapi.py`). Para validar sin PS1, un intérprete
+MIPS (`tools/mipsemu.py`) ejecuta las funciones originales de Sony de
+`ACE.BIN` como oráculo. Primeras funciones de `psx/` idénticas al original en
+84.000 casos: `rsin`, `rcos`, `SquareRoot0`, `ratan2`, `rand`. Las tablas de
+seno y raíz se generan por fórmula exacta; la de arcotangente no tiene fórmula
+y se lee del disco del usuario. El comparador se validó con errores
+introducidos a propósito.
+
+Reproducir: `make psx-check`, `make psyq-api`.
 
 ## 2026-10-16 — APK 0.6: rumbos, superficies, sol y ritmo reales
 
