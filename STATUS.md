@@ -7,9 +7,9 @@
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). La etapa 4
-(rebanada vertical) cumplió su criterio de salida: el APK corre en la Retroid
-(ver `android/README.md` y `docs/05-hoja-de-ruta.md`).
+**Etapa 3 — Análisis estático: CRITERIO CUMPLIDO** (2026-10-16). Etapa 4
+(rebanada vertical) también cumplida: APK 0.5 probado en la Retroid.
+Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Hecho
 
@@ -65,11 +65,16 @@
 
 ## Siguiente tarea concreta
 
-**APK 0.5 construido** (choques reales contra el terreno, objetos y aviones;
-0.4 probado por el usuario: funciona). Pendiente de prueba en la Retroid. Después, volver a la
-etapa 3 (rama `etapa-3`) con los pendientes de abajo, priorizando lo que se
-note en el APK: nubes, sol y destello (ya localizados), qué mando activa cada
-superficie, color de las estelas, ritmo de ticks.
+**Decidir con el usuario** entre:
+
+- **APK 0.6** (corto): aplicar las correcciones del análisis (rumbos con
+  0x4000, interpolación de superficies, quitar la llama del misil, ritmo de
+  25/30 ticks) y portar nubes, sol y destello. Opcional: reproducir en el APK
+  una demo del juego (las instantáneas ya están descifradas).
+- **Etapa 5** (larga): capa de compatibilidad PsyQ (`docs/05-hoja-de-ruta.md`).
+
+Pendientes de análisis abiertos (no bloquean): color y mezcla de las estelas
+(emulador), contenido de los eventos de clase 4 de las demos, `h0`.
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
