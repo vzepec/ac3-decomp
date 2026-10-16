@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5: GPU por software y primer render con la capa PsyQ
+
+GPU de la PS1 por software (`psx/src/gpu.c`) con 75 pruebas, entre ellas 72
+texturas reales del disco idénticas píxel a píxel al dibujarlas como sprites.
+La prueba de relleno encontró la regla de bordes invertida en la primera
+versión. Con libgte + libgpu se dibuja el terreno de la misión 6 (ciudad,
+puente, costa) como lo haría el juego: primera imagen del juego producida por
+la reimplementación de las librerías de Sony.
+
+Reproducir: `make psx-check`, `make psx-scene`.
+
 ## 2026-10-16 — Etapa 5: modelo de memoria PS1 y primeras funciones de libgpu
 
 Decidido el modelo de memoria de la capa (RAM de PS1 simulada, punteros como

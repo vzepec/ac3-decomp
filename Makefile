@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -31,6 +31,7 @@ help:
 	@echo "make check      - comprueba que las herramientas corren"
 	@echo "make psx-check  - etapa 5: pruebas de la GTE y comparacion de psx/ con ACE.BIN (oraculo MIPS)"
 	@echo "make psyq-api   - etapa 5: API PsyQ que usa el juego"
+	@echo "make psx-scene  - etapa 5: terreno de la mision 6 dibujado con la capa PsyQ (GTE + GPU)"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -127,9 +128,18 @@ psx-check:
 	@mkdir -p psx/build
 	@cc -O2 -Wall -Wextra -Ipsx/include psx/test/test_gte.c psx/src/gte.c -lm -o psx/build/test_gte
 	@psx/build/test_gte
+	@cc -O2 -Wall -Wextra -Ipsx/include psx/test/test_gpu.c psx/src/gpu.c psx/src/mem.c -o psx/build/test_gpu
+	@$(PY) tools/timdump.py data/psx_tims >/dev/null
+	@psx/build/test_gpu data/psx_tims/*.tim | tail -1
 	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
 	@$(PY) tools/psyqcheck_gte.py data/exe/ace_eu.bin 300
 	@$(PY) tools/psyqcheck_gpu.py data/exe/ace_eu.bin 500
 
 psyq-api:
 	@$(PY) tools/psyqapi.py "$(GHIDRA)/Ghidra/Extensions/ghidra_psx_ldr/data/psyq/450" data/ghidra/all_ace_eu.c data/ghidra/all_overlay1.c data/ghidra/all_overlay2.c data/ghidra/all_overlay3.c data/ghidra/all_overlay4.c data/ghidra/all_overlay5.c
+
+psx-scene:
+	@mkdir -p psx/build
+	@cc -O2 -Wall -Ipsx/include -Iandroid/src psx/test/test_scene.c psx/src/*.c android/src/ace.c -lm -o psx/build/test_scene
+	@psx/build/test_scene "$(EU)" 6 data/psx_scene.ppm 14000 -2200 -14000 3584 -360
+	@echo "imagen: data/psx_scene.ppm"

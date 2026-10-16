@@ -39,6 +39,23 @@ int GetVideoMode(void);
 /* tamano de la VRAM que usa libgpu para limitar las areas de dibujo (ResetGraph lo fija) */
 void psx_gpu_set_vram_size(int w, int h);
 
+/* ---- funciones que usan la GPU (psx/src/gpu.c) ---- */
+struct PsxGpuTag;
+void *psx_gpu(void);                 /* PsxGpu * global */
+int ResetGraph(int mode);
+int DrawSync(int mode);
+int SetDispMask(int mask);
+int LoadImage(RECT *r, uint32_t *p);
+int StoreImage(RECT *r, uint32_t *p);
+int ClearImage(RECT *r, uint8_t r0, uint8_t g0, uint8_t b0);
+uint32_t *ClearOTagR(uint32_t *ot, int n);
+uint32_t *ClearOTag(uint32_t *ot, int n);
+void DrawOTag(uint32_t *ot);
+DRAWENV *PutDrawEnv(DRAWENV *env);
+DISPENV *PutDispEnv(DISPENV *env);
+/* zona de la VRAM que se muestra (ultimo PutDispEnv) y si la pantalla esta activa */
+void psx_gpu_display(int *x, int *y, int *w, int *h, int *enabled);
+
 DRAWENV *SetDefDrawEnv(DRAWENV *env, int x, int y, int w, int h);
 DISPENV *SetDefDispEnv(DISPENV *env, int x, int y, int w, int h);
 void SetDrawTPage(DR_TPAGE *p, int dfe, int dtd, int tpage);

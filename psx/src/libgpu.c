@@ -1,6 +1,7 @@
 /* libgpu: funciones que solo escriben en memoria. Reimplementadas a partir de ACE.BIN EU
  * (direcciones en tools/psyqcheck_gpu.py) y validadas contra el codigo original. */
 #include "psx_libgpu.h"
+#include "psx_gpu.h"
 #include "psx_mem.h"
 
 static int g_video_mode;            /* 0x800B4034 en ACE.BIN EU */
@@ -67,4 +68,80 @@ void CatPrim(void *p0, void *p1) {
 
 uint16_t GetTPage(int tp, int abr, int x, int y) {
     return (uint16_t)(((tp & 3) << 7) | ((abr & 3) << 5) | ((y & 0x100) >> 4) | ((x & 0x3FF) >> 6) | ((y & 0x200) << 2));
+}
+
+/* ---- funciones que usan la GPU ---- */
+
+static PsxGpu g_gpu;
+static int g_disp_x, g_disp_y, g_disp_w = 320, g_disp_h = 240, g_disp_on;
+
+void *psx_gpu(void) { return &g_gpu; }
+
+int ResetGraph(int mode) {
+    if (mode == 0 || mode == 3) psx_gpu_reset(&g_gpu);
+    g_vram_w = 1024;
+    g_vram_h = 512;
+    return 0;
+}
+
+int DrawSync(int mode) { (void)mode; return 0; }   /* el dibujo es sincrono: nada pendiente */
+
+int SetDispMask(int mask) { g_disp_on = mask != 0; return 0; }
+
+int LoadImage(RECT *r, uint32_t *p) {
+    psx_gpu_load_image(&g_gpu, r->x, r->y, r->w, r->h, (const uint16_t *)p);
+    return 0;
+}
+
+int StoreImage(RECT *r, uint32_t *p) {
+    psx_gpu_store_image(&g_gpu, r->x, r->y, r->w, r->h, (uint16_t *)p);
+    return 0;
+}
+
+int ClearImage(RECT *r, uint8_t r0, uint8_t g0, uint8_t b0) {
+    psx_gpu_fill(&g_gpu, r->x, r->y, r->w, r->h, r0, g0, b0);
+    return 0;
+}
+
+/* Tabla de ordenacion invertida: ot[i] apunta a ot[i-1]; ot[0] es el final de la lista.
+ * El original (0x800A6B50) lo hace con el DMA OTC y enlaza ot[0] a un paquete interno de
+ * la libreria (0x800B98A4); aqui ot[0] = 0xFFFFFF, el terminador estandar (mismo efecto
+ * al dibujar; SIN VERIFICAR si algun codigo del juego mira ese paquete). */
+uint32_t *ClearOTagR(uint32_t *ot, int n) {
+    for (int i = n - 1; i > 0; i--) ot[i] = psx_addr(&ot[i - 1]) & 0xFFFFFF;
+    ot[0] = 0xFFFFFF;
+    return ot;
+}
+
+uint32_t *ClearOTag(uint32_t *ot, int n) {
+    for (int i = 0; i < n - 1; i++) ot[i] = psx_addr(&ot[i + 1]) & 0xFFFFFF;
+    ot[n - 1] = 0xFFFFFF;
+    return ot;
+}
+
+void DrawOTag(uint32_t *ot) { psx_gpu_draw_list(&g_gpu, psx_addr(ot)); }
+
+DRAWENV *PutDrawEnv(DRAWENV *env) {
+    int x2 = env->clip.x + env->clip.w - 1, y2 = env->clip.y + env->clip.h - 1;
+    psx_gpu_gp0(&g_gpu, area_cmd(0xE3000000u, env->clip.x, env->clip.y));
+    psx_gpu_gp0(&g_gpu, area_cmd(0xE4000000u, x2, y2));
+    psx_gpu_gp0(&g_gpu, 0xE5000000u | (((uint32_t)env->ofs[1] & 0x7FF) << 11) | ((uint32_t)env->ofs[0] & 0x7FF));
+    psx_gpu_gp0(&g_gpu, 0xE2000000u | ((uint32_t)(env->tw.w ? (~(env->tw.w - 1) >> 3) & 31 : 0)) |
+                            ((uint32_t)(env->tw.h ? (~(env->tw.h - 1) >> 3) & 31 : 0) << 5) |
+                            ((uint32_t)((env->tw.x >> 3) & 31) << 10) | ((uint32_t)((env->tw.y >> 3) & 31) << 15));
+    psx_gpu_gp0(&g_gpu, 0xE1000000u | (env->tpage & 0x9FF) | (env->dtd ? 0x200u : 0) | (env->dfe ? 0x400u : 0));
+    if (env->isbg) psx_gpu_fill(&g_gpu, env->clip.x, env->clip.y, env->clip.w, env->clip.h, env->r0, env->g0, env->b0);
+    return env;
+}
+
+DISPENV *PutDispEnv(DISPENV *env) {
+    g_disp_x = env->disp.x;
+    g_disp_y = env->disp.y;
+    g_disp_w = env->disp.w;
+    g_disp_h = env->disp.h;
+    return env;
+}
+
+void psx_gpu_display(int *x, int *y, int *w, int *h, int *enabled) {
+    *x = g_disp_x; *y = g_disp_y; *w = g_disp_w; *h = g_disp_h; *enabled = g_disp_on;
 }

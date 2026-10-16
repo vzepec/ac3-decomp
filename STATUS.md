@@ -65,16 +65,16 @@ código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
 
 ## Siguiente tarea concreta
 
-Etapa 5, paso 6 de `docs/10-etapa5.md`: **libgpu**. Tabla de ordenación
-(`ClearOTagR`, `DrawOTag`), primitivas con la disposición de PsyQ, VRAM
-simulada (`LoadImage`, `StoreImage`, `ClearImage`) y rasterizado. Fuente de
-verdad para validar: las listas de dibujo que el propio código del juego
-construye (p. ej. ejecutando en el intérprete funciones de render como
-`prims_ft4_draw` sobre datos reales y dibujando su resultado).
+Etapa 5, paso 7 de `docs/10-etapa5.md`: **libcd, libpad, libetc** sobre las
+piezas de `android/` (lectura de la imagen de disco, mando, VSync). Después,
+paso 8 (libspu: mezclador ya hecho en `android/src/audio.c`, falta la
+interfaz de PsyQ) y una salida GLES de la VRAM para Android.
 
-Hecho en la etapa 5: inventario de API (175 funciones + GTE en línea),
-oráculo MIPS con GTE, emulador de la GTE (27 pruebas) y **libgte completa**:
-25 de 26 funciones idénticas al original (`make psx-check`).
+Hecho en la etapa 5: inventario de API, oráculo MIPS con GTE, emulador de la
+GTE, **libgte completa** (25/26 idénticas al original), modelo de memoria
+PS1, **libgpu** (6 funciones idénticas al original + GPU por software con 75
+pruebas) y el terreno de la misión 6 dibujado de punta a punta con la capa
+(`make psx-scene`).
 
 APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
 en la Retroid. Música: pendiente (qué pista XA suena en cada misión).

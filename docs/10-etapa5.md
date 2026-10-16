@@ -62,7 +62,7 @@ etapa.
 | 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | ✅ **84.000 casos, 0 diferencias** (`make psx-check`) |
 | 4 | Emulador de la GTE (`psx/src/gte.c`) | ✅ especificación + 27 pruebas (`make psx-check`); sin verificar contra hardware |
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
-| 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | 🔄 funciones de memoria ✅ (6, oráculo); rasterizado pendiente |
+| 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | ✅ funciones de memoria (6, oráculo) + GPU por software (75 pruebas, 72 texturas reales idénticas) + terreno real dibujado (`make psx-scene`) |
 | 7 | libcd, libpad, libetc | sobre las piezas de `android/` |
 | 8 | libspu | bancos de sonido de las misiones (`tools/acesnd.py`) |
 
@@ -173,3 +173,36 @@ vídeo: `h < 289` en PAL, `< 257` en NTSC), `SetDefDispEnv`, `SetDrawTPage`,
 corta funciones se añadió `tools/mipsdis.py`, que anota las direcciones
 efectivas (un error al sumar a mano un desplazamiento negativo hizo fallar
 `SetDrawArea` en el comparador hasta corregirlo).
+
+**Paso 6, segunda parte: GPU por software.** `psx/src/gpu.c`: VRAM de
+1024×512 y procesador GP0 según psx-spx (polígonos planos/Gouraud/con textura
+de 4, 8 y 15 bits, CLUT, ventana de textura, los cuatro modos de
+semitransparencia, tramado, bit de máscara, rectángulos y sprites, líneas y
+polilíneas, relleno, transferencias de VRAM y E1-E6) y el recorrido de listas
+de dibujo en la RAM simulada. Encima, en `libgpu.c`: `ResetGraph`,
+`DrawSync`, `SetDispMask`, `LoadImage`, `StoreImage`, `ClearImage`,
+`ClearOTagR`, `ClearOTag`, `DrawOTag`, `PutDrawEnv`, `PutDispEnv`.
+
+Pruebas (`psx/test/test_gpu.c`, 75, todas bien): **72 texturas reales del
+disco** subidas a la VRAM y dibujadas como sprites coinciden píxel a píxel con
+la decodificación independiente del TIM; un cuadrado de 10×10 pinta
+exactamente 100 píxeles (regla de relleno: sin bordes derecho e inferior);
+dos triángulos con arista común en mezcla aditiva no dejan huecos ni
+solapes; Gouraud, los cuatro modos de mezcla, transferencias por GP0 y una
+lista de dibujo encadenada en la RAM. La primera versión tenía la regla de
+relleno al revés (con y hacia abajo se invierte la orientación); la prueba lo
+detectó.
+
+**Integración con datos reales** (`make psx-scene`, `psx/test/test_scene.c`):
+el terreno de la misión 6 se dibuja como lo haría el juego, enteramente con
+la capa: texturas con `LoadImage`, matriz de vista con `RotMatrixYXZ` y
+`TransposeMatrix`, traslación con `ApplyMatrixLV`, vértices con `RTPT`,
+paquetes `POLY_FT4`/`POLY_GT4` construidos desde las plantillas de los
+modelos en la RAM simulada, descarte con `NCLIP`, `ClearOTagR` y `DrawOTag`.
+Sale la ciudad con el puente y la costa. No es el código del juego (es una
+reconstrucción de su bucle de terreno); demuestra que la capa funciona de
+punta a punta.
+
+Límites: la interpolación de color y UV dentro de los polígonos sigue la idea
+del hardware pero no está verificada contra una PS1; `ClearOTagR` termina la
+lista en `0xFFFFFF` en vez de en el paquete interno de la librería.
