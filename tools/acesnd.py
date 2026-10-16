@@ -2,17 +2,18 @@
 
 FORMATO (verificado en 63/63 bancos del disco europeo y 63/63 del americano):
 
-    u8   b0;           // 0x54 en tipo 4, 0x58 en tipo 17      SIN RESOLVER
+    u8   b0;           // PRIMERA RANURA de la tabla de sonidos (FUN_8002D544):
+                       // 0 comun (0000 s3, 76), 0x54 avion, 0x58 mision; id = b0 + i
     u8   n;            // numero de entradas
     u16  b2;           // 0x0d en tipo 4, 0x67 en tipo 17      SIN RESOLVER
     u32  spu_base;     // direccion de destino en la RAM del SPU (512 KB)
     u32  size;         // bytes de ADPCM, multiplo de 16
     struct {           // 20 bytes
         u32 id;        // 1, 2... / 0xFF, 0x105...              SIN RESOLVER
-        u16 p0, p1;    // iguales en todos los vistos           SIN RESOLVER
-        u16 vol;       // 0x3C00 en todos los vistos            SIN RESOLVER
-        u8  u0;        //                                       SIN RESOLVER
-        u8  note;      // 72..96: nota MIDI base, probablemente SIN RESOLVER
+        u16 p0, p1;    // volumen izquierdo / derecho de la voz (FUN_8002E0F8)
+        u16 vol;       // NOTA DE REPRODUCCION (nota << 8 | fraccion; 0x3C00 = 60)
+        u8  u0;        // fraccion de la nota base
+        u8  note;      // nota base de la muestra (SpuVoiceAttr.sample_note = note << 8 | u0)
         u32 adsr;      // registros ADSR1/ADSR2 de la voz (0x5FC980FF el comun)
         u32 addr;      // direccion de la muestra en la RAM del SPU
     } entry[n];
@@ -34,9 +35,9 @@ Consecuencia: los valores que cambian entre EU y US en estas secciones
 (0x043C90 / 0x0496D0) son spu_base: el reparto de la RAM de sonido, NO
 punteros a codigo de ACE.BIN como se supuso.
 
-La frecuencia de muestreo no esta en el banco de forma evidente
-(p0/p1 no son el pitch del SPU directamente): SIN RESOLVER. Se exporta
-a 22050 Hz por defecto; usar --rate para cambiarla.
+Frecuencia (resuelta): el SPU reproduce a 44100 * 2^((nota - nota_base)/12) Hz,
+con nota = vol/256 y nota_base = note + u0/256. En los 963 sonidos de los bancos,
+436 dan exactamente 11025 o 22050 Hz. --rate fuerza otra frecuencia.
 
 Uso:
     python3 tools/acesnd.py list <seccion.bin>

@@ -75,6 +75,9 @@ Hecho en la etapa 5: inventario de API (175 funciones + GTE en línea),
 oráculo MIPS, `rsin`/`rcos`/`SquareRoot0`/`ratan2`/`rand` exactas (84.000
 casos) y emulador de la GTE (27 pruebas). `make psx-check` lo ejecuta todo.
 
+APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
+en la Retroid. Música: pendiente (qué pista XA suena en cada misión).
+
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
 sol/destello y bruma (s13 + s8).

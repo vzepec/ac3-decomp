@@ -40,6 +40,7 @@ void scene_clear_meshes(Scene *s) {
 
 void scene_free(Scene *s) {
     scene_clear_meshes(s);
+    sound_free_slots(s->sounds, 0, SOUND_SLOTS - 1);
     memset(s, 0, sizeof *s);
 }
 
@@ -339,6 +340,9 @@ int scene_load_common(Scene *s, Disc *d, AcePack *p) {
         uint8_t *t = section_data(&r, k, &len);
         if (t) { n += tims_upload(s, t, len); free(t); }
     }
+    /* banco comun de efectos: s3, ranuras 0-75 */
+    uint8_t *b = r.nsec > 3 ? section_data(&r, 3, &len) : NULL;
+    if (b) { sound_load_bank(s->sounds, b, len); free(b); }
     free(raw);
     return n == 2 ? 0 : -2;
 }
@@ -405,6 +409,10 @@ int scene_load_mission(Scene *s, Disc *d, AcePack *p, uint32_t record) {
     if (!s->missile.n && nw > 3) add_plane_model(&s->missile, wp + ls[3], le[3] - ls[3], NULL, 0);
     mesh_bounds(&s->missile);
     free(la); free(wp); free(ob);
+    /* banco de sonido de la mision: s15, ranuras 88-107 */
+    sound_free_slots(s->sounds, 88, SOUND_SLOTS - 1);
+    uint8_t *sb = section_data(&r, 15, &len);
+    if (sb) { sound_load_bank(s->sounds, sb, len); free(sb); }
     free(raw);
     return 0;
 }
@@ -543,6 +551,10 @@ int scene_load_aircraft(Scene *s, Disc *d, AcePack *p, uint32_t record) {
     /* piel e icono: seccion 1 */
     uint8_t *t = section_data(&r, 1, &len);
     if (t) { tims_upload(s, t, len); free(t); }
+    /* banco de sonido del avion (motor): s2, ranuras 84-85 */
+    sound_free_slots(s->sounds, 84, 87);
+    uint8_t *sb = section_data(&r, 2, &len);
+    if (sb) { sound_load_bank(s->sounds, sb, len); free(sb); }
     /* modelos: preludio */
     uint8_t *pm = section_data(&r, -1, &len);
     static uint32_t st[32], en[32];
