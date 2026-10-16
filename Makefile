@@ -91,6 +91,7 @@ ghidra-import:
 	@mkdir -p data/ghidra
 	@$(HEADLESS) data/ghidra ac3 -import data/exe/ace_eu.exe -overwrite -max-cpu 4 \
 		-scriptPath tools/ghidra -postScript CreateMissingFunctions.java \
+		-postScript FixFunctionStarts.java 0x8008BCBC 0x8008BE4C 0x8008B914 0x8008BA18 0x8008BB1C 0x8008B1A8 \
 		-postScript ApplyNames.java tools/ghidra/names.tsv > data/ghidra/import_eu.log 2>&1
 	@grep -E "funciones creadas|nombres aplicados" data/ghidra/import_eu.log | sed 's/.*> //' 
 	@grep -E "REPORT" data/ghidra/import_eu.log | tail -3

@@ -285,7 +285,7 @@ altos del mapa.
 | `0x80065CC4` | por objeto: distancia, y **LOD = id·4 + (0, 1 o 2 según distancia)** sobre la tabla de modelos con LOD |
 | `0x80061408` | **render jerárquico de modelos LOD**: lista de piezas de 0x38 B, cada una con matriz propia, callback, bloque de vértices elegido y `LodModel`; usa sus `+0x14`/`+0x18` (`off_gt3`/`off_gt4`) |
 | `0x8006159C`, `0x800616FC` | renders de los bloques GT3 y GT4 de los modelos LOD |
-| `0x800B09B8`, `0x800B09D0` | tablas de callbacks por pieza, indexadas según el tipo de avión |
+| `0x800B09B8`, `0x800B09D0` | tablas de callbacks por pieza, indexadas según el tipo de avión. Son **efectos dibujados sobre la pieza**, no superficies móviles: `0x8008BCBC` luz (sprite aditivo de la textura de efectos), `0x8008BE4C` resplandor rojo en degradado, `0x8008B914` / `0x8008BA18` disco de hélice o rotor de 3 / 5 palas, `0x8008BB1C` dos rotores contrarrotatorios de 3 palas, `0x8008A874` toberas, `0x8008B1A8` `SIN RESOLVER` (usa el preludio `+0x70`). Los discos (`FUN_8008B6D0`) son abanicos de POLY_G3 semitransparentes en modo sustractivo que giran con el ángulo de la pieza (`+0x2C`). Ghidra había empezado estas funciones 4-8 bytes tarde, o no las había creado: corregido con `tools/ghidra/FixFunctionStarts.java` |
 | `0x8008A874` | callback `engine_exhaust_draw`: efecto de motores en los puntos de tobera de t04 s0 (número de motores en `+0xC`). Antes se describió por error como "iluminación" |
 | `0x8002953C` | **identificador de recurso**: bit 11 = pack (0 BPB, 1 SPB), bits 0-10 = entrada |
 | `0x800354B8` | secuenciador de carga: reconoce el registro de misión (tabla `0x800AF748`, índice `+0x390`) y el del avión del jugador (tabla `0x800AF79C`, índice `+0x392`) |

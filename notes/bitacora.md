@@ -5,6 +5,107 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Superficies móviles: estados discretos de alas, aerofreno y timón
+
+Los modelos "solo vértices" del avión del jugador son estados discretos de
+tres piezas: alas (neutra, alabeo ×2, cabeceo ×2), aerofreno (2) y timón (3).
+El render usa por defecto el primero de cada grupo. Medido en los 22
+aviones; 3 diseños ficticios no tienen superficies móviles. Un primer conteo
+salió mal por culpa de la herramienta (umbral fijo de |x| > 40 que no servía
+para aviones estrechos), no de los datos: corregido con un umbral relativo a
+la envergadura.
+
+Reproducir: `python3 tools/acesurf.py data/bpb/00{47..68}_*.bin`.
+
+## 2026-10-15 — Corrección: el misil sí deja estela de humo
+
+Buscando la interpolación de las superficies móviles aparecieron dos
+sistemas de estela con búfer circular: A, alimentado por los proyectiles
+(estela de humo del misil, 90 ticks), y B, por los aviones (estelas de punta
+de ala, 63 ticks). Se dibujan como bandas Gouraud semitransparentes. Corrige
+lo dicho en la entrada de explosiones y estelas, donde solo se había visto el
+sprite de llama estirado (que también existe). Lección: un efecto puede
+tener varias capas; no dar por cerrado "cómo se dibuja X" por haber hallado
+una.
+
+Reproducir: usuarios de `DAT_800BAF38` en `data/ghidra/all_ace_eu.c`.
+
+## 2026-10-15 — Las callbacks "de estado de pieza" son luces y rotores
+
+Las callbacks de pieza de `0x800B09B8` no son superficies móviles: dibujan
+luces, un resplandor, discos de hélice/rotor (3 o 5 palas, y un par
+contrarrotatorio) y las toberas. Ghidra había partido mal estas funciones
+(empezaban 4-8 bytes tarde; dos no existían); `FixFunctionStarts.java` las
+crea en la dirección exacta que dan las tablas. Las superficies móviles
+siguen pendientes: candidatas, los modelos "solo vértices" del avión del
+jugador.
+
+Reproducir: volcar `0x800B09B8` del ejecutable, aplicar
+`FixFunctionStarts.java` y descompilar con `tools/ghidra/decomp.sh`.
+
+## 2026-10-15 — Tablas de aparición de la misión: aviones y objetos de tierra
+
+Confirmado en el código (`FUN_8004C258`, `FUN_8004CDB0`): el guion (s6) trae
+dos tablas de aparición, aviones (44 B, ranuras 0-31) y objetos (36 B,
+ranuras 32-63), con bando, tipo, modelo y posición. Casos positivos: los
+modelos de avión de la misión 6 caen justo en los grupos LOD ocupados de s2;
+los objetos usan la tabla de s4, con la misma forma para el mismo tipo en
+misiones distintas, y están a ras del suelo de su tesela.
+
+Reproducir: `python3 tools/acescript.py data/bpb/00{06,12,20}_*.bin`.
+
+## 2026-10-15 — La sección 6 de la misión es el guion, no textos
+
+`mission_start` (`FUN_80038818`) toma s6 como guion (`DAT_800BADC0`), con
+variantes elegidas al azar si hay 3. La subtabla `DAT_800BAD70` de la
+subentrada 0 tiene registros de 44 B con posiciones en coma fija: en la
+misión 6, un registro de bando 0 a 7.500 de altura y 10 de bando 1 por
+parejas en formación. Pista fuerte de la tabla de aparición de entidades;
+sin confirmar con el código que la consume. También aclarado el mapa de
+punteros de `mission_load`.
+
+Reproducir: `python3 tools/acescript.py data/bpb/0006_*.bin`.
+
+## 2026-10-15 — Preludio de misión: cielo por bandas y color de niebla
+
+El preludio de 312 B del tipo 17 está comprimido con ULZ (no se había visto
+porque el tamaño citado era ya el descomprimido). Campos localizados en el
+código: niebla `+0x08` (color lejano de la GTE), cenit, cielo alto/bajo en
+dos versiones (mirando al sol / de espaldas), color bajo el horizonte,
+alturas de 4 bandas, rumbo del sol, sol/bruma/clima. El cielo se dibuja
+como bandas de polígonos Gouraud a pantalla completa, no con textura.
+Validación: alturas de banda decrecientes en todas las misiones probadas;
+la 10 sale nocturna y la 40 sin sol, coherentes con su aspecto.
+
+Reproducir: `python3 tools/acesky.py data/bpb/00{06,10,40}_*.bin`.
+
+## 2026-10-15 — Explosiones, humo y estelas: texturas y sistema de partículas
+
+El registro común 0000 contiene las texturas de efectos de combate (s0:
+explosiones/fuego/humo en rejilla de 64 px; s1: llamas, restos, estelas).
+Validado con un caso positivo: los fotogramas 6-15 que recorre
+`FUN_80084324` forman una animación de explosión coherente
+(`tools/acefx.py frames`). Documentados el registro de partícula (28 B), los
+4 tipos, la cola de eventos de efecto, la composición del impacto de misil y
+cómo se dibujan los proyectiles en vuelo (segmentos cabeza-cola, no humo).
+Sin resolver: qué lista de proyectil es el misil estándar; ritmo de ticks
+(¿25 Hz en PAL, 30 en NTSC?).
+
+Reproducir: `python3 tools/acefx.py sheet data/bpb/0000_*.bin` y búsqueda de
+CLUT `0x40x6`-`0x45x6` en `data/ghidra/all_ace_eu.c`.
+
+## 2026-10-15 — Efectos del entorno: nubes, sol y bruma (las explosiones, no)
+
+Buscando las explosiones por sus CLUT constantes en el código: s13 TIM 1 es
+el campo de nubes (`FUN_8008DD10`), s13 TIM 2 el sol y su destello
+(`FUN_8008A310`, no una bola de fuego como sugería su aspecto) y s13 TIM 0 las
+capas de nubes/bruma (`FUN_8008C1C8`, con parámetros en la sección 8). La
+sección 8 y el preludio son, pues, parámetros de entorno. Explosiones sin
+localizar.
+
+Reproducir: búsqueda de `0x4F16`, `0x4F56`, `0x4E56`, `0x4ED6` en
+`data/ghidra/all_ace_eu.c` (DumpAll) y exportar s12-s14 con `tools/tim2png.py`.
+
 ## 2026-10-15 — Etapa 4: criterio de salida cumplido; qué es del juego y qué no
 
 El usuario confirma que la 0.3 funciona en la Retroid. Aclarado lo que no es

@@ -65,14 +65,31 @@
 
 ## Siguiente tarea concreta
 
-Etapa 3, ordenada por lo que más acercaría la rebanada al aspecto del juego:
+**Material suficiente para el APK 0.4** (avisado al usuario; esperar su
+visto bueno para pausar la etapa 3 y construirlo en `etapa-4`). Contenido
+previsto, todo leído del disco del usuario:
 
-1. **Efectos**: localizar en el código cómo se dibujan explosiones, estelas
-   de misil y humo (texturas de efecto en VRAM, primitivas `SPRT`/`POLY_FT4`
-   semitransparentes) y sus datos.
-2. **Preludio del tipo 17** (312 B): cielo, niebla y luz de cada misión.
-3. **Callbacks de estado de pieza** (superficies móviles del avión).
-4. Pendientes menores: `h0`, demos, overlays 3-5, `names.tsv`.
+- cielo por bandas y niebla de cada misión (preludio, `acesky.py`);
+- enemigos y objetos de tierra donde los pone el guion (s6, `acescript.py`),
+  con sus modelos (LOD de s2 y `Model` de s4);
+- explosiones animadas, humo, restos e impacto de misil (registro 0000,
+  `acefx.py`), con las vidas y tamaños del código;
+- estela de humo del misil (bandas Gouraud) y llama estirada;
+- alerones, cabeceo, timón y aerofreno del avión del jugador (`acesurf.py`).
+
+Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
+proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
+sol/destello y bruma (s13 + s8).
+
+1. ✅ **Tablas de aparición** (s6): aviones (LOD de s2) y objetos de tierra
+   (s4) con bando, tipo, modelo y posición. Pendiente menor: unidad de la
+   orientación; versión destruida de los objetos.
+2. ✅ Objetos de tierra: salen de la tabla anterior.
+3. ✅ **Superficies móviles**: estados discretos (alas, aerofreno, timón),
+   `tools/acesurf.py`. Pendiente menor: qué control elige cada estado.
+   ✅ Estelas de humo del misil y de puntas de ala (búferes circulares).
+4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
+   overlays 3-5.
 
 ## Bloqueos conocidos
 

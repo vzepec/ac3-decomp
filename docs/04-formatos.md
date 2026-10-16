@@ -255,11 +255,189 @@ Reproducible con `make sections` y `make models`.
 | 3 | sí | **Modelos pequeños con LOD** (¿armas?): 4 o 16 huecos | sí | ✅ geometría |
 | 4 | sí | **Objetos 3D** pequeños: tabla de modelos | sí | ✅ vértices |
 | 5 | sí | **Tabla de normales de cara** (`SVECTOR` unitarios en 4.12) | sí | ✅ ver primitivas |
-| 6 | sí | **Textos de la misión** (EU: 5 idiomas) | **no** | identificado |
-| 7-9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
+| 6 | sí | **Guion de misión** (6 subentradas; ver abajo). Antes descrito como "textos" | **no** | parcial |
+| 7, 9 | sí | Pequeñas (8-1.256 B) | sí | `SIN RESOLVER` |
+| 8 | sí | 40 B: **capas de nubes/bruma** (2 niveles), ver efectos | sí | parcial |
 | 10 | sí | **Texturas** del escenario (hasta 279 TIM) | sí | ✅ |
-| 11-14 | sí | **Texturas**: avión, radar, fuente, iconos | sí | ✅ |
+| 11-14 | sí | **Texturas**: avión, radar, fuente, iconos, efectos (ver abajo) | sí | ✅ |
 | 15 | no | **Banco de sonido del SPU** (ver abajo) | **no** | ✅ |
+
+**Efectos del entorno (texturas de s13 y parámetros), desde el código:**
+
+| Textura | Uso | Función | Datos |
+|---|---|---|---|
+| s13 TIM 1 (CLUT 315) | **campo de nubes**: rejilla de sprites alrededor de la cámara (vuelta cada `0x4000`), altura fija `0x2400`, POLY_FT4 semitransparentes (`0x2E`, tpage `0x39` aditivo), cuadrante de 64 px al azar | `FUN_8008DD10` | — |
+| s13 TIM 2 (CLUT 316 naranja / 317 gris) | **sol y destello** (lens flare): disco y halo; intensidad según lo centrado que esté el sol en pantalla | `FUN_8008A310` | preludio `+0x6C`… |
+| s13 TIM 0 (CLUT 313 + i) | **capas de nubes/bruma** (2 niveles, color con semitransparencia) | `FUN_8008C1C8` | sección 8 (`g_mission + 0x3C`) |
+| s12 | tiras de 8×8; una parece un misil | `SIN RESOLVER` | |
+
+Corrección: la TIM 2 se tomó primero, por su aspecto, como "bola de fuego"
+de explosión; el código muestra que es el sol. **Las explosiones no están
+localizadas.** Nota: `g_render + 0x244` = `g_mission + 0x18` (preludio) y
+`g_render + 0x268` = `g_mission + 0x3C` (sección 8).
+
+### Sección 6 del tipo 17: guion de misión (parcial)
+
+Al arrancar la misión, `mission_start` (`FUN_80038818`) toma s6
+(`g_render + 0x260`) como `DAT_800BADC0`; si su tabla tiene 3 entradas elige
+una al azar (variantes de la misión). Las subentradas las consumen:
+`+4` → `FUN_8004BBB8`, `+8` → `FUN_8004B760`, `+0xC` → `DAT_800BAD28`
+(`FUN_800527C8`), `+0x10` → `DAT_800BAD20` (`FUN_80052574`), `+0x14` →
+`FUN_80054B54`.
+
+La subentrada `+4` empieza con 4 contadores (bytes 0, 4, 8, 0xC) y 14
+offsets en palabras a subtablas (`DAT_800BAD5C`, `…AD7C`, `…AD70`, `…AD9C`,
+`…ADB8`, `…ADB4`, `…ADA8`, `…ADB0`, `…AD74`, `…AD98`, `…ADA0`, `…AD90` y dos
+tablas de punteros). Volcado: `python3 tools/acescript.py data/bpb/0006_*.bin`.
+
+**Tablas de aparición** (confirmadas en el código):
+
+| Tabla | Registros | Ranuras de entidad | Inicializa |
+|---|---|---|---|
+| `DAT_800BAD70` | contador del byte 8, 44 B | 0-31 (aviones; la 0 es el jugador) | `FUN_8004C258` |
+| `DAT_800BAD74` | contador del byte 0xC, 36 B | 32-63 (objetos de tierra y otros) | `FUN_8004CDB0` |
+
+| Byte | Campo |
+|---|---|
+| 0 | bando: 0/1/2 → banderas de entidad `0x40`/`0x80`/`0x100` |
+| 1 | tipo (entidad `+0x48`; p. ej. `0x40`/`0x41` objetos, `0x18`/`0x1F`/`0x20` aviones) |
+| 2 | **modelo** (entidad `+4`); `0xFF` = sin modelo |
+| 3 | índice en los registros de 40 B de la subentrada `+8` (parámetros del tipo) |
+| 4-0x0F | posición x, y, z (s32, << 12) |
+| 0x14-0x19 | orientación (s16 ×3). Probable 0x10000 = 360°: así, en la misión 6, el jugador (`0x3800` = 315°) mira a las parejas enemigas y ellas (`0x1800` = 135°) a él; con 4096 = 360° se darían la espalda. Sin confirmar en el código |
+| 0x20-0x23 | índices en otras subtablas (`AD9C` ×16 B, `ADB4`/`AD98` ×24 B, …) |
+
+**El modelo indexa tablas distintas** según la tabla de aparición:
+
+- aviones: grupo LOD `id·4 … id·4+3` de s2/s3. Validado en la misión 6: los
+  modelos 2, 3 y 4 caen exactamente en los grupos ocupados de s2 (ranuras
+  8-11, 12-15, 16-17), tres aviones distintos (extent 229, 216, 164).
+- objetos: índice directo en la tabla de s4 (`Model`). Validado: el mismo
+  tipo usa la misma forma en misiones distintas aunque cambie el índice
+  (tipo `0x40` → modelo de 103×43, tipo `0x41` → 90×43, en las misiones 6 y
+  12), y los objetos están a ras de suelo (y = −1.150 con la tesela a −1.126
+  y la base del modelo 29 unidades por debajo del origen). Cada modelo de
+  objeto va precedido de una versión baja (altura 15 frente a 43): con toda
+  probabilidad la versión destruida (`FUN_80050C84` dibuja `modelo +
+  desfase`), `SIN RESOLVER`.
+
+La subentrada `+4` contiene también el **guion de eventos**, que interpreta
+`FUN_80053704` (bytecode: 0x15 activa una entidad, 0x16 la desactiva,
+0x0B-0x14 llaman a subórdenes…), `SIN RESOLVER` en detalle.
+
+Mapa de punteros del cargador (`mission_load`): `ulz_decompress` devuelve el
+final de lo escrito, así que `g_mission + 0x18` = preludio, `+0x1C` = s0 …
+`+0x3C` = s8, `+0x40` = s9; y `g_mission + k` se copia a `g_render + 0x22C + k`.
+
+### Preludio del tipo 17: cielo y niebla (desde el código)
+
+El preludio está **comprimido con ULZ** (empieza por `Ulz\x1a`) y
+descomprime a 312 B. El juego lo apunta desde `g_mission + 0x18`
+(`g_render + 0x244`). Volcado: `python3 tools/acesky.py data/bpb/0006_*.bin`.
+
+| Offset | Tipo | Uso | Función |
+|---|---|---|---|
+| `+0x02` | u16 | banderas: `0x100` → `FUN_80094300` (usa la sección 8), `0x200` → `FUN_80093FB8` (textura de nubes, CLUT 315), `0x400` `SIN RESOLVER` | `FUN_800936FC`, `FUN_80093E2C` |
+| `+0x04` | RGB | color bajo el horizonte (mar/suelo lejano) | `FUN_800933CC` |
+| `+0x08` | RGB | **niebla**: color lejano de la GTE (`ldfc` ×16) y color del horizonte | `FUN_8005D5FC`, `FUN_800933CC` |
+| `+0x10` | s16 | altura de las bandas 2 y 3 del cielo (−2·v y −v/2) | `FUN_800931B8` |
+| `+0x14` / `+0x18` | RGB | cielo alto, mirando al sol / de espaldas | `FUN_800933CC` |
+| `+0x1C` | RGB | **cenit** (OR `0x030303`) | `FUN_800933CC` |
+| `+0x20` / `+0x22` | s16 | altura de las bandas 1 y 0 (−2·v) | `FUN_800931B8` |
+| `+0x24` / `+0x28` | RGB | cielo bajo, mirando al sol / de espaldas | `FUN_800933CC` |
+| `+0x3E` | s16 | rumbo del sol (mezcla de los colores de sol/espaldas según el rumbo de la cámara) | `FUN_800933CC` |
+| `+0x6C` | s16 | ≠ 0: hay sol (`FUN_8008A310`) | `FUN_80083B78` |
+| `+0x6E` | u8 | ≠ 0: capas de bruma (`FUN_8008C1C8`) | `FUN_80083B78` |
+| `+0x6F` | u8 | clima: 1-5 = entrada de la tabla `0x800B2208` (5 = campo de nubes) | `FUN_80083B78` |
+
+**Cómo se dibuja el cielo** (`FUN_80093E2C`): no es una textura sino
+polígonos planos y Gouraud a pantalla completa, en bandas separadas por
+anillos alrededor de la cámara. Anillo k = puntos a altura `h_k` sobre el mar
+y a distancia horizontal `D_k`: banda 0 (`+0x22`, D = 65534), banda 1
+(`+0x20`, 65534), banda 2 (`+0x10`·2, 61440), banda 3 (`+0x10`/2, 30720) y el
+horizonte (altura 0, en el borde del mundo: `sqrt(0x6800² − altura²)`, radio
+0x6800 = 26.624). Colores de arriba abajo: cenit → cielo alto → cielo bajo
+→ niebla (banda plana hasta el horizonte); bajo el horizonte, `+0x04`.
+Los colores alto/bajo se mezclan una vez por fotograma según el rumbo de la
+cámara respecto a `+0x3E`. `SIN RESOLVER`: la unidad exacta de esa mezcla
+(el código hace `(2·sol − rumbo/2) & 0x1FFF`, plegado a 0..0x1000).
+
+### Efectos de combate (registro común 0000), desde el código
+
+El registro **0000** (tipo 5) trae dos TIM fijos en VRAM con todos los efectos
+de combate. Exportar: `python3 tools/acefx.py sheet|frames data/bpb/0000_*.bin`.
+
+| TIM | VRAM | CLUT | Contenido |
+|---|---|---|---|
+| s0 | (448,256), tpage `0x17` | 16 filas en (352,256) | rejilla 4×4 de celdas de 64 px: explosión (celdas 6-15), fuego, humo; las filas 0-1 a media escala (celdas de 32 px) |
+| s1 | (512,256), tpage `0x18` | 12 filas en (352,272) | celdas de 32 px: salpicaduras/restos (v=0/32/64), llamas (v=96-159), estelas alargadas de proyectil (u=0xB0-0xEF), anillos |
+
+**Partículas** (depósito `DAT_800BAE00 + 0x600`: 3 grupos × 32, máscara de
+bits por grupo, `FUN_8007E76C` reserva). Registro de 28 bytes:
+
+| Offset | Campo |
+|---|---|
+| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`); se dibuja si ≥ 0 |
+| `+0x02` s16 | vida en ticks; al alcanzarla la partícula se libera |
+| `+0x04/08/0C` s32 | posición (mundo << 12) |
+| `+0x10/12/14` s16 | velocidad (se suma ×0x100 por tick) |
+| `+0x16` u16 | movimiento: bits 0-2 rozamiento (v -= v >> n), bits 3-4 gravedad (+0x8AA/0x1A00/0x3400 a vy) |
+| `+0x18` u16 | bits 0-3 parámetro, bits 4-7 **tipo** (índice en la tabla `0x800B221C`), bits 8-9 **mezcla** |
+| `+0x1A` s16 | tamaño (unidades de mundo; se proyecta como tamaño × H / z) |
+
+| Tipo | Dibujante | Aspecto |
+|---|---|---|
+| 0 | `FUN_80084324` | **explosión**: fotograma = edad×10/vida + 6 (celdas 6→15 de s0); mezcla 0 → CLUT 1 y semitransparencia media; si no, CLUT 0 y modo GPU = mezcla (1 = aditivo) |
+| 1 | `FUN_8008451C` | **humo**: mismas celdas (6 + 10·t), CLUT 3 (gris), crece de tamaño s a 2s (3s si parámetro ≠ 0) y se funde hacia el color de niebla; mezcla 2 = sustractiva (humo oscuro), 1 = aditiva (claro) |
+| 2 | `FUN_8008473C` | salpicaduras/restos en celdas de 32 px de s1 (6 u 8 fotogramas) |
+| 3 | `FUN_80084934` | sprite que gira (tabla de senos `0x800B4F84`), `SIN RESOLVER` |
+
+Valores de los generadores (`+0x18`): `0x100` = explosión aditiva,
+`0x210` = humo oscuro, `0x111` = humo claro, `0x130` = tipo 3.
+
+**Cola de eventos de efecto** (`FUN_8007C8AC`): los objetos no crean
+partículas directamente; emiten un evento que `FUN_8007D9CC` reparte:
+clase 3 = efecto puntual (7 variantes, `FUN_8007E3A0`), clase 4 = efecto con
+velocidad (10 variantes, `FUN_8007E4DC`), clase 5 = estela/restos
+(`FUN_8007E658`), clase 1 = efecto global (`FUN_8007E384`). Cada variante
+tiene un envoltorio público (p. ej. 3.0 = `FUN_8007EA98`, 4.8 humo =
+`FUN_800816F0`).
+
+**Impacto de misil** (`FUN_800684BC` → `FUN_8007F3A8` → `FUN_8007F15C`,
+sonido `0x1D`; sin impacto: efecto 4.0 y sonido `0x1C`):
+1 explosión (vida 14 ticks, tamaño 256, aditiva) + 1 destello (depósito
+`+0x33C0`, vida 9-12, tamaño 400-463) + 8 restos (depósito `+0x1098`): 2
+fragmentos ardiendo con gravedad (tamaño 240-271) y 6 chispas.
+Explosión pequeña genérica (`FUN_8007E7E0`): vida 8, tamaño 50-81
+(100-131 en la variante 2) + 2 a 5 restos.
+
+**Proyectiles en vuelo** (`FUN_8006AE1C`; objetos de 0x3C bytes en
+`DAT_800BAF08 + 0x15D0`, con dos puntos cabeza/cola): se dibujan como
+**segmentos**, no como partículas. `FUN_8008F204`: línea Gouraud
+semitransparente (naranja → amarillo pálido; trazadoras). `FUN_8008F388`,
+`F660`, `F940`, `FB00`: sprite estirado de cola a cabeza con las estelas de
+s1 (16×64 texeles en u=0xB0/0xC0/0xE0/0xD0, v=0x60, aditivo). Qué lista
+corresponde al misil estándar: `SIN RESOLVER` (probablemente `F388`).
+Tabla de armas `0x800B0A04`: 5 actualizaciones + 5 finales.
+
+**Estelas de humo y de vapor** (búferes circulares en `DAT_800BAF38`;
+actualiza `FUN_8007C44C` cada tick). Corrige la idea anterior de que el misil
+no deja humo:
+
+| Sistema | Fuente | Puntos | Vida | Dibujo |
+|---|---|---|---|---|
+| A (32 estelas × 32 puntos de 4 posiciones) | proyectiles con bandera `&8` (`FUN_8007B36C`): un punto nuevo cada 4 fotogramas (el resto actualiza el último), 4 posiciones a lo largo del eje del proyectil (tabla `0x800B1E94`) | `FUN_8007A60C` / `FUN_8007A7C0` | 90 ticks (`FUN_8007A8B4`) | `FUN_8007A990` |
+| B (32 × 32 puntos de 2 posiciones) | aviones con `+5 & 8` (`FUN_8007C164`): un punto cada 2 fotogramas, dos posiciones según el tipo de avión (tabla `0x800B1EB4`, 16 B por tipo): **estelas de las puntas de ala** | `FUN_8007B5F0` / `FUN_8007B77C` | 63 ticks (`FUN_8007B834`) | `FUN_8007B928` |
+
+Ambas se dibujan como bandas de POLY_G4 semitransparentes sin textura entre
+puntos consecutivos (LINE_G2 semitransparente cuando están lejos), con el
+color atenuado por la edad del punto. `SIN RESOLVER`: el color exacto (la A
+carga el color lejano de la GTE desde s8 `+0x20`, pero reutiliza ese
+registro como temporal) y el modo de mezcla.
+
+**Otros**: `FUN_8008EBDC` (postquemador, llamas de s1), `FUN_80090478` /
+`FUN_80090FE0` (cintas Gouraud entre dos puntos, depósito `+0x3964`; las
+emiten el rayo láser `FUN_80081B88` y el efecto 4.9).
 
 **Sección 0 = mapa de teselas.** 65.536 celdas `u16`; los 9 bits bajos son un
 índice de tesela y `max(v & 0x1FF)` coincide **exactamente** con el número de
@@ -497,6 +675,28 @@ con los registros 111-126, recorrida por un contador de demo (`+0x3AA` del
 estado, da la vuelta tras 15). `FUN_80035E78` carga el registro y
 `FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`. El formato interno de
 la grabación está `SIN RESOLVER`.
+
+#### Superficies móviles del avión del jugador
+
+Los 12 modelos del preludio del tipo 4 tienen un orden fijo. El render
+(`scene_objects_sort`) pasa los modelos 2-11 como **10 bloques de vértices
+alternativos** y asigna por defecto el 0, el 5 y el 7 (el primer estado de
+cada grupo). Son **estados discretos**, no una interpolación:
+
+| Modelo | Pieza | Estados (medidos con `tools/acesurf.py`) |
+|---|---|---|
+| 0 | tobera | — |
+| 1 | fuselaje | — |
+| 2 | alas, posición neutra | — |
+| 3 / 4 | alas: alerones a un lado / al otro (antisimétrico) | 19 de 22 aviones |
+| 5 / 6 | alas: cabeceo (simétrico; el signo cambia según el avión) | 18 de 22 |
+| 7 / 8 | pieza dorsal: **aerofreno** recogido / abierto (sube 30-42 u.) | 10 de 22 |
+| 9 / 10 / 11 | deriva: timón neutro / a +x / a −x | 17 de 22 |
+
+Los registros 47, 65 y 66 (diseños ficticios) tienen todos los estados
+idénticos: sin superficies móviles. `SIN RESOLVER`: qué control elige cada
+estado y con qué umbral (probablemente la callback de pieza de `0x800B09D0`
+o la lógica de vuelo), y qué estado de 3/4 es alabeo a la izquierda.
 
 #### Tipo 5 — briefings de misión (40 registros)
 

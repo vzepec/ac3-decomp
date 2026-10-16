@@ -47,3 +47,49 @@
 0x8008A874	f	engine_exhaust_draw	callback de pieza: efecto de motores en los puntos de tobera (t04 s0)
 0x800B09B8	d	part_callbacks_a	callbacks por pieza, indice por tipo de avion (0x3D->3, 0x32->4, 0x33->5)
 0x800B09D0	d	part_callbacks_b	callbacks por pieza (1 = motores; 0x13 -> 2)
+0x8008DD10	f	clouds_draw	campo de nubes (s13 TIM 1, CLUT 315)
+0x8008A310	f	sun_flare_draw	sol y destello (s13 TIM 2, CLUT 316/317)
+0x8008C1C8	f	haze_layers_draw	capas de nubes/bruma (s13 TIM 0; parametros en s8)
+0x8007E76C	f	pool_alloc	reserva en deposito con mascara de bits
+0x800836AC	f	particles_update	edad, velocidad, rozamiento y gravedad
+0x80083D48	f	particles_draw	proyecta y llama a la tabla 0x800B221C por tipo
+0x80084324	f	fx_explosion_draw	tipo 0: celdas 6-15 de 0000 s0
+0x8008451C	f	fx_smoke_draw	tipo 1: humo, CLUT 3
+0x8008473C	f	fx_splash_draw	tipo 2: celdas de 32 px de 0000 s1
+0x800841AC	f	fx_sprite_quad	esquinas del sprite (con giro)
+0x80083A64	f	fx_update_all	actualiza todos los depositos de efectos
+0x80083B78	f	fx_draw_all	sol, bruma, clima, particulas, restos, cintas
+0x8007C8AC	f	fx_event_alloc	cola de eventos de efecto
+0x8007D9CC	f	fx_event_dispatch	reparte eventos por clase
+0x8007E3A0	f	fx_point_spawn	clase 3 (7 variantes)
+0x8007E4DC	f	fx_moving_spawn	clase 4 (10 variantes)
+0x8007E7E0	f	fx_small_explosion	vida 8, tamano 50-81
+0x8007F15C	f	fx_missile_impact	explosion + destello + 8 restos
+0x800815D4	f	fx_smoke_puff	humo claro con deriva
+0x8006AE1C	f	projectiles_draw	segmentos cabeza-cola en 5 listas
+0x8008F204	f	tracer_draw	lineas Gouraud semitransparentes
+0x8008F388	f	projectile_streak_draw	sprite estirado, estela de 0000 s1
+0x800684BC	f	weapon_end_0	final de proyectil: impacto o fallo
+0x80093E2C	f	sky_draw	cielo por bandas (preludio de mision)
+0x800933CC	f	sky_colors	colores de banda segun rumbo y sol
+0x800931B8	f	sky_bands	alturas y distancias de los anillos
+0x800936FC	f	sky_bands_draw	bandas planas y Gouraud
+0x8005D5FC	f	fog_color_set	color lejano GTE = preludio +0x08
+0x80038818	f	mission_start	toma s6 (guion) e inicializa la mision
+0x8004BBB8	f	mission_script_init	cabecera del guion: contadores y subtablas
+0x8004C258	f	spawn_aircraft_init	tabla de aparicion de aviones (ranuras 0-31)
+0x8004CDB0	f	spawn_objects_init	tabla de aparicion de objetos (ranuras 32-63)
+0x8004BEDC	f	spawn_aircraft_links	enlaza registros de aparicion con subtablas
+0x8004C08C	f	spawn_objects_links	idem para objetos
+0x80053704	f	mission_script_exec	interprete del guion de eventos
+0x8008BCBC	f	part_light_draw	luz de pieza (sprite aditivo)
+0x8008BE4C	f	part_glow_draw	resplandor rojo en degradado
+0x8008B914	f	part_rotor3_draw	disco de rotor de 3 palas
+0x8008BA18	f	part_rotor5_draw	disco de rotor de 5 palas
+0x8008BB1C	f	part_rotor_coax_draw	dos rotores contrarrotatorios
+0x8008B6D0	f	rotor_disc_draw	abanico de POLY_G3 sustractivo
+0x8007C44C	f	trails_update	actualiza estelas A (humo de proyectil) y B (puntas de ala)
+0x8007B36C	f	smoke_trails_feed	puntos de estela desde los proyectiles
+0x8007C164	f	wingtip_trails_feed	puntos de estela desde los aviones
+0x8007A990	f	smoke_trails_draw	bandas Gouraud semitransparentes (A)
+0x8007B928	f	wingtip_trails_draw	bandas Gouraud semitransparentes (B)
