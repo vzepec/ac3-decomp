@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5: modelo de memoria PS1 y primeras funciones de libgpu
+
+Decidido el modelo de memoria de la capa (RAM de PS1 simulada, punteros como
+direcciones PS1). Seis funciones de libgpu que solo escriben en memoria,
+idénticas al original en 500 casos cada una. Un fallo de `SetDrawArea` en el
+comparador resultó ser error mío al leer el ensamblador (desplazamiento
+negativo: la variable está en `0x800B97E8`, no en `0x800C97E8`);
+`tools/mipsdis.py` ahora anota las direcciones efectivas.
+
+Reproducir: `python3 tools/psyqcheck_gpu.py data/exe/ace_eu.bin`.
+
 ## 2026-10-16 — Etapa 5: libgte completa e idéntica al original
 
 La GTE de `psx/` se conecta al intérprete MIPS por ctypes y el código

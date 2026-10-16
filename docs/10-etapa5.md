@@ -62,7 +62,7 @@ etapa.
 | 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | ✅ **84.000 casos, 0 diferencias** (`make psx-check`) |
 | 4 | Emulador de la GTE (`psx/src/gte.c`) | ✅ especificación + 27 pruebas (`make psx-check`); sin verificar contra hardware |
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
-| 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | listas de dibujo reales del juego |
+| 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | 🔄 funciones de memoria ✅ (6, oráculo); rasterizado pendiente |
 | 7 | libcd, libpad, libetc | sobre las piezas de `android/` |
 | 8 | libspu | bancos de sonido de las misiones (`tools/acesnd.py`) |
 
@@ -154,3 +154,22 @@ Validación del método: con cinco errores introducidos a propósito
 (transposición incompleta, otro redondeo en `RotMatrix`, IR3 de 16 bits,
 `R33` cargado con signo —que solo cambia un registro interno— y un factor 4
 en vez de 8 en `ApplyMatrixLV`) el comparador detecta todos.
+
+**Paso 6, primera parte (2026-10-16): modelo de memoria y libgpu sin GPU.**
+Decisión de arquitectura: los datos del juego viven en una **RAM de PS1
+simulada** (2 MB + scratchpad, `psx/include/psx_mem.h`) y los punteros que el
+juego guarda en sus estructuras son direcciones PS1 de 32 bits. Es lo que
+encaja con una recompilación estática del código MIPS en la etapa 6 (la
+memoria conserva su forma) y permite comparar con el oráculo sobre la misma
+imagen. La alternativa de Psy-X (punteros nativos de 64 bits con arreglos por
+estructura) obligaría a tocar cada estructura del juego.
+
+Funciones de libgpu que solo escriben en memoria, idénticas al original
+(`tools/psyqcheck_gpu.py`, 500 casos cada una, estructuras en la misma
+dirección PS1 en los dos lados): `SetDefDrawEnv` (con `dfe` según el modo de
+vídeo: `h < 289` en PAL, `< 257` en NTSC), `SetDefDispEnv`, `SetDrawTPage`,
+`SetDrawArea` (E3/E4 limitados al tamaño de VRAM que fija `ResetGraph`, en
+`0x800B97E8`), `CatPrim`, `GetTPage`. Para leer el ensamblador cuando Ghidra
+corta funciones se añadió `tools/mipsdis.py`, que anota las direcciones
+efectivas (un error al sumar a mano un desplazamiento negativo hizo fallar
+`SetDrawArea` en el comparador hasta corregirlo).
