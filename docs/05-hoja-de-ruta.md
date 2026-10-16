@@ -135,6 +135,11 @@ proyecto merece seguir. Lo que separa la rebanada del aspecto del juego son
 efectos aún no localizados (explosiones, estelas) y parámetros sin descifrar
 (entorno de la misión): trabajo de análisis, no de plataforma.
 
+**APK 0.4** (tras una tanda de análisis de la etapa 3): cielo y niebla por
+misión, inicio, enemigos y objetos de tierra según el guion, explosiones y
+humo con las texturas y tiempos del juego, estelas, y superficies móviles.
+Confirma la medición: cada hallazgo de análisis se porta en horas.
+
 **Objetivo:** una cosa, pequeña y nativa, corriendo en el Flip 2:
 
 - leer los archivos de assets **reales** del disco del usuario

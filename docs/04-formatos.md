@@ -304,7 +304,7 @@ tablas de punteros). Volcado: `python3 tools/acescript.py data/bpb/0006_*.bin`.
 | 2 | **modelo** (entidad `+4`); `0xFF` = sin modelo |
 | 3 | índice en los registros de 40 B de la subentrada `+8` (parámetros del tipo) |
 | 4-0x0F | posición x, y, z (s32, << 12) |
-| 0x14-0x19 | orientación (s16 ×3). Probable 0x10000 = 360°: así, en la misión 6, el jugador (`0x3800` = 315°) mira a las parejas enemigas y ellas (`0x1800` = 135°) a él; con 4096 = 360° se darían la espalda. Sin confirmar en el código |
+| 0x14-0x19 | orientación (s16 ×3, a `+0x18` de la entidad, de donde sale su matriz). En la misión 6 todas las entidades llevan `0x3800` (jugador) o `0x1800` en `+0x16`: con la unidad de PS1 (4096 = 360°, `& 0xFFF`) ambos valen 180°, el mismo rumbo, coherente con vuelo en formación. Sentido del giro `SIN RESOLVER`. (Corrección: una versión anterior decía "probable 0x10000 = 360°" por un error de cuenta.) |
 | 0x20-0x23 | índices en otras subtablas (`AD9C` ×16 B, `ADB4`/`AD98` ×24 B, …) |
 
 **El modelo indexa tablas distintas** según la tabla de aparición:

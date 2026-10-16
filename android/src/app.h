@@ -17,38 +17,58 @@
 
 typedef struct { float x, y, z; } V3;
 
-#define MAX_ENEMIES 8
+#define MAX_ENEMIES MAX_SPAWNS   /* aviones del guion (la ranura 0 es el jugador) */
 #define MAX_MISSILES 24
-#define MAX_BOOMS 16
+#define MAX_PARTICLES 384
+#define TRAIL_PTS 32                /* puntos por estela (como el juego) */
+#define TICK (1.0f / 30.0f)         /* tick del juego: SIN RESOLVER (25 o 30 Hz); se usa 30 */
 
 typedef struct {
-    V3 pos, fwd, right, up, wp;
-    float speed, bank, respawn, wp_timer;
-    int type, alive;
+    V3 pos, fwd, right, up, wp, home;
+    float speed, bank, wp_timer;
+    int mesh, alive, team;
 } Enemy;
+
+typedef struct {
+    int alive;
+} Ground;
+
+/* Estela con bufer circular (docs/04-formatos.md, "Estelas de humo y de vapor"). */
+typedef struct {
+    V3 p[TRAIL_PTS][3];             /* misil: 3 posiciones (seccion triangular); ala: 1 */
+    float age[TRAIL_PTS];
+    unsigned char brk[TRAIL_PTS];   /* 1: no se une con el punto anterior (hubo pausa) */
+    int head, count, stopped;       /* head = indice del punto mas nuevo */
+    float emit_t;
+} Trail;
 
 typedef struct {
     V3 pos, dir;
     float speed, life;
-    int target, active;
+    int target, active;             /* target: >= 0 avion, <= -2 objeto (-2 - indice) */
+    Trail smoke;
 } Missile;
 
-typedef struct {
-    V3 pos;
-    float t;
-    int active;
-} Boom;
+enum { FX_EXPLOSION, FX_SMOKE_DARK, FX_SMOKE_LIGHT, FX_FIRE_DEBRIS, FX_SPARK };
 
+typedef struct {
+    V3 pos, vel;
+    float age, life, size, size_end, grav, smoke_t;
+    int kind, active;
+} Particle;
 
 typedef struct {
     void *platform;        /* struct android_app * en Android */
     int w, h;
     /* GL */
     GLuint prog, vram_tex, vao_tiles, vbo_tiles, vao_plane, vbo_plane;
-    GLuint vao_enemy[4], vbo_enemy[4], vao_missile, vbo_missile;
+    GLuint vao_model[MAX_MODELS], vbo_model[MAX_MODELS], vao_missile, vbo_missile;
+    GLuint vao_part[10], vbo_part[10];      /* alas 0-4, dorsal 5-6, deriva 7-9 */
+    GLuint vao_fx, vbo_fx;                  /* sprites de efectos (Vtx, por fotograma) */
     GLuint prog_solid, vao_solid, vbo_solid;
-    GLint us_mvp, us_color;
-    GLint u_mvp, u_model, u_cam, u_lit, u_light, u_fogcol, u_fog;
+    GLuint prog_col, vao_col, vbo_col;      /* color por vertice: cielo y estelas */
+    GLint us_mvp, us_color, uc_mvp;
+    GLint u_mvp, u_model, u_cam, u_lit, u_light, u_fogcol, u_fog, u_alpha;
     /* datos */
     Disc disc;
     AcePack pack;
@@ -65,9 +85,13 @@ typedef struct {
     float cam_yaw, cam_pitch;
     /* combate */
     Enemy enemies[MAX_ENEMIES];
+    Ground ground[MAX_SPAWNS];
     Missile missiles[MAX_MISSILES];
-    Boom booms[MAX_BOOMS];
-    int target, kills, fire_side;
+    Particle parts[MAX_PARTICLES];
+    Trail wing_trail[MAX_ENEMIES][2];       /* ranura 0 = jugador */
+    int target, kills, fire_side, ndead_wait, crashes;
+    float respawn_t;
+    float crash_t;          /* > 0: el jugador se ha estrellado y reaparece al llegar a 0 */
     float fire_cd;
     uint32_t rng;
     /* tiempo y contador de fps */

@@ -65,17 +65,11 @@
 
 ## Siguiente tarea concreta
 
-**Material suficiente para el APK 0.4** (avisado al usuario; esperar su
-visto bueno para pausar la etapa 3 y construirlo en `etapa-4`). Contenido
-previsto, todo leído del disco del usuario:
-
-- cielo por bandas y niebla de cada misión (preludio, `acesky.py`);
-- enemigos y objetos de tierra donde los pone el guion (s6, `acescript.py`),
-  con sus modelos (LOD de s2 y `Model` de s4);
-- explosiones animadas, humo, restos e impacto de misil (registro 0000,
-  `acefx.py`), con las vidas y tamaños del código;
-- estela de humo del misil (bandas Gouraud) y llama estirada;
-- alerones, cabeceo, timón y aerofreno del avión del jugador (`acesurf.py`).
+**APK 0.5 construido** (choques reales contra el terreno, objetos y aviones;
+0.4 probado por el usuario: funciona). Pendiente de prueba en la Retroid. Después, volver a la
+etapa 3 (rama `etapa-3`) con los pendientes de abajo, priorizando lo que se
+note en el APK: nubes, sol y destello (ya localizados), qué mando activa cada
+superficie, color de las estelas, ritmo de ticks.
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
