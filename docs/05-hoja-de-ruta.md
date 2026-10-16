@@ -86,7 +86,7 @@ la suma de control de la cabecera. Ver `02-binarios.md`.
 
 ---
 
-## Etapa 3 — Análisis estático del código 🔄 EN CURSO (primer corte de los criterios cumplido)
+## Etapa 3 — Análisis estático del código ✅ CRITERIO CUMPLIDO
 
 **Prerrequisito:** instalar **Ghidra** (no está en la máquina) con el loader
 de PSX y soporte COP2/GTE.
@@ -111,7 +111,17 @@ mapa de overlays y el bucle principal identificado.
 instalados. `ACE.BIN`: 2.011 funciones (~1.262 propias, 473 KB) más 5
 overlays de código (~580 funciones propias, 219 KB): **unas 1.840 funciones
 propias, ~690 KB**. Mapa de módulos y de modos resuelto; bucle principal y
-despachador de modos identificados. Queda nombrar el árbol de llamadas.
+despachador de modos identificados.
+
+**Cierre (2026-10-16):** los 5 overlays identificados (menú, campaña,
+créditos y dos reproductores de música); ritmo de juego (25 ticks/s EU, 30
+US); formatos de efectos, cielo, guion de misión, superficies móviles, estelas
+y demos descifrados y validados (`tools/acefx.py`, `acesky.py`,
+`acescript.py`, `acesurf.py`, `acedemo.py`, `acevideo.py`); unas 160
+funciones con nombre en `tools/ghidra/names.tsv`. Quedan abiertos, sin
+bloquear: el color de las estelas y `h0` (necesitan emulador o ya están
+descartados en render), y nombrar el resto del árbol de llamadas, que
+continúa en las etapas siguientes según haga falta.
 
 **Esfuerzo:** meses. **Riesgo:** medio.
 

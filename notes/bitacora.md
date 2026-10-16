@@ -5,6 +5,102 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Unidad de los ángulos: 0x4000 = 360° (segunda corrección)
+
+Historia, para no repetirla: primero se dijo "0x10000 = 360°" (con una
+cuenta mal hecha que, por casualidad, daba la conclusión correcta de que el
+jugador mira a los enemigos); luego se "corrigió" a 4096 suponiendo la
+convención estándar de RotMatrix. Las dos eran hipótesis sin validar. Ahora,
+con dos pruebas independientes: la matriz de entidad (`FUN_80030534`) usa una
+tabla de senos de periodo 0x4000 (comprobado sobre la tabla), y en las demos
+el rumbo grabado coincide con la dirección del movimiento (error mediano
+3-9° con 0x4000, frente a 90-130° con las otras). También queda resuelto el
+sentido: adelante = (sen, cos) en PS1. El APK 0.4/0.5 usa 4096: hay que
+corregirlo.
+
+Además, las instantáneas de clase 1 de las demos quedan descifradas
+(posición y ángulos por entidad y fotograma).
+
+Reproducir: `python3 tools/acedemo.py --heading data/bpb/0117_*.bin` y
+`--track 0 data/bpb/0111_*.bin`.
+
+## 2026-10-15 — Formato de las demos: grabación de la cola de eventos
+
+Las 16 demos (tipo 1) son la cola de eventos del juego grabada en un búfer
+circular, con una cabecera de 0x2054 B. Caso de validación: el número de
+marcas de fotograma de la cabecera. El primer recorrido coincidía en 10 de
+16 demos; faltaba imitar al lector del juego (vuelta en `longitud − 0x40`,
+eventos que se pasan del final, parar en la posición de escritura). Con eso,
+16 de 16 exactas.
+
+Reproducir: `python3 tools/acedemo.py data/bpb/01{11..26}_*.bin`.
+
+## 2026-10-15 — Overlays 3-5: créditos y dos reproductores de música
+
+Overlay 3 = créditos (197 líneas desde "NAMCO STAFF"; lo lanza el residente
+al final de la campaña). Overlay 5 = reproductor de música, abierto desde la
+interfaz de campaña. Overlay 4 = "MUSIC PLAYER (SAMPLE)", sin entrada
+encontrada. Clave para leerlos: los pasos de modo devuelven `0x60000000 |
+modo` para cambiar de modo (no `0x20000000 | modo`, que se buscó primero sin
+resultado).
+
+Reproducir: DumpAll de los overlays 3-5 y `grep 0x6000000 data/ghidra/all_*.c`.
+
+## 2026-10-15 — `h0` de las primitivas: descartado en render y colisión
+
+`h0` vale 0-6 (sobre todo 3). Ninguna de las rutinas que recorren las
+primitivas de teselas y objetos (render FT4/GT4, subdivisión, los dos rayos
+contra el terreno) lo lee: solo usan los bits de `h1`. Tampoco se
+correlaciona con el tamaño de la cara. Sigue sin resolver; candidato a "dato
+del editor".
+
+Reproducir: recuento de `p['h'][0]` con `acemodel.models` sobre s1 y s4, y
+lectura de esas funciones en `data/ghidra/all_ace_eu.c`.
+
+## 2026-10-15 — Los sprites estirados son de disparos rectos, no del misil
+
+Las listas de `FUN_8006AE1C` se alimentan de un depósito de disparos en línea
+recta con 6 clases (cañón con trazadoras y 5 especiales), creados desde el
+punto de disparo del avión. El misil estándar es un objeto con modelo y
+estela de humo. El APK 0.4 añadía al misil la llama estirada de la clase 1:
+mal atribuida, anotado para quitarla.
+
+Reproducir: `FUN_80069940` (clases) y `FUN_8006FD2C` en
+`data/ghidra/all_ace_eu.c`.
+
+## 2026-10-15 — Estela del misil: perfil de intensidad sí, color no
+
+El color de cada punto de la estela es `FC · I`, con una intensidad que sube
+en ~6 ticks y cae linealmente con la vida restante (resuelto). FC sale de
+s8 `+0x20`, pero sus valores en las 41 misiones no parecen un RGB: queda sin
+resolver por análisis estático; candidato a la etapa con emulador.
+
+Reproducir: `FUN_8007A990` en `data/ghidra/all_ace_eu.c` y el recuento de
+s8 `+0x20` (bucle sobre `Record.section(8)`).
+
+## 2026-10-15 — Superficies móviles: interpolación según los mandos (corrección)
+
+Encontrado el camino completo: la lógica de vuelo (`FUN_8006B90C`) convierte
+4 ejes de mando en 5 valores (alerones, cabeceo, timón, toberas, aerofreno)
+que se suavizan por tick, y `FUN_800658B8` interpola los vértices entre la
+posición neutra y la extrema con la operación INTPL de la GTE. Corrige la
+entrada anterior ("estados discretos"): aquellos modelos son los extremos.
+La asignación pieza ↔ maniobra coincide con la que se dedujo midiendo los
+vértices (`acesurf.py`), lo que valida ambas.
+
+Reproducir: `FUN_8006B90C`, `FUN_800658B8`, `FUN_80065728`, `FUN_800652CC`
+en `data/ghidra/all_ace_eu.c`.
+
+## 2026-10-15 — Ritmo de ticks: 25/s en la versión europea, 30/s en la americana
+
+En misión el bucle principal espera 2 refrescos por tick (`VSync(2)`). La EU
+es PAL (`SetVideoMode(1)`, pantallas de 256 líneas) y la US NTSC (240
+líneas): 25 y 30 ticks/s. Una primera búsqueda de la altura de pantalla falló
+también en la EU (el caso positivo): la altura va en `s1`, no junto al
+ancho. Corregida la heurística y validada con la EU antes de leer la US.
+
+Reproducir: `python3 tools/acevideo.py data/exe/ace_eu.bin data/exe/ace_us.exe`.
+
 ## 2026-10-15 — APK 0.5: choques contra los triángulos del terreno
 
 El usuario reportó que el avión no podía estrellarse y que "chocaba con el

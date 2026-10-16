@@ -113,7 +113,7 @@ build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
 | Alerones, cabeceo, timón y aerofreno de tu avión | disco (estados de vértices del propio modelo); **qué mando activa cada uno es propio** |
 | Explosiones | disco (registro común 0000): animación de 10 fotogramas, vida (14 ticks) y tamaño (256) del código |
 | Humo oscuro de los restos | disco (texturas y paleta de humo); los restos y su trayectoria son aproximados |
-| Llama del misil | disco (sprite estirado del registro 0000) |
+| Llama del misil | sprite del juego, pero **mal atribuido**: el análisis posterior mostró que ese sprite es de disparos especiales en línea recta, no del misil (se quitará) |
 | Estela de humo del misil y de puntas de ala | forma, frecuencia de puntos y vida del código; **color y transparencia propios** (sin resolver) |
 | Objeto destruido | **hipótesis**: el modelo anterior de s4, más bajo (sin confirmar en el código) |
 | Física de vuelo, IA, combate | **propios** y simplificados |

@@ -304,7 +304,7 @@ tablas de punteros). Volcado: `python3 tools/acescript.py data/bpb/0006_*.bin`.
 | 2 | **modelo** (entidad `+4`); `0xFF` = sin modelo |
 | 3 | índice en los registros de 40 B de la subentrada `+8` (parámetros del tipo) |
 | 4-0x0F | posición x, y, z (s32, << 12) |
-| 0x14-0x19 | orientación (s16 ×3, a `+0x18` de la entidad, de donde sale su matriz). En la misión 6 todas las entidades llevan `0x3800` (jugador) o `0x1800` en `+0x16`: con la unidad de PS1 (4096 = 360°, `& 0xFFF`) ambos valen 180°, el mismo rumbo, coherente con vuelo en formación. Sentido del giro `SIN RESOLVER`. (Corrección: una versión anterior decía "probable 0x10000 = 360°" por un error de cuenta.) |
+| 0x14-0x19 | orientación rx, ry, rz (s16, a `+0x18` de la entidad). **Unidad: 0x4000 = 360°**, y "adelante" en PS1 es (sen ry, cos ry): la matriz de la entidad (`FUN_80030534`) indexa una tabla de senos de periodo 0x4000 (`0x80010498`, coseno en `+0x1000`), y en las demos el rumbo grabado coincide con la dirección del movimiento con un error mediano de 3-9° (`tools/acedemo.py --heading`; con 4096 o 0x10000, 90-130°). En la misión 6, el jugador (`0x3800` = 315°) y las parejas enemigas (`0x1800` = 135°) se encaran. (Corrige dos versiones anteriores: "0x10000 = 360°" y "4096 = 360°".) |
 | 0x20-0x23 | índices en otras subtablas (`AD9C` ×16 B, `ADB4`/`AD98` ×24 B, …) |
 
 **El modelo indexa tablas distintas** según la tabla de aparición:
@@ -377,7 +377,7 @@ bits por grupo, `FUN_8007E76C` reserva). Registro de 28 bytes:
 
 | Offset | Campo |
 |---|---|
-| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`); se dibuja si ≥ 0 |
+| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`; 25 ticks/s en la EU, 30 en la US, ver `09-codigo.md` §9b); se dibuja si ≥ 0 |
 | `+0x02` s16 | vida en ticks; al alcanzarla la partícula se libera |
 | `+0x04/08/0C` s32 | posición (mundo << 12) |
 | `+0x10/12/14` s16 | velocidad (se suma ×0x100 por tick) |
@@ -411,13 +411,27 @@ fragmentos ardiendo con gravedad (tamaño 240-271) y 6 chispas.
 Explosión pequeña genérica (`FUN_8007E7E0`): vida 8, tamaño 50-81
 (100-131 en la variante 2) + 2 a 5 restos.
 
-**Proyectiles en vuelo** (`FUN_8006AE1C`; objetos de 0x3C bytes en
-`DAT_800BAF08 + 0x15D0`, con dos puntos cabeza/cola): se dibujan como
-**segmentos**, no como partículas. `FUN_8008F204`: línea Gouraud
-semitransparente (naranja → amarillo pálido; trazadoras). `FUN_8008F388`,
-`F660`, `F940`, `FB00`: sprite estirado de cola a cabeza con las estelas de
-s1 (16×64 texeles en u=0xB0/0xC0/0xE0/0xD0, v=0x60, aditivo). Qué lista
-corresponde al misil estándar: `SIN RESOLVER` (probablemente `F388`).
+**Disparos en línea recta** (`FUN_8006AE1C`; objetos de 0x3C bytes en
+`DAT_800BAF08 + 0x15D0`, 4 grupos × 32, con dos puntos cabeza/cola): los
+crea `FUN_80069864` (cola en `+0x1550`) y los inicializa `FUN_80069940`
+según su clase. Salen del punto de disparo del avión (s0 `+0x90`) en
+`FUN_8006FD2C`, llamada con la clase 0-5 desde `FUN_8006FE60` …
+`FUN_80070088`. Se dibujan como segmentos, no como partículas:
+
+| Clase | Banderas | Lista | Dibujo |
+|---|---|---|---|
+| 0 | `0x20410` | `0x10` | `FUN_8008F204`: línea Gouraud semitransparente (trazadora del cañón) |
+| 1 | `0x20820` | `0x20` | `FUN_8008F388`: sprite estirado de 0000 s1 (u = 0xB0, CLUT `0x4496`) |
+| 2 | `0x41040` | `0x40` | `FUN_8008F660` (u = 0xC0) |
+| 3 | `0x82080` | `0x80` | `FUN_8008F940` (u = 0xE0) |
+| 4 | `0x94103` | `0x100` | no se dibuja en esta pasada |
+| 5 | `0x98202` | ninguna | `FUN_8008FB00` (u = 0xD0) |
+
+**El misil estándar no está aquí**: es un objeto con modelo (depósito
+`DAT_800BAF08 + 200`, 0xA4 B, modelo = id + 0x17) y deja la estela de humo
+A (abajo). Corrige una versión anterior que suponía "probablemente `F388`".
+Qué arma especial es cada clase 1-5: `SIN RESOLVER`.
+
 Tabla de armas `0x800B0A04`: 5 actualizaciones + 5 finales.
 
 **Estelas de humo y de vapor** (búferes circulares en `DAT_800BAF38`;
@@ -430,10 +444,17 @@ no deja humo:
 | B (32 × 32 puntos de 2 posiciones) | aviones con `+5 & 8` (`FUN_8007C164`): un punto cada 2 fotogramas, dos posiciones según el tipo de avión (tabla `0x800B1EB4`, 16 B por tipo): **estelas de las puntas de ala** | `FUN_8007B5F0` / `FUN_8007B77C` | 63 ticks (`FUN_8007B834`) | `FUN_8007B928` |
 
 Ambas se dibujan como bandas de POLY_G4 semitransparentes sin textura entre
-puntos consecutivos (LINE_G2 semitransparente cuando están lejos), con el
-color atenuado por la edad del punto. `SIN RESOLVER`: el color exacto (la A
-carga el color lejano de la GTE desde s8 `+0x20`, pero reutiliza ese
-registro como temporal) y el modo de mezcla.
+puntos consecutivos (LINE_G2 semitransparente cuando están lejos).
+
+Color de la A (`FUN_8007A990`): `color = FC · I / 4096` (`DPCS` con RGB = 0),
+con FC = bytes `+0x20..+0x22` de s8 (×16) e intensidad por punto `I =
+edad·128` mientras `edad·16 < restante`, y después `I = restante·32`: sube
+en ~6 ticks hasta ~0,66 y cae linealmente hasta 0 al final de la vida.
+`SIN RESOLVER`: qué color resulta de verdad, porque ese campo de s8 no
+parece un RGB (en 22 de 41 misiones vale `80 80 00`; el primer byte varía
+entre 0x10 y 0xB0 y hay valores como `80 FF D0`), y el modo de mezcla, que
+fija un paquete de modo de dibujo fuera de esta función. Hace falta un
+emulador para cerrarlo.
 
 **Otros**: `FUN_8008EBDC` (postquemador, llamas de s1), `FUN_80090478` /
 `FUN_80090FE0` (cintas Gouraud entre dos puntos, depósito `+0x3964`; las
@@ -505,7 +526,7 @@ Las teselas miden 2048×2048 unidades.
 
 | Off | Tipo | Campo |
 |---|---|---|
-| 0 | `u8` | `h0` (0-4) — `SIN RESOLVER` |
+| 0 | `u8` | `h0` (0-6; en las 41 misiones: 0×540, 1×10.049, 2×30.331, 3×69.322, 4×1.635, 5×7.120, 6×6) — `SIN RESOLVER`. No lo leen los renders de primitivas (`prims_ft4_draw`, `prims_gt4_draw`, `prim_subdivide`) ni los rayos contra el terreno (`terrain_raycast`, `terrain_raycast2`, que solo miran los bits `0x100`/`0x200` de `h1`); no depende del tamaño de la cara. Quizá sea un dato del editor sin uso en el juego |
 | 1 | `u8` | `h1`: 0 = cuadrilátero plano, 1 = triángulo, 2 = cuadrilátero no plano partido en `(i0,i1,i2)` + `(i1,i3,i2)` |
 | 2 | `u16` | 0 |
 | 4 | `u16`×2 | `e0`, `e1`: offsets en bytes a la **normal de la cara** en la sección 5; `e0 = e1` salvo con `h1 = 2` (una normal por triángulo) |
@@ -673,30 +694,82 @@ la segunda de 140-358 KB. No es código (0 prólogos MIPS), ni ULZ, ni ADPCM.
 `0x800AF7C8` una tabla de 16 entradas `(u16 registro, u8 misión, u8 avión)`
 con los registros 111-126, recorrida por un contador de demo (`+0x3AA` del
 estado, da la vuelta tras 15). `FUN_80035E78` carga el registro y
-`FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`. El formato interno de
-la grabación está `SIN RESOLVER`.
+`FUN_80035EF8` se lo pasa al reproductor `FUN_8007C548`.
+
+**Formato de la grabación** ✅ (`tools/acedemo.py`): una demo es la
+grabación de la **cola de eventos** del juego (`FUN_8007C8AC`, la misma que
+alimenta efectos y entidades durante la partida). El registro tiene un solo
+bloque con una tabla de 2 offsets:
+
+| Bloque | Contenido |
+|---|---|
+| 0 (0x2054 B) | estructura del grabador (`DAT_800BAF40`): `+0` número de marcas de fotograma, `+0xC` posición de escritura, `+0x10` evento más antiguo (relativas al bloque 1; −1 = sin usar), `+0x2050` longitud |
+| 1 | búfer circular de palabras; la vuelta está en `longitud − 0x40` |
+
+Evento: tamaño = bits 0-3 de la primera palabra (en palabras), clase = bits
+4-6 (`FUN_8007C778`). El grabador escribe el evento entero aunque pase del
+final (de ahí los 0x40 B de margen) y vuelve al principio; el lector hace lo
+mismo (`FUN_8007C7E8`). Una palabra igual a 1 es una **marca de fotograma**.
+
+| Clase | Tamaños | Emisor / uso |
+|---|---|---|
+| 0 | 1 | marca de fotograma (valor 1) y estado del jugador (`FUN_8007C948`, subtipo en bits 7-9) |
+| 1 | 4 | ~3,4 por fotograma: **instantánea de entidad** (`FUN_8007C6DC`): entidad = bits 9-14; palabras 1-3 = x, y, z (20 bits altos, coma fija << 12) y rx, ry, rz en los 12 bits bajos (ángulo >> 2, 0x4000 = 360°). Validado: la trayectoria del jugador es continua (mediana 25 u por fotograma, máximo 82) |
+| 2 | 1, 4, 6 | entidades (`FUN_8007CC34`: 6 palabras = posición y ángulos) |
+| 3 | 1, 3, 4, 5 | efectos: global, puntual, con velocidad, estela (`FUN_8007D940`, `D66C`, `D720`, `D830`) |
+| 4 | 2 | `FUN_8007CEB4`, `SIN RESOLVER` |
+
+Validación: en las 16 demos, las marcas contadas recorriendo el búfer
+coinciden exactamente con `+0` (de 842 a 5.477 fotogramas: de 34 s a 3,6 min
+a 25 ticks/s).
 
 #### Superficies móviles del avión del jugador
 
-Los 12 modelos del preludio del tipo 4 tienen un orden fijo. El render
-(`scene_objects_sort`) pasa los modelos 2-11 como **10 bloques de vértices
-alternativos** y asigna por defecto el 0, el 5 y el 7 (el primer estado de
-cada grupo). Son **estados discretos**, no una interpolación:
+Los 12 modelos del preludio del tipo 4 tienen un orden fijo. Los modelos
+2-11 son **posiciones extremas** de tres piezas, y el juego **interpola**
+entre la neutra y la extrema (corrige una versión anterior de este documento
+que hablaba de "estados discretos"):
 
-| Modelo | Pieza | Estados (medidos con `tools/acesurf.py`) |
+| Modelo | Pieza | Medido con `tools/acesurf.py` |
 |---|---|---|
 | 0 | tobera | — |
 | 1 | fuselaje | — |
-| 2 | alas, posición neutra | — |
+| 2 | alas, neutra | — |
 | 3 / 4 | alas: alerones a un lado / al otro (antisimétrico) | 19 de 22 aviones |
 | 5 / 6 | alas: cabeceo (simétrico; el signo cambia según el avión) | 18 de 22 |
-| 7 / 8 | pieza dorsal: **aerofreno** recogido / abierto (sube 30-42 u.) | 10 de 22 |
+| 7 / 8 | pieza dorsal: aerofreno recogido / abierto (sube 30-42 u.) | 10 de 22 |
 | 9 / 10 / 11 | deriva: timón neutro / a +x / a −x | 17 de 22 |
 
-Los registros 47, 65 y 66 (diseños ficticios) tienen todos los estados
-idénticos: sin superficies móviles. `SIN RESOLVER`: qué control elige cada
-estado y con qué umbral (probablemente la callback de pieza de `0x800B09D0`
-o la lógica de vuelo), y qué estado de 3/4 es alabeo a la izquierda.
+Los registros 47, 65 y 66 (diseños ficticios) tienen todas las posiciones
+idénticas: sin superficies móviles.
+
+**De los mandos a los vértices** (desde el código):
+
+1. `FUN_8006B90C` (y sus variantes `FUN_8006BEA8`, `FUN_8006C58C`,
+   `FUN_80072494`) lee 4 ejes de mando de `g_state + 0x120` (bits digitales
+   en `+8`, o analógicos en `+0x1C`..`+0x28` si `+0x18` lo indica) y escribe 5
+   valores s16 en `DAT_800BAF18`, cada uno acercándose a su objetivo
+   `|dif|/4 + 2` por tick:
+
+   | Valor | Objetivo (±0x1000) | Pieza |
+   |---|---|---|
+   | `v[0]` | eje C (bits `0x2000000` / `0x4000000`) | alerones (3 si > 0, 4 si < 0) |
+   | `v[1]` | eje A (bits `0x800000` / `0x1000000`) | cabeceo (5 si > 0, 6 si < 0) |
+   | `v[2]` | eje B (bits `0x20000000` / `0x40000000`) | timón (10 si > 0, 11 si < 0) |
+   | `v[3]` | `(acelerador + 0x1000) / 2` | intensidad de las toberas (`FUN_8008A874`) |
+   | `v[4]` | `−2·(acelerador + 0x800)` si el acelerador < −0x800 (±0x80 por tick) | aerofreno (8) |
+
+2. `FUN_800658B8`, antes de dibujar, genera los vértices de cada pieza con
+   `FUN_800652CC`: `v = base + (extremo − base) · t / 4096` (operación INTPL
+   de la GTE). Timón: `t = |v[2]|`; aerofreno: `t = v[4]`. Alas
+   (`FUN_80065728` + `FUN_80065448`): primero `mezcla = lerp(alabeo,
+   cabeceo, r)` con `r` según la proporción entre `|v[0]|` y `|v[1]|`
+   (0x800 si son iguales), y después `lerp(neutra, mezcla, m)` con `m =
+   (|v[0]| + |v[1]|) · max(r, 1 − r)`, limitado a 0x1000.
+
+Qué eje físico del mando es cada letra (A, B, C) depende de la
+configuración de controles: `SIN RESOLVER`; por la pieza que mueven, A es el
+cabeceo, B la guiñada y C el alabeo.
 
 #### Tipo 5 — briefings de misión (40 registros)
 

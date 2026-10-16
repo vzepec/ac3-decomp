@@ -78,9 +78,9 @@ Importados en Ghidra (base `0x800C9DC0`, con `CreateMissingFunctions`):
 |---|---|---|---|---|---|---|
 | 1 | 4 | 141 | 140 | 39 KB | 0 | menú principal / carga de partida (tarjeta, "LOG OUT", "Now Loading") |
 | 2 | 3 | 401 | 401 | 152 KB | 66 | interfaz entre misiones ("DEBRIEFING", "CONNECTION LOST") |
-| 3 | 7 | 21 | 21 | 14 KB | 0 | casi todo datos gráficos |
-| 4 | 8 | 10 | 10 | 12 KB | 0 | nombres de pistas BGM (¿reproductor?) |
-| 5 | 9 | 8 | 8 | 4 KB | 0 | títulos de los temas (¿modo de sonido / créditos?) |
+| 3 | 7 | 21 | 21 | 14 KB | 0 | **créditos** ✅ (ver abajo) |
+| 4 | 8 | 10 | 10 | 12 KB | 0 | **"MUSIC PLAYER (SAMPLE)"** con identificadores de pista BGNK01…; sin entrada encontrada (¿pantalla de pruebas?) |
+| 5 | 9 | 8 | 8 | 4 KB | 0 | **reproductor de música** ✅ con los títulos de los temas y su tiempo ("--:--") |
 
 Solo `CdMix` (libcd) aparece como librería; el resto es código de Namco.
 
@@ -93,6 +93,23 @@ trabajo de 128 KB. Con sus cadenas: **overlay 1 = menú principal (título,
 cargar/guardar)** y **overlay 2 = interfaz de campaña entre misiones
 (informe, hangar, resultados)**. Probable; las subpantallas concretas siguen
 `SIN RESOLVER`.
+**Overlays 3-5, desde el código** (convención de los pasos de modo: devolver
+`0x60000000 | modo` cambia de modo; `0x4000000`, paso siguiente):
+
+- **Overlay 3 = créditos.** Su arranque reserva búferes, guarda la VRAM con
+  `StoreImage` y prepara 197 líneas (`0xC5`) de 72 bytes que empiezan en
+  `0x800D9B30` ("NAMCO STAFF", "Game Design", … "Produced by", "NAMCO"). Lo
+  lanza el residente `FUN_800565C4` cuando `g_state + 0x3AC` vale 2 (fin de
+  la campaña). Al acabar vuelve al modo de `g_state + 0x3A4`.
+- **Overlay 5 = reproductor de música.** Lo abre la interfaz de campaña
+  (overlay 2) cuando su subpantalla devuelve `0x10`, dejando `g_state +
+  0x3A4 = 3` para volver a ella.
+- **Overlay 4 = "MUSIC PLAYER (SAMPLE)".** Ninguna constante de cambio de
+  modo lleva al modo 8: `SIN RESOLVER` si es accesible.
+
+Reproducir: `grep 0x6000000 data/ghidra/all_*.c` y las cadenas de
+`data/exe/ovl/overlay{3,4,5}.exe`.
+
 **Total del juego: unas 1.840 funciones propias (~690 KB)**: ~1.262 en
 `ACE.BIN` y ~580 en los overlays.
 
@@ -294,6 +311,19 @@ altos del mapa.
 Tablas de datos en `ACE.BIN` con números de entrada del BPB:
 `0x800AF748` (41 misiones: registros 6-46), `0x800AF79C` (22 aviones del
 jugador: registros 47-68) y `0x800AF7C8` (16 demos: registros 111-126).
+
+## 9b. Ritmo de juego (ticks) ✅
+
+El bucle principal (`ac3_main`, `0x80025D08`) termina cada vuelta con
+`VSync(*(DAT_800BACB8 + 0x14))`. Ese intervalo vale 0 durante cargas y menús
+de carga y **2 en misión** (`FUN_80032514`, y `FUN_80055CEC` / `FUN_80056950`):
+un tick de juego cada 2 refrescos verticales. La versión europea llama a
+`SetVideoMode(1)` (PAL) y crea pantallas de 320×256; la americana, de 320×240
+(y una de 480, entrelazada). Por tanto: **25 ticks/s en la EU, 30 en la US**.
+Todas las vidas de efectos del código (14 ticks la explosión del misil, 90 la
+estela…) se miden en ticks. `SIN RESOLVER`: si la EU compensa la velocidad de
+vuelo para PAL. Reproducir: `python3 tools/acevideo.py data/exe/ace_eu.bin
+data/exe/ace_us.exe`.
 
 ## 10. Lo que queda (etapa 3, siguientes pasos)
 

@@ -7,9 +7,9 @@
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: EN CURSO** (rama `etapa-3`). La etapa 4
-(rebanada vertical) cumplió su criterio de salida: el APK corre en la Retroid
-(ver `android/README.md` y `docs/05-hoja-de-ruta.md`).
+**Etapa 3 — Análisis estático: CRITERIO CUMPLIDO** (2026-10-16). Etapa 4
+(rebanada vertical) también cumplida: APK 0.5 probado en la Retroid.
+Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Hecho
 
@@ -65,11 +65,16 @@
 
 ## Siguiente tarea concreta
 
-**APK 0.5 construido** (choques reales contra el terreno, objetos y aviones;
-0.4 probado por el usuario: funciona). Pendiente de prueba en la Retroid. Después, volver a la
-etapa 3 (rama `etapa-3`) con los pendientes de abajo, priorizando lo que se
-note en el APK: nubes, sol y destello (ya localizados), qué mando activa cada
-superficie, color de las estelas, ritmo de ticks.
+**Decidir con el usuario** entre:
+
+- **APK 0.6** (corto): aplicar las correcciones del análisis (rumbos con
+  0x4000, interpolación de superficies, quitar la llama del misil, ritmo de
+  25/30 ticks) y portar nubes, sol y destello. Opcional: reproducir en el APK
+  una demo del juego (las instantáneas ya están descifradas).
+- **Etapa 5** (larga): capa de compatibilidad PsyQ (`docs/05-hoja-de-ruta.md`).
+
+Pendientes de análisis abiertos (no bloquean): color y mezcla de las estelas
+(emulador), contenido de los eventos de clase 4 de las demos, `h0`.
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
@@ -82,8 +87,20 @@ sol/destello y bruma (s13 + s8).
 3. ✅ **Superficies móviles**: estados discretos (alas, aerofreno, timón),
    `tools/acesurf.py`. Pendiente menor: qué control elige cada estado.
    ✅ Estelas de humo del misil y de puntas de ala (búferes circulares).
-4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
-   overlays 3-5.
+4. ✅ Ritmo de ticks: 25/s (EU, PAL) y 30/s (US, NTSC), `tools/acevideo.py`.
+5. ✅ Superficies: interpolación según los mandos (docs/04). Para el APK:
+   interpolar en vez de cambiar de estado.
+6. Estelas: perfil de intensidad ✅; color y mezcla `SIN RESOLVER`
+   (necesita emulador).
+7. ✅ Lista de proyectil: el misil no usa las listas de disparos rectos
+   (correcciones para el próximo APK: quitar la llama al misil; interpolar
+   superficies; ritmo de 25/30 ticks; rumbos con 0x4000 = 360°).
+8. ✅ Overlays 3-5 (créditos, reproductor de música, reproductor de prueba)
+   y `h0` (descartado en render y colisión).
+9. ✅ Demos: grabación de la cola de eventos (`tools/acedemo.py`, 16/16),
+   con las instantáneas de entidad (posición y ángulos por fotograma).
+10. ✅ Unidad de ángulos de entidad: 0x4000 = 360° (validada con las demos).
+   Para el próximo APK: corregir rumbos (hoy usa 4096).
 
 ## Bloqueos conocidos
 
