@@ -377,7 +377,7 @@ bits por grupo, `FUN_8007E76C` reserva). Registro de 28 bytes:
 
 | Offset | Campo |
 |---|---|
-| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`); se dibuja si ≥ 0 |
+| `+0x00` s16 | edad: empieza en -1 (o más), +1 por tick (`FUN_800836AC`; 25 ticks/s en la EU, 30 en la US, ver `09-codigo.md` §9b); se dibuja si ≥ 0 |
 | `+0x02` s16 | vida en ticks; al alcanzarla la partícula se libera |
 | `+0x04/08/0C` s32 | posición (mundo << 12) |
 | `+0x10/12/14` s16 | velocidad (se suma ×0x100 por tick) |

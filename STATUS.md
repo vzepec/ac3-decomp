@@ -82,7 +82,9 @@ sol/destello y bruma (s13 + s8).
 3. ✅ **Superficies móviles**: estados discretos (alas, aerofreno, timón),
    `tools/acesurf.py`. Pendiente menor: qué control elige cada estado.
    ✅ Estelas de humo del misil y de puntas de ala (búferes circulares).
-4. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
+4. ✅ Ritmo de ticks: 25/s (EU, PAL) y 30/s (US, NTSC), `tools/acevideo.py`.
+5. Pendientes menores: qué mando elige cada estado de superficie, color y
+   mezcla de las estelas, qué lista de proyectil es el misil, `h0`, demos,
    overlays 3-5.
 
 ## Bloqueos conocidos

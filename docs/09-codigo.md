@@ -295,6 +295,19 @@ Tablas de datos en `ACE.BIN` con números de entrada del BPB:
 `0x800AF748` (41 misiones: registros 6-46), `0x800AF79C` (22 aviones del
 jugador: registros 47-68) y `0x800AF7C8` (16 demos: registros 111-126).
 
+## 9b. Ritmo de juego (ticks) ✅
+
+El bucle principal (`ac3_main`, `0x80025D08`) termina cada vuelta con
+`VSync(*(DAT_800BACB8 + 0x14))`. Ese intervalo vale 0 durante cargas y menús
+de carga y **2 en misión** (`FUN_80032514`, y `FUN_80055CEC` / `FUN_80056950`):
+un tick de juego cada 2 refrescos verticales. La versión europea llama a
+`SetVideoMode(1)` (PAL) y crea pantallas de 320×256; la americana, de 320×240
+(y una de 480, entrelazada). Por tanto: **25 ticks/s en la EU, 30 en la US**.
+Todas las vidas de efectos del código (14 ticks la explosión del misil, 90 la
+estela…) se miden en ticks. `SIN RESOLVER`: si la EU compensa la velocidad de
+vuelo para PAL. Reproducir: `python3 tools/acevideo.py data/exe/ace_eu.bin
+data/exe/ace_us.exe`.
+
 ## 10. Lo que queda (etapa 3, siguientes pasos)
 
 1. Recorrer el árbol de llamadas de las funciones de `main` y ponerles nombre

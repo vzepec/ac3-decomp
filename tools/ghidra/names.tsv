@@ -93,3 +93,4 @@
 0x8007C164	f	wingtip_trails_feed	puntos de estela desde los aviones
 0x8007A990	f	smoke_trails_draw	bandas Gouraud semitransparentes (A)
 0x8007B928	f	wingtip_trails_draw	bandas Gouraud semitransparentes (B)
+0x80032514	f	mission_init	entidades, modelos, VSync(2) en mision

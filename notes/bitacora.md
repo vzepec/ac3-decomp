@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Ritmo de ticks: 25/s en la versión europea, 30/s en la americana
+
+En misión el bucle principal espera 2 refrescos por tick (`VSync(2)`). La EU
+es PAL (`SetVideoMode(1)`, pantallas de 256 líneas) y la US NTSC (240
+líneas): 25 y 30 ticks/s. Una primera búsqueda de la altura de pantalla falló
+también en la EU (el caso positivo): la altura va en `s1`, no junto al
+ancho. Corregida la heurística y validada con la EU antes de leer la US.
+
+Reproducir: `python3 tools/acevideo.py data/exe/ace_eu.bin data/exe/ace_us.exe`.
+
 ## 2026-10-15 — APK 0.5: choques contra los triángulos del terreno
 
 El usuario reportó que el avión no podía estrellarse y que "chocaba con el
