@@ -65,15 +65,16 @@ código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
 
 ## Siguiente tarea concreta
 
-Etapa 5, paso 5 de `docs/10-etapa5.md`: **libgte con GTE**. Conectar
-`psx/src/gte.c` al intérprete (`tools/mipsemu.py`, vía una biblioteca
-compartida) para que las funciones originales de Sony que usan la GTE
-(`RotTransPers`, `MulMatrix`, `ApplyMatrixLV`, `RotMatrixYXZ`, `SetRotMatrix`…)
-se ejecuten como oráculo, y reimplementarlas en `psx/` comparando resultados.
+Etapa 5, paso 6 de `docs/10-etapa5.md`: **libgpu**. Tabla de ordenación
+(`ClearOTagR`, `DrawOTag`), primitivas con la disposición de PsyQ, VRAM
+simulada (`LoadImage`, `StoreImage`, `ClearImage`) y rasterizado. Fuente de
+verdad para validar: las listas de dibujo que el propio código del juego
+construye (p. ej. ejecutando en el intérprete funciones de render como
+`prims_ft4_draw` sobre datos reales y dibujando su resultado).
 
 Hecho en la etapa 5: inventario de API (175 funciones + GTE en línea),
-oráculo MIPS, `rsin`/`rcos`/`SquareRoot0`/`ratan2`/`rand` exactas (84.000
-casos) y emulador de la GTE (27 pruebas). `make psx-check` lo ejecuta todo.
+oráculo MIPS con GTE, emulador de la GTE (27 pruebas) y **libgte completa**:
+25 de 26 funciones idénticas al original (`make psx-check`).
 
 APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
 en la Retroid. Música: pendiente (qué pista XA suena en cada misión).

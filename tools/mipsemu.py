@@ -32,13 +32,37 @@ class MipsError(Exception):
     pass
 
 
+class PsxGteLib:
+    """La GTE de psx/ (psx/src/gte.c) vista desde Python por ctypes."""
+
+    def __init__(self, lib):
+        import ctypes
+        self.ct = ctypes
+        self.lib = lib
+        self.ctx = ctypes.create_string_buffer(256)    # PsxGte: 64 registros de 32 bits
+        lib.psx_gte_reset(self.ctx)
+        for name, res in (('psx_gte_read_data', ctypes.c_uint32), ('psx_gte_read_ctrl', ctypes.c_uint32)):
+            getattr(lib, name).restype = res
+
+    def read_data(self, r): return self.lib.psx_gte_read_data(self.ctx, r)
+    def read_ctrl(self, r): return self.lib.psx_gte_read_ctrl(self.ctx, r)
+    def write_data(self, r, v): self.lib.psx_gte_write_data(self.ctx, r, self.ct.c_uint32(v & 0xFFFFFFFF))
+    def write_ctrl(self, r, v): self.lib.psx_gte_write_ctrl(self.ctx, r, self.ct.c_uint32(v & 0xFFFFFFFF))
+    def command(self, c): self.lib.psx_gte_command(self.ctx, self.ct.c_uint32(c))
+    def state(self): return bytes(self.ctx.raw)
+    def set_state(self, raw): self.ct.memmove(self.ctx, raw, 256)
+
+
 def s32(v):
     v &= 0xFFFFFFFF
     return v - (1 << 32) if v & 0x80000000 else v
 
 
 class Machine:
-    def __init__(self):
+    def __init__(self, gte=None):
+        """gte: objeto con read_data/write_data/read_ctrl/write_ctrl/command (p. ej.
+        PsxGteLib, la GTE de psx/ por ctypes). Sin el, solo movimientos y LZCS/LZCR."""
+        self.gte = gte
         self.ram = bytearray(RAM_SIZE)
         self.scratch = bytearray(1024)
         self.r = [0] * 32
@@ -48,8 +72,8 @@ class Machine:
         self.steps = 0
 
     @classmethod
-    def from_acebin(cls, path, base=0x80010000, gp=GP_EU):
-        m = cls()
+    def from_acebin(cls, path, base=0x80010000, gp=GP_EU, gte=None):
+        m = cls(gte)
         d = open(path, 'rb').read()
         if d[:8] == b'PS-X EXE':
             base = struct.unpack_from('<I', d, 0x18)[0]
@@ -99,7 +123,7 @@ class Machine:
 
     # ---- ejecucion ----
     def call(self, addr, args=(), max_steps=2000000):
-        """Llama a la funcion `addr` con hasta 4 argumentos; devuelve v0 (con signo)."""
+        """Llama a la funcion `addr` (argumentos 5+ en la pila, como en MIPS O32); devuelve v0."""
         r = self.r
         for i in range(32):
             r[i] = 0
@@ -108,6 +132,8 @@ class Machine:
         r[28] = self.gp
         r[29] = 0x801FFF00          # pila al final de la RAM
         r[31] = RETURN_MAGIC
+        for k, v in enumerate(args[4:]):      # argumentos 5+ en la pila (sp + 16 + 4k)
+            self.sw(r[29] + 16 + 4 * k, v)
         pc, npc = addr, addr + 4
         steps = 0
         while pc != RETURN_MAGIC:
@@ -199,6 +225,15 @@ class Machine:
         elif op == 0x0D: r[rt] = r[rs] | imm
         elif op == 0x0E: r[rt] = r[rs] ^ imm
         elif op == 0x0F: r[rt] = (imm << 16) & 0xFFFFFFFF
+        elif op == 0x12 and self.gte is not None:
+            g = self.gte
+            if ins & 0x02000000: g.command(ins & 0x1FFFFFF)
+            elif rs == 0: r[rt] = g.read_data(rd)
+            elif rs == 2: r[rt] = g.read_ctrl(rd)
+            elif rs == 4: g.write_data(rd, r[rt])
+            elif rs == 6: g.write_ctrl(rd, r[rt])
+            else: raise MipsError('COP2 rs=%d en %08x' % (rs, pc))
+            return None
         elif op == 0x12 and not ins & 0x02000000 and rs in (0, 2, 4, 6):
             # movimientos de registros de la GTE; LZCS (30) -> LZCR (31) = bits iniciales iguales al signo
             if rs == 0: r[rt] = self.c2d[rd]
@@ -240,6 +275,8 @@ class Machine:
                 w = self.lw(a & ~3); k = a & 3
                 w = (w & (0x00FFFFFF >> (8 * (3 - k)))) | ((r[rt] << (8 * k)) & 0xFFFFFFFF)
                 self.sw(a & ~3, w)
+            elif op == 0x32 and self.gte is not None: self.gte.write_data(rt, self.lw(a))
+            elif op == 0x3A and self.gte is not None: self.sw(a, self.gte.read_data(rt))
             elif op in (0x32, 0x3A): raise MipsError('LWC2/SWC2 en %08x' % pc)
             else: raise MipsError('opcode %02x no soportado en %08x' % (op, pc))
         return None

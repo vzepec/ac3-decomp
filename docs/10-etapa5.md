@@ -61,7 +61,7 @@ etapa.
 | 2 | Intérprete MIPS de referencia (`tools/mipsemu.py`) | ✅ ejecuta las funciones de Sony de `ACE.BIN` |
 | 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | ✅ **84.000 casos, 0 diferencias** (`make psx-check`) |
 | 4 | Emulador de la GTE (`psx/src/gte.c`) | ✅ especificación + 27 pruebas (`make psx-check`); sin verificar contra hardware |
-| 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | oráculo MIPS con la GTE de `psx/` |
+| 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | listas de dibujo reales del juego |
 | 7 | libcd, libpad, libetc | sobre las piezas de `android/` |
 | 8 | libspu | bancos de sonido de las misiones (`tools/acesnd.py`) |
@@ -117,3 +117,40 @@ de 64 bits, no del MAC0 truncado) y dos expectativas mías equivocadas (el bit
 queda validada contra la especificación, no contra una PS1. Un siguiente nivel
 sería comparar con la GTE de un emulador maduro (DuckStation, Mednafen) sobre
 entradas aleatorias.
+
+**Paso 5 (2026-10-16): libgte con GTE.** El intérprete delega las
+instrucciones COP2 (`MTC2/MFC2/CTC2/CFC2`, `LWC2/SWC2` y las órdenes) en la
+GTE de `psx/` compilada como biblioteca compartida (`psx/build/libpsx.so`,
+ctypes). `tools/psyqcheck_gte.py` ejecuta así el código original de Sony y
+compara con `psx/src/libgte.c` sobre otra instancia de la GTE: mismas
+estructuras de entrada aleatorias (bytes de relleno incluidos) y mismo estado
+aleatorio de los 64 registros; se comparan la memoria de salida, el valor
+devuelto y **el estado final completo de la GTE**.
+
+Resultado: **21 funciones, 300 casos cada una, 0 diferencias**:
+`SetRotMatrix`, `SetTransMatrix`, `SetColorMatrix`, `SetBackColor`,
+`ReadGeomOffset`, `RotTransPers`, `RotTransPers3`, `RotTrans`, `MulMatrix0`,
+`MulMatrix`, `MulMatrix2`, `SetMulMatrix`, `ApplyMatrixSV`, `ApplyMatrixLV`,
+`ApplyRotMatrixLV`, `TransposeMatrix`, `ScaleMatrix`, `OuterProduct0`,
+`RotMatrix`, `RotMatrixYXZ`, `VectorNormalSS`. Con las del paso 3, **25 de las
+26 funciones de libgte que usa el juego quedan idénticas al original**; la
+26.ª, `InitGeom`, activa el COP2 a través de la BIOS (fuera del intérprete) y
+su parte de GTE (7 constantes) se verificó leyéndola.
+
+Detalles que exigió la exactitud: las cargas de matrices y vectores son
+palabras de 32 bits que arrastran los bytes de relleno de las estructuras
+(cambian el estado interno de la GTE); `MulMatrix*` escribe IR3 como palabra
+de 32 bits sobre `m[2][2]` y su relleno; `ScaleMatrix` escribe `m[2][2]` con
+el producto completo; `RotMatrix` niega antes de desplazar. Las tablas de
+seno/coseno empaquetada (`0x800B4F84`) y de inverso de raíz (`0x800B4DF8`) se
+generan por fórmula exacta (`round(4096·sen/cos)`, `floor(32768/√v)`).
+
+Dominio: `VectorNormalSS` con vectores cuya suma de cuadrados desborda 32
+bits lee, en el original, fuera de su tabla (comportamiento no definido): el
+comparador cuenta esos casos aparte (2 de 300 con entradas aleatorias de
+rango completo; ninguno con vectores realistas).
+
+Validación del método: con cinco errores introducidos a propósito
+(transposición incompleta, otro redondeo en `RotMatrix`, IR3 de 16 bits,
+`R33` cargado con signo —que solo cambia un registro interno— y un factor 4
+en vez de 8 en `ApplyMatrixLV`) el comparador detecta todos.

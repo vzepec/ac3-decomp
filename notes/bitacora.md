@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5: libgte completa e idéntica al original
+
+La GTE de `psx/` se conecta al intérprete MIPS por ctypes y el código
+original de Sony se ejecuta como oráculo. 21 funciones de libgte con GTE dan
+0 diferencias en memoria, retorno y estado completo de la GTE (300 casos
+cada una); con las 5 del paso anterior, 25 de las 26 funciones de libgte del
+juego son idénticas al original (la otra, `InitGeom`, usa la BIOS). El
+comparador detecta los cinco errores introducidos a propósito, incluido uno
+que solo altera un registro interno de la GTE.
+
+Reproducir: `make psx-check`.
+
 ## 2026-10-16 — APK 0.7: efectos de sonido originales
 
 Los tres bancos que el juego usa en misión (común 0000 s3, avión, misión) se

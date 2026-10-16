@@ -128,6 +128,7 @@ psx-check:
 	@cc -O2 -Wall -Wextra -Ipsx/include psx/test/test_gte.c psx/src/gte.c -lm -o psx/build/test_gte
 	@psx/build/test_gte
 	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
+	@$(PY) tools/psyqcheck_gte.py data/exe/ace_eu.bin 300
 
 psyq-api:
 	@$(PY) tools/psyqapi.py "$(GHIDRA)/Ghidra/Extensions/ghidra_psx_ldr/data/psyq/450" data/ghidra/all_ace_eu.c data/ghidra/all_overlay1.c data/ghidra/all_overlay2.c data/ghidra/all_overlay3.c data/ghidra/all_overlay4.c data/ghidra/all_overlay5.c
