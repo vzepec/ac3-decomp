@@ -25,7 +25,7 @@ help:
 	@echo "make textures   - vuelca a data/png/ las TIM del registro REC (def. 0006)"
 	@echo "make acebin     - descomprime ACE.BIN (EU y US) a data/exe/"
 	@echo "make overlays   - lista y extrae los overlays de codigo a data/exe/ovl/"
-	@echo "make apk        - compila la rebanada vertical de Android (android/build/ac3slice.apk)"
+	@echo "make apk        - compila la rebanada vertical de Android (android/build/ac3slice-<version>.apk)"
 	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
 	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"

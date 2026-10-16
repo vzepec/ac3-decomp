@@ -15,7 +15,7 @@ teselas de la misión, las texturas y el modelo del avión.
 ## Compilar
 
 ```bash
-make apk            # o: android/build.sh  ->  android/build/ac3slice.apk
+make apk            # o: android/build.sh  ->  android/build/ac3slice-<version>.apk
 ```
 
 Requiere el SDK en `~/tools/android-sdk` (plataforma 36, build-tools 37.0.0,
@@ -25,7 +25,7 @@ La clave de firma de depuración se genera en `data/android/` (fuera de git).
 ## Instalar en la Retroid
 
 1. Copia el APK al dispositivo y ábrelo, o con depuración USB:
-   `~/tools/android-sdk/platform-tools/adb install -r android/build/ac3slice.apk`
+   `~/tools/android-sdk/platform-tools/adb install -r android/build/ac3slice-<version>.apk`
 2. Al abrir la app aparece el **selector de archivos del sistema**: elige la
    imagen `.bin` del disco (europeo o americano). No hace falta conceder
    ningún permiso: el selector da acceso solo a ese archivo, esté en la
