@@ -5,6 +5,21 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 6 abierta: recompilación estática
+
+Por decisión del dueño del proyecto se abre la etapa 6, plan en
+`docs/11-etapa6.md`. El juego se recompila de MIPS a C sobre la capa `psx/`;
+no se reescribe pantalla a pantalla. El orden pantalla inicial → menú →
+misiones es el orden de pruebas. 60 fps llegará por interpolación del dibujo
+sobre la lógica original de 25/30 ticks.
+
+Condición legal: el C generado no se distribuye. Se genera desde el disco del
+usuario, y él compila su APK.
+
+Inventario de lo que falta en la capa (`make psyq-api` frente a
+`psx/include`): libapi, libcard, libpress/MDEC y libsn enteras; restos de
+libc y libgpu; internas de libspu, libpad y libcd por confirmar.
+
 ## 2026-10-16 — Pista de música de cada misión; APK 0.8 con música y afinación corregida
 
 La música de una misión se elige en `FUN_8007DDCC`:

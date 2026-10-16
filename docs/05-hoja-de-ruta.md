@@ -194,10 +194,16 @@ equivalente de Psy-X. Es el verdadero motor del port.
 
 ---
 
-## Etapa 6 — El juego (sin abrir: la decide el dueño del proyecto)
+## Etapa 6 — El juego, nativo 🔄 EN CURSO (abierta el 2026-10-16)
 
-Decompilación o recompilación del módulo principal, módulo a módulo. Es la
-etapa de los años. Realista solo con colaboradores.
+Plan en `docs/11-etapa6.md`. Método: **recompilación estática** del código
+MIPS del juego (residente y 5 overlays) a C, enlazada con la capa `psx/`, en
+lugar de reescribirlo pantalla a pantalla. El C recompilado deriva del código
+de Namco: se genera desde el disco del usuario y no se distribuye.
+
+Criterio de salida: el juego completo, jugable de principio a fin en la
+Retroid, nativo y 1:1. Después, como hito aparte: resolución nativa,
+panorámico y 60 fps por interpolación.
 
 ---
 

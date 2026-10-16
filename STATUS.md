@@ -7,9 +7,9 @@
 
 ## Etapa actual
 
-**Etapas 1-5 cerradas.** La etapa 5 dejó la capa de compatibilidad PsyQ en
-`psx/` (resultados en `docs/10-etapa5.md`). La etapa 6 (recompilar el juego)
-**no está abierta**: la decide el dueño del proyecto. Mientras, la rebanada de
+**Etapa 6 — El juego, nativo: EN CURSO** (rama `etapa-6`, plan en
+`docs/11-etapa6.md`): recompilación estática del código MIPS a C sobre la capa
+`psx/` de la etapa 5. Etapas 1-5 cerradas. Mientras, la rebanada de
 Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 
 ## Hecho
@@ -66,13 +66,19 @@ Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 
 ## Siguiente tarea concreta
 
-1. **Probar el APK 0.8 en la Retroid** (`~/Escritorio/ac3slice-0.8.apk`):
-   música XA de cada misión y afinación corregida de los efectos.
-2. Pendiente de la rebanada: la pista que elige el guion en partida
-   (`FUN_800550F0`, SIN RESOLVER); ahora suena la de las demostraciones.
-3. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
-   llevar la VRAM de la GPU por software a GLES en Android y sustituir las
-   aproximaciones marcadas SIN HACER en `psx/`.
+Etapa 6, paso 1 de `docs/11-etapa6.md`: **completar la capa**. Orden propuesto:
+1. libapi/BIOS (eventos, contadores, interrupciones, `InitHeap`) y el resto
+   de libc y libsn: el bucle principal los necesita para arrancar.
+2. libgpu restante (`OpenTIM`, `ReadTIM`, `GetGraphDebug`), con oráculo.
+3. libpress y el MDEC (vídeos de la intro y las cinemáticas).
+4. libcard (guardar partida).
+
+Antes de implementar las funciones `_spu_*`, `_pad*` y `CD_*` de la tabla,
+comprobar que las llama código propio; si solo las llama la librería, no
+hacen falta.
+
+APK de la rebanada: 0.8 probada en la Retroid (funciona). Pendiente
+menor: la pista de partida que elige el guion (`FUN_800550F0`).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

@@ -35,12 +35,12 @@ que **no** hay que repetir.
 3. **Valida todo heurístico contra un caso positivo conocido** antes de
    concluir nada con él. Ya nos costó dos errores: ver en `notes/bitacora.md`
    las entradas del heurístico de prólogos MIPS y de los TIM "inexistentes".
-4. **Etapas 1-5 cerradas.** La etapa 5 dejó en `psx/` la capa de
-   compatibilidad PsyQ: reimplementa las funciones de Sony que usa el juego
-   (GTE, GPU, CD, mando, SPU, XA), validada función a función. No es todavía
-   el juego. La etapa 6 (recompilar el juego) no está abierta: la abre el
-   dueño del proyecto. La rebanada de `android/` sigue siendo una medición.
-   Ver `docs/05-hoja-de-ruta.md`.
+4. **Etapas 1-5 cerradas; la etapa 6 (el juego, nativo) está abierta**
+   por decisión del dueño del proyecto (`docs/11-etapa6.md`). Método:
+   recompilación estática del código MIPS a C, enlazada con la capa `psx/`
+   de la etapa 5. **El C recompilado deriva del código de Namco: se genera en
+   `data/` desde el disco del usuario y nunca entra en git ni en un APK
+   distribuido.** La rebanada de `android/` sigue sin datos del juego.
    Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.
@@ -67,6 +67,8 @@ La hoja de ruta está dividida en etapas que valen por sí solas.
 | Qué se puede publicar | `docs/06-legal.md` |
 | Vocabulario de PS1 | `docs/07-glosario.md` |
 | Análisis del código (Ghidra) | `docs/09-codigo.md` |
+| Capa PsyQ (etapa 5) | `docs/10-etapa5.md` |
+| Plan de la etapa 6 | `docs/11-etapa6.md` |
 | Historial de hallazgos | `notes/bitacora.md` |
 
 ## Al terminar cualquier trabajo
