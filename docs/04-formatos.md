@@ -591,7 +591,23 @@ struct LodModelHeader {
   sección 11 de la misma misión. **No** usan la página de la piel del jugador
   (tipo 4, en (704,256)): son los aviones enemigos/aliados de la misión.
 
-#### Bancos de sonido del SPU (tipo 17 s15, tipo 4 s2, tipo 13 s8) ✅
+#### Bancos de sonido del SPU (tipo 17 s15, tipo 4 s2, tipo 13 s8, 0000 s3) ✅
+
+**Cómo los usa el juego** (resuelto en 2026-10-16): `FUN_8002D544` copia las
+entradas de cada banco a una tabla de sonidos de registros de 20 B
+(`DAT_800C37D8`) **a partir de la ranura `b0`** de su cabecera: banco común
+del registro 0000 (s3, 76 sonidos, ranuras 0-75), avión (ranuras 84-85: el
+motor), misión (88-107) y el de la interfaz (tipo 13, 84-106, solo en
+menús). El juego reproduce por id = ranura (`FUN_8002D724`, `FUN_8002EFA4`
+con posición). La voz usa `note` = campo "vol" (0x3C00 = nota 60) y
+`sample_note` = `note << 8 | u0`, así que la frecuencia es
+`44.100 · 2^((nota − nota_base)/12)` Hz: en 436 de los 963 sonidos sale
+exactamente 11.025 o 22.050 Hz. Los sonidos con posición llevan una
+desafinación aleatoria de ±2 semitonos (`FUN_8002ECB8`). Ids identificados:
+0x0E lanzamiento del misil, 0x1A otra arma, 0x11-0x15 disparos rectos,
+0x1B avión destruido, 0x1C explosión sin impacto, 0x1D impacto de misil,
+0x3B-0x3D menús; el motor (84/85) lo gestiona `FUN_8002FFAC`.
+
 
 Implementado en `tools/acesnd.py`. Verificado en **63/63** (EU) y **63/63**
 (US).
