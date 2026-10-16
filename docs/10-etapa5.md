@@ -64,7 +64,7 @@ etapa.
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | ✅ funciones de memoria (6, oráculo) + GPU por software (75 pruebas, 72 texturas reales idénticas) + terreno real dibujado (`make psx-scene`) |
 | 7 | libcd, libpad, libetc | ✅ validadas ejecutando el código del juego: apertura de packs, 127/127 registros por streaming idénticos, mando (`tools/psxcheck_io.py`) |
-| 8 | libspu | ✅ SPU por software + libspu (8 funciones idénticas al original); driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`). Pendiente: música XA |
+| 8 | libspu | ✅ SPU por software + libspu (8 funciones idénticas al original); driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`); audio XA idéntico a libav y música del juego sonando por la capa (`tools/psxcheck_xa.py`) |
 
 **Esfuerzo:** meses. **Riesgo:** medio (la GTE es delicada; el resto es
 trabajo conocido gracias a Psy-X y a la documentación pública).
@@ -353,6 +353,31 @@ Simplificaciones de libspu:
   reproducir las escrituras originales. Pendiente junto con la reverberación
   de la SPU.
 
-**Pendiente del paso 8:** la música XA. El sumidero de libcd ya entrega los
-sectores; falta el decodificador XA-ADPCM con remuestreo a 44,1 kHz y una
-referencia independiente para validarlo (no hay ffmpeg en el sistema).
+**Paso 8, cierre: audio XA** (`psx/src/xa.c`). Decodificador XA-ADPCM (4/8
+bits, mono/estéreo, 37,8/18,9 kHz) y remuestreo lineal a 44,1 kHz hacia la
+entrada de CD de la SPU; `psx_audio_connect()` conecta libcd → XA → SPU.
+
+Validación (`tools/psxcheck_xa.py`, en `make psx-check`):
+1. **Idéntico a libav (FFmpeg)** muestra a muestra. La referencia es el
+   decodificador `adpcm_xa`, que el sistema ya trae dentro de GStreamer
+   (gst-libav: `avdemux_psxstr` + `avdec_adpcm_xa`); no hubo que instalar
+   ffmpeg. Seis entradas del SPB, 11 millones de muestras, que cubren las dos
+   codificaciones del disco: estéreo de 4 bits a 37,8 kHz (0x01) y a 18,9 kHz
+   (0x05). Las variantes mono y de 8 bits están implementadas pero el disco no
+   las usa: sin probar. Cuatro mutaciones detectadas.
+2. **Música con el código del juego.** Sobre libcd + libetc + libspu:
+   - `packs_init` y `spb_stream_start` en modo 2 (Setfilter, Setmode 0xE8,
+     ReadS), con `cd_state_machine` en cada fotograma;
+   - la pista 3 del SPH (3 minutos, 27.024 sectores) se reproduce entera;
+   - los 3.378 sectores de audio de su canal llegan a la SPU en orden;
+   - la entrada de CD la activa el propio juego y la pista acaba con su
+     callback.
+
+Sin hacer: el filtro de remuestreo de 7 puntos de la consola (se usa
+interpolación lineal).
+
+## Cierre de la etapa 5 (2026-10-16)
+
+Los 8 pasos del plan están hechos. `make psx-check` ejecuta todas las
+validaciones en unos dos minutos. Lo que queda SIN HACER está anotado en la
+cabecera de cada archivo de `psx/include/` y en la hoja de ruta.

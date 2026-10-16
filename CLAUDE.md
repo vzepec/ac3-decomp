@@ -35,11 +35,12 @@ que **no** hay que repetir.
 3. **Valida todo heurístico contra un caso positivo conocido** antes de
    concluir nada con él. Ya nos costó dos errores: ver en `notes/bitacora.md`
    las entradas del heurístico de prólogos MIPS y de los TIM "inexistentes".
-4. **Etapas 1-4 cerradas; la etapa 5 (capa de compatibilidad PsyQ) está
-   abierta** por petición del dueño del proyecto: `psx/`. Es una biblioteca
-   que reimplementa las funciones de Sony que usa el juego (GTE, GPU, CD,
-   SPU), validada función a función; no es todavía el juego. La rebanada de
-   `android/` sigue siendo una medición. Ver `docs/05-hoja-de-ruta.md`.
+4. **Etapas 1-5 cerradas.** La etapa 5 dejó en `psx/` la capa de
+   compatibilidad PsyQ: reimplementa las funciones de Sony que usa el juego
+   (GTE, GPU, CD, mando, SPU, XA), validada función a función. No es todavía
+   el juego. La etapa 6 (recompilar el juego) no está abierta: la abre el
+   dueño del proyecto. La rebanada de `android/` sigue siendo una medición.
+   Ver `docs/05-hoja-de-ruta.md`.
    Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.

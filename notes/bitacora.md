@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5 cerrada: audio XA idéntico a libav y música del juego por la capa
+
+Decodificador XA-ADPCM (`psx/src/xa.c`) **idéntico muestra a muestra al de
+libav** en 11 millones de muestras de seis entradas del SPB. La referencia
+estaba en el sistema sin instalar nada: GStreamer trae gst-libav con
+`avdemux_psxstr` y `avdec_adpcm_xa`. El disco solo usa estéreo de 4 bits a
+37,8 kHz (0x01) y a 18,9 kHz (0x05).
+
+Con el código del juego en el intérprete, `spb_stream_start` en modo 2
+(ReadS con filtro) y `cd_state_machine` por fotograma reproducen una pista
+de 3 minutos entera: los 3.378 sectores de audio del canal llegan en orden a
+la SPU, que la mezcla por su entrada de CD.
+
+Con esto se cierran los 8 pasos de la etapa 5.
+
+Reproducir: `make psx-check`; para oírla, `XA_WAV=musica.wav python3
+tools/psxcheck_xa.py <imagen>`.
+
 ## 2026-10-16 — Etapa 5, paso 8: SPU por software y libspu; frecuencia de los sonidos corregida
 
 SPU por software (`psx/src/spu.c`) y libspu (`psx/src/libspu.c`), leída del

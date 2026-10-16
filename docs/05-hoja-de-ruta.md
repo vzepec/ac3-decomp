@@ -170,9 +170,21 @@ no al cuarto año. Si cuesta 3 semanas, el proyecto merece seguir.
 
 ---
 
-## Etapa 5 — Capa de compatibilidad PsyQ 🔄 EN CURSO
+## Etapa 5 — Capa de compatibilidad PsyQ ✅ CERRADA (2026-10-16)
 
 Plan, superficie de API y resultados en `docs/10-etapa5.md`; código en `psx/`.
+
+Resultado: libgte, libgpu (con GPU por software), libcd, libetc, libpad,
+libspu (con SPU por software) y audio XA. Validación:
+- contra el código original de Sony (oráculo MIPS);
+- ejecutando el código del propio juego sobre la capa: apertura de packs,
+  127/127 registros por streaming, mando, driver de efectos y música XA;
+- contra referencias independientes: texturas TIM, `acesnd`, libav para el
+  XA.
+
+Pendiente fuera del criterio de salida: interpolación gaussiana de la SPU,
+reverberación, filtro de remuestreo del XA, negociación DualShock y la salida
+GLES de la VRAM en Android. Todo marcado SIN HACER en las cabeceras de `psx/`.
 
 Reimplementar `libgpu` sobre GLES/Vulkan, `libgte` en punto fijo exacto,
 `libspu` sobre el audio de Android, `libcd` sobre lectura de archivos. Es el
@@ -182,7 +194,7 @@ equivalente de Psy-X. Es el verdadero motor del port.
 
 ---
 
-## Etapa 6 — El juego
+## Etapa 6 — El juego (sin abrir: la decide el dueño del proyecto)
 
 Decompilación o recompilación del módulo principal, módulo a módulo. Es la
 etapa de los años. Realista solo con colaboradores.

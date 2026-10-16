@@ -1,15 +1,16 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-15 (rama `etapa-4`; integración en `develop`)
+**Última actualización:** 2026-10-16 (etapa 5 cerrada e integrada en `develop`)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 5 — Capa de compatibilidad PsyQ: EN CURSO** (rama `etapa-5`,
-código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
-0.6 está pendiente de prueba en la Retroid.
+**Etapas 1-5 cerradas.** La etapa 5 dejó la capa de compatibilidad PsyQ en
+`psx/` (resultados en `docs/10-etapa5.md`). La etapa 6 (recompilar el juego)
+**no está abierta**: la decide el dueño del proyecto. Mientras, la rebanada de
+Android sigue como medición (APK 0.8).
 
 ## Hecho
 
@@ -65,16 +66,11 @@ código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
 
 ## Siguiente tarea concreta
 
-Etapa 5, cierre del paso 8: **música XA**.
-- Decodificador XA-ADPCM (4/8 bits, mono/estéreo, 37,8/18,9 kHz) con
-  remuestreo a 44,1 kHz, conectado al sumidero de libcd
-  (`psx_cd_set_xa_sink`) y a la entrada de CD de la SPU.
-- Necesita una referencia independiente para validarlo (en el sistema no hay
-  ffmpeg).
-- Prueba: el lector del juego en modo XA (`spb_stream_start`, modos 1/2 con
-  ReadS) sobre libcd + libspu.
-
-Después: salida GLES de la VRAM en Android.
+1. **APK 0.8** (rebanada de Android): afinación corregida de los efectos y,
+   si da tiempo, música XA con el decodificador validado de `psx/src/xa.c`.
+2. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
+   llevar la VRAM de la GPU por software a GLES en Android y sustituir las
+   aproximaciones marcadas SIN HACER en `psx/`.
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;
@@ -88,7 +84,9 @@ Hecho en la etapa 5:
 - **SPU por software y libspu** (8 funciones idénticas al original) con el
   driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`).
   De paso se corrigió la fórmula de frecuencia de los sonidos (afecta al APK
-  0.7).
+  0.7);
+- **audio XA** idéntico a libav y música del juego sonando por la capa
+  (`tools/psxcheck_xa.py`).
 
 APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
 en la Retroid. Música: pendiente (qué pista XA suena en cada misión).

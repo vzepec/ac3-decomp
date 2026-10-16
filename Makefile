@@ -136,6 +136,7 @@ psx-check:
 	@$(PY) tools/psxcheck_io.py "$(EU)" data/exe/ace_eu.bin
 	@$(PY) tools/psyqcheck_spu.py data/exe/ace_eu.bin
 	@$(PY) tools/psxcheck_snd.py data/exe/ace_eu.bin
+	@$(PY) tools/psxcheck_xa.py "$(EU)"
 	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
 	@$(PY) tools/psyqcheck_gte.py data/exe/ace_eu.bin 300
 	@$(PY) tools/psyqcheck_gpu.py data/exe/ace_eu.bin 500

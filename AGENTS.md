@@ -107,10 +107,9 @@ de código en inglés, sin tildes dentro de los archivos `.py` (compatibilidad).
 
 ## 6. Qué NO hacer
 
-- No construyas más de lo que pide la etapa en curso (ver `STATUS.md`). En
-  la etapa 5 se construye la capa de compatibilidad (`psx/`), función a
-  función y con pruebas contra el comportamiento conocido; no se empieza a
-  recompilar el juego (eso es la etapa 6). Construir el armazón del port
+- No construyas más de lo que pide la etapa en curso (ver `STATUS.md`). La
+  etapa 5 (capa de compatibilidad `psx/`) está cerrada; recompilar el juego
+  es la etapa 6 y no se empieza sin que la abra el dueño del proyecto. Construir el armazón del port
   antes de entender los datos es la forma más rápida de tirar meses.
 - `ACE.BIN` está comprimido en el disco: trabaja siempre sobre la salida de
   `make acebin` (`data/exe/`), y nunca la subas a git.
