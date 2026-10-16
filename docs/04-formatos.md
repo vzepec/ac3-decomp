@@ -411,13 +411,27 @@ fragmentos ardiendo con gravedad (tamaño 240-271) y 6 chispas.
 Explosión pequeña genérica (`FUN_8007E7E0`): vida 8, tamaño 50-81
 (100-131 en la variante 2) + 2 a 5 restos.
 
-**Proyectiles en vuelo** (`FUN_8006AE1C`; objetos de 0x3C bytes en
-`DAT_800BAF08 + 0x15D0`, con dos puntos cabeza/cola): se dibujan como
-**segmentos**, no como partículas. `FUN_8008F204`: línea Gouraud
-semitransparente (naranja → amarillo pálido; trazadoras). `FUN_8008F388`,
-`F660`, `F940`, `FB00`: sprite estirado de cola a cabeza con las estelas de
-s1 (16×64 texeles en u=0xB0/0xC0/0xE0/0xD0, v=0x60, aditivo). Qué lista
-corresponde al misil estándar: `SIN RESOLVER` (probablemente `F388`).
+**Disparos en línea recta** (`FUN_8006AE1C`; objetos de 0x3C bytes en
+`DAT_800BAF08 + 0x15D0`, 4 grupos × 32, con dos puntos cabeza/cola): los
+crea `FUN_80069864` (cola en `+0x1550`) y los inicializa `FUN_80069940`
+según su clase. Salen del punto de disparo del avión (s0 `+0x90`) en
+`FUN_8006FD2C`, llamada con la clase 0-5 desde `FUN_8006FE60` …
+`FUN_80070088`. Se dibujan como segmentos, no como partículas:
+
+| Clase | Banderas | Lista | Dibujo |
+|---|---|---|---|
+| 0 | `0x20410` | `0x10` | `FUN_8008F204`: línea Gouraud semitransparente (trazadora del cañón) |
+| 1 | `0x20820` | `0x20` | `FUN_8008F388`: sprite estirado de 0000 s1 (u = 0xB0, CLUT `0x4496`) |
+| 2 | `0x41040` | `0x40` | `FUN_8008F660` (u = 0xC0) |
+| 3 | `0x82080` | `0x80` | `FUN_8008F940` (u = 0xE0) |
+| 4 | `0x94103` | `0x100` | no se dibuja en esta pasada |
+| 5 | `0x98202` | ninguna | `FUN_8008FB00` (u = 0xD0) |
+
+**El misil estándar no está aquí**: es un objeto con modelo (depósito
+`DAT_800BAF08 + 200`, 0xA4 B, modelo = id + 0x17) y deja la estela de humo
+A (abajo). Corrige una versión anterior que suponía "probablemente `F388`".
+Qué arma especial es cada clase 1-5: `SIN RESOLVER`.
+
 Tabla de armas `0x800B0A04`: 5 actualizaciones + 5 finales.
 
 **Estelas de humo y de vapor** (búferes circulares en `DAT_800BAF38`;

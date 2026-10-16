@@ -66,9 +66,9 @@
 0x8007E7E0	f	fx_small_explosion	vida 8, tamano 50-81
 0x8007F15C	f	fx_missile_impact	explosion + destello + 8 restos
 0x800815D4	f	fx_smoke_puff	humo claro con deriva
-0x8006AE1C	f	projectiles_draw	segmentos cabeza-cola en 5 listas
+0x8006AE1C	f	shots_draw	disparos rectos: segmentos cabeza-cola en 5 listas
 0x8008F204	f	tracer_draw	lineas Gouraud semitransparentes
-0x8008F388	f	projectile_streak_draw	sprite estirado, estela de 0000 s1
+0x8008F388	f	shot_streak_draw	disparo recto clase 1: sprite estirado de 0000 s1
 0x800684BC	f	weapon_end_0	final de proyectil: impacto o fallo
 0x80093E2C	f	sky_draw	cielo por bandas (preludio de mision)
 0x800933CC	f	sky_colors	colores de banda segun rumbo y sol
@@ -98,3 +98,6 @@
 0x800658B8	f	surfaces_morph	interpola alas, aerofreno y timon del jugador
 0x800652CC	f	vertices_lerp	INTPL entre dos bloques de vertices
 0x80065728	f	wing_mix	mezcla alabeo/cabeceo de las alas
+0x80069864	f	shot_queue	encola un disparo recto (clase, posicion, orientacion)
+0x80069940	f	shot_spawn	crea los disparos encolados segun su clase 0-5
+0x8006FD2C	f	player_shot	disparo recto del jugador desde s0 +0x90

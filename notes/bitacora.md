@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Los sprites estirados son de disparos rectos, no del misil
+
+Las listas de `FUN_8006AE1C` se alimentan de un depósito de disparos en línea
+recta con 6 clases (cañón con trazadoras y 5 especiales), creados desde el
+punto de disparo del avión. El misil estándar es un objeto con modelo y
+estela de humo. El APK 0.4 añadía al misil la llama estirada de la clase 1:
+mal atribuida, anotado para quitarla.
+
+Reproducir: `FUN_80069940` (clases) y `FUN_8006FD2C` en
+`data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-15 — Estela del misil: perfil de intensidad sí, color no
 
 El color de cada punto de la estela es `FC · I`, con una intensidad que sube

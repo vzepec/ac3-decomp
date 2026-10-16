@@ -87,7 +87,10 @@ sol/destello y bruma (s13 + s8).
    interpolar en vez de cambiar de estado.
 6. Estelas: perfil de intensidad ✅; color y mezcla `SIN RESOLVER`
    (necesita emulador).
-7. Pendientes menores: qué lista de proyectil es el misil, `h0`, demos,
+7. ✅ Lista de proyectil: el misil no usa las listas de disparos rectos
+   (correcciones para el próximo APK: quitar la llama al misil; interpolar
+   superficies; ritmo de 25/30 ticks).
+8. Pendientes menores: `h0`, demos,
    overlays 3-5.
 
 ## Bloqueos conocidos
