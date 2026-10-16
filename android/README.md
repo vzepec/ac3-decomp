@@ -125,6 +125,9 @@ build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
 | Objeto destruido | **hipótesis**: el modelo anterior de s4, más bajo (sin confirmar en el código) |
 | Física de vuelo, IA, combate | **propios** y simplificados |
 | Luz del avión del jugador | **propia** (dirección fija) |
+| Efectos de sonido (0.7) | bancos del juego (común 0000 s3, avión, misión), decodificados del disco; ids del código: lanzamiento 0x0E, impacto 0x1D, fallo 0x1C, avión destruido 0x1B, motor 84/85; frecuencia por notas como la SPU |
+| Volumen por distancia, panorama, curva del motor | **propios** (aproximación de `FUN_8002EFA4` / `FUN_8002FFAC`) |
+| Música | **todavía no**: está en XA en `ACE.SPB` y falta saber qué pista suena en cada misión |
 | Texto del HUD | fuente propia 5×7 |
 
 Ritmo del juego (0.6): 25 ticks por segundo con el disco europeo (PAL) y 30

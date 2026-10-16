@@ -5,6 +5,7 @@
 
 #include <stdint.h>
 #include "ace.h"
+#include "sound.h"
 
 #define VRAM_W 1024
 #define VRAM_H 512
@@ -78,6 +79,7 @@ typedef struct {
     Sky sky;
     int tims_loaded;
     int pal;                            /* 1: disco europeo (PAL, 25 ticks/s); 0: NTSC (30) */
+    Sound sounds[SOUND_SLOTS];          /* tabla de sonidos del juego (ver sound.h) */
 } Scene;
 
 void scene_init(Scene *s);

@@ -371,6 +371,8 @@ static void player_respawn(App *a) {
 
 void reset_flight(App *a) {
     if (!a->rng) a->rng = 12345;
+    audio_stop_all();
+    a->eng_voice[0] = a->eng_voice[1] = -1;
     a->tick = a->scene->pal ? 1.0f / 25 : 1.0f / 30;
     choose_start(a);
     player_respawn(a);
@@ -380,6 +382,34 @@ void reset_flight(App *a) {
     spawn_enemies(a);
     a->target = -1;
     a->respawn_t = 0;
+}
+
+/* ---- sonido (docs/04-formatos.md): ids del juego = ranuras de la tabla de sonidos ---- */
+enum { SND_LAUNCH = 0x0E, SND_PLANE_DOWN = 0x1B, SND_MISS = 0x1C, SND_HIT = 0x1D, SND_ENGINE_A = 84, SND_ENGINE_B = 85 };
+
+/* Sonido con posicion (como FUN_8002EFA4): volumen por distancia y panorama respecto a la
+ * camara; desafinacion aleatoria de +-2 semitonos (FUN_8002ECB8: +-0x200 en 1/256 semitono).
+ * La curva de distancia es aproximada. */
+static int sfx_at(App *a, int slot, V3 p, float gain) {
+    V3 d = vsub(p, a->ear);
+    float dist = sqrtf(vdot(d, d));
+    float vol = 1.0f - dist / 18000.0f;
+    if (vol <= 0) return -1;
+    float pan = dist > 1 ? vdot(vmul(d, 1.0f / dist), a->ear_right) * 0.8f : 0;
+    float pitch = ((float)(frand(a) * 1024.0f) - 512.0f) / 256.0f;
+    return audio_play(slot, vol * vol * gain, pan, pitch);
+}
+
+static void engine_sound(App *a) {
+    int on = a->crash_t <= 0 && a->status == 1;
+    float t = fminf(1.0f, fmaxf(0.0f, (a->speed - 150) / 1650));
+    for (int k = 0; k < 2; k++) {
+        if (!on) { if (a->eng_voice[k] >= 0) { audio_stop(a->eng_voice[k]); a->eng_voice[k] = -1; } continue; }
+        /* volumen y tono segun la velocidad: aproximacion de FUN_8002FFAC */
+        float vol = k == 0 ? 3.5f + 2.0f * t : 6.0f * t, pitch = -4.0f + 7.0f * t + (k ? 1.0f : 0.0f);
+        if (a->eng_voice[k] < 0) a->eng_voice[k] = audio_play(k ? SND_ENGINE_B : SND_ENGINE_A, vol, 0, pitch);
+        else audio_set(a->eng_voice[k], vol, 0, pitch);
+    }
 }
 
 static Particle *add_particle(App *a, int kind, V3 pos, V3 vel, float life, float size, float size_end) {
@@ -398,6 +428,7 @@ static Particle *add_particle(App *a, int kind, V3 pos, V3 vel, float life, floa
  * 2 fragmentos ardiendo con gravedad y 6 chispas. El destello del deposito 0x33C0 no esta
  * resuelto y no se dibuja. Las velocidades de los restos son aproximadas. */
 static void missile_impact(App *a, V3 p, int big) {
+    sfx_at(a, big ? SND_HIT : SND_MISS, p, 1.0f);
     add_particle(a, FX_EXPLOSION, p, v3(0, 0, 0), 14 * TICK, 256, 256);
     if (big) {  /* derribo: explosion grande extra (FUN_8007EAF8: vida 11, tamano 120-247) */
         add_particle(a, FX_EXPLOSION, vadd(p, v3(30, 20, 0)), v3(0, 0, 0), 11 * TICK, 120 + frand(a) * 127, 120 + frand(a) * 127);
@@ -518,6 +549,7 @@ static void update_combat(App *a, float dt) {
             m->life = 7;
             m->target = a->target;
             m->active = 1;
+            m->voice = audio_play(SND_LAUNCH, 1.0f, 0, 0);
             a->fire_cd = 0.3f;
             break;
         }
@@ -551,6 +583,7 @@ static void update_combat(App *a, float dt) {
                 if (vdot(d, d) < rad * rad) {
                     e->alive = 0;
                     missile_impact(a, e->pos, 1);
+                    sfx_at(a, SND_PLANE_DOWN, e->pos, 0.8f);
                     a->kills++;
                     m->active = 0;
                 }
@@ -569,6 +602,7 @@ static void update_combat(App *a, float dt) {
             float q0[3] = {prev.x, prev.y, prev.z}, q1[3] = {m->pos.x, m->pos.y, m->pos.z};
             if (m->active && scene_hit_segment(s, q0, q1)) { missile_impact(a, m->pos, 0); m->active = 0; }
             if (m->life <= 0) m->active = 0;
+            if (!m->active && m->voice >= 0) { audio_stop(m->voice); m->voice = -1; }
         }
         trail_age(&m->smoke, 90 * TICK, dt);   /* vida de 90 ticks */
     }
@@ -635,6 +669,7 @@ static int hit_object(App *a, int i, V3 p, float r) {
 
 static void player_crash(App *a) {
     missile_impact(a, a->pos, 1);
+    sfx_at(a, SND_PLANE_DOWN, a->pos, 1.0f);
     a->crash_t = 3.0f;
     a->crashes++;
     a->speed = 0;
@@ -683,6 +718,7 @@ static void update_surfaces(App *a, float dt, float roll, float pitch, float yaw
 }
 
 void update(App *a, float dt) {
+    engine_sound(a);
     if (a->crash_t > 0) {  /* estrellado: solo siguen el mundo y los efectos */
         update_enemies(a, dt);
         update_combat(a, dt);
@@ -1110,6 +1146,8 @@ void draw(App *a) {
     Mat4 vp = mmul(proj, view);
     if (s->sky.ok) draw_sky(a, eye, vnorm(vsub(look, eye)), aspect, view);
     V3 cf0 = vnorm(vsub(look, eye)), cr0 = vnorm(vcross(cf0, a->up)), cu0 = vcross(cr0, cf0);
+    a->ear = eye;
+    a->ear_right = cr0;
     V3 sun_p = eye;
     int sun_on = s->sky.ok && (s->sky.sun & 0xFF) && s->sky.sun_dir[1] > -0.05f;
     if (sun_on) {   /* disco del sol: lejos, detras de todo (sin escribir profundidad) */

@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — APK 0.7: efectos de sonido originales
+
+Los tres bancos que el juego usa en misión (común 0000 s3, avión, misión) se
+decodifican del disco del usuario (port a C de `tools/acesnd.py`, idéntico
+muestra a muestra a la versión Python) y suenan con un mezclador propio de
+16 voces sobre AAudio: lanzamiento, impactos, derribos, choque y motor en
+bucle, con la frecuencia de la SPU y la desafinación aleatoria del juego. La
+música no entra: falta localizar qué pista XA suena en cada misión.
+
+Reproducir: `android/build/test_sound <imagen> 6 48 29 salida.wav`.
+
 ## 2026-10-16 — Sonidos: ranuras, frecuencia e ids de los efectos
 
 El primer byte de los bancos (antes sin resolver) es la primera ranura de la
