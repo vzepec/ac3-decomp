@@ -64,7 +64,7 @@ etapa.
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | ✅ 21 funciones, 0 diferencias en memoria, retorno y los 64 registros (`make psx-check`) |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | ✅ funciones de memoria (6, oráculo) + GPU por software (75 pruebas, 72 texturas reales idénticas) + terreno real dibujado (`make psx-scene`) |
 | 7 | libcd, libpad, libetc | ✅ validadas ejecutando el código del juego: apertura de packs, 127/127 registros por streaming idénticos, mando (`tools/psxcheck_io.py`) |
-| 8 | libspu | bancos de sonido de las misiones (`tools/acesnd.py`) |
+| 8 | libspu | ✅ SPU por software + libspu (8 funciones idénticas al original); driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`). Pendiente: música XA |
 
 **Esfuerzo:** meses. **Riesgo:** medio (la GTE es delicada; el resto es
 trabajo conocido gracias a Psy-X y a la documentación pública).
@@ -294,3 +294,65 @@ Simplificaciones y límites:
   contra el original;
 - el streaming de XA (modos 1 y 2 de `spb_stream_start`, con ReadS) solo se
   ejercitará con libspu (paso 8).
+
+**Paso 8 (2026-10-16): SPU por software y libspu.**
+
+*SPU* (`psx/src/spu.c`, según psx-spx):
+- registros, RAM de sonido de 512 KB, 24 voces ADPCM;
+- ADSR con ENVX, KON/KOFF y ENDX;
+- volúmenes fijos y entrada de audio de CD;
+- transferencias por el puerto de datos y por DMA.
+
+*Sin hacer:*
+- interpolación gaussiana (se usa lineal, con una muestra de retardo);
+- volumen en modo barrido, ruido, modulación de tono;
+- reverberación (los registros se guardan, pero no se procesa);
+- interrupción de la SPU.
+
+*libspu* (`psx/src/libspu.c`). Comportamiento leído del ensamblador de la
+librería original: Ghidra parte varias funciones en trozos `S_*_OBJ_*` y la
+descompilación no sirve. Tres firmas del ACE.BIN están mal atribuidas:
+- `SsUtReverbOff` es `SpuInit`;
+- la "`SpuRead`" que usa el juego es `SpuWrite`;
+- 0x8009E238 es `SpuQuit` y 0x8009EEC8, `SpuSetReverbVoice`.
+
+Las tablas de `_spu_note2pitch` salen exactas por fórmula: ⌊0x8000·2^(i/12)⌋
+y ⌊0x8000·2^(j/1536)⌋, las 140 entradas.
+
+**Validación.**
+1. **Oráculo** (`tools/psyqcheck_spu.py`). `mipsemu` admite ahora registros
+   de E/S: los accesos de la libreria original a 0x1F801C00 van a una
+   instancia de la SPU de psx/. Funciones comparadas, 2000 casos cada una,
+   **todas idénticas** (registros, envolventes, retorno):
+   - `SpuSetVoiceAttr`, `SpuSetCommonAttr`, `SpuSetKey`;
+   - `SpuGetAllKeysStatus`, `_spu_note2pitch`;
+   - `SpuSetReverb`, `SpuSetReverbDepth`, `SpuSetReverbVoice`.
+
+   Diez mutaciones; las nueve no equivalentes se detectan.
+2. **SPU frente a `tools/acesnd.py`.** Las 39 muestras del banco común,
+   tocadas a tono 0x1000, salen idénticas a la decodificación independiente,
+   con parada al final y ENDX (falta solo la última muestra, que el
+   retardo deja fuera al apagarse la voz). Cuatro mutaciones detectadas
+   (filtro, fin de muestra, tono, fases ADSR).
+3. **Driver de sonido del juego en el intérprete** (inicialización, carga
+   de banco, petición de sonido y fotograma del driver, con libspu desviada a
+   psx/):
+   - la RAM de sonido queda idéntica al banco;
+   - 40 sonidos del banco común arrancan con la dirección, el ADSR y el tono
+     esperados, suenan y terminan (o quedan en bucle, como el motor).
+
+**Hallazgo.** La fórmula de frecuencia de `acesnd` era incorrecta para los
+sonidos con afinación fina (u0 ≠ 0): la fracción se **suma** en 1/128 de
+semitono, no se resta en 1/256. Corregidos `tools/acesnd.py`,
+`docs/04-formatos.md` y el mezclador del APK (`android/src/sound.c`; en la
+0.7 esos sonidos suenan desafinados hasta 1,3 semitonos).
+
+Simplificaciones de libspu:
+- transferencias inmediatas;
+- `SpuSetReverbModeParam` y `SpuClearReverbWorkArea` guardan el modo sin
+  reproducir las escrituras originales. Pendiente junto con la reverberación
+  de la SPU.
+
+**Pendiente del paso 8:** la música XA. El sumidero de libcd ya entrega los
+sectores; falta el decodificador XA-ADPCM con remuestreo a 44,1 kHz y una
+referencia independiente para validarlo (no hay ffmpeg en el sistema).

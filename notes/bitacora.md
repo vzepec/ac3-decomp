@@ -5,6 +5,32 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5, paso 8: SPU por software y libspu; frecuencia de los sonidos corregida
+
+SPU por software (`psx/src/spu.c`) y libspu (`psx/src/libspu.c`), leída del
+ensamblador porque Ghidra trocea sus funciones. Validación:
+- **8 funciones idénticas** al original con el oráculo, que ahora enruta los
+  registros de E/S del intérprete a una SPU de psx/;
+- 39/39 muestras del banco común idénticas a `acesnd`;
+- el driver de sonido del juego, ejecutado en el intérprete, carga el banco
+  y toca 40 sonidos correctamente.
+
+**Corrección de un hallazgo anterior.** La fórmula de frecuencia de la
+entrada del 2026-10-15 (`44.100·2^((nota − nota_base)/12)` con
+`nota_base = note + u0/256`) estaba mal para u0 ≠ 0. Se había validado solo
+con los sonidos de 11.025/22.050 Hz exactos, que tienen u0 = 0: un caso
+positivo que no cubría la parte que importaba. `_spu_note2pitch` suma la
+fracción en 1/128 de semitono. Lo detectó la prueba de integración: el tono
+que ponía el juego no coincidía con `acesnd` en 8 de 40 sonidos, hasta un
+7,6 %. Corregidos `acesnd`, `docs/04-formatos.md` y el APK (`sound.c`).
+
+Firmas mal atribuidas en el ACE.BIN:
+- `SsUtReverbOff` es `SpuInit`;
+- la "`SpuRead`" que usa el juego es `SpuWrite`.
+
+Reproducir: `make psx-check`, o `python3 tools/psxcheck_snd.py
+data/exe/ace_eu.bin salida.wav` para oír los sonidos tocados por el driver.
+
 ## 2026-10-16 — Etapa 5, paso 7: libcd/libetc/libpad validadas con el código del juego
 
 Reimplementadas libcd (sobre la imagen de disco), libetc (VSync y modelo de

@@ -65,13 +65,14 @@ código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
 
 ## Siguiente tarea concreta
 
-Etapa 5, paso 8 de `docs/10-etapa5.md`: **libspu**.
-- Interfaz PsyQ (`SpuSetVoiceAttr`, `SpuSetKey`, transferencias a la RAM de
-  sonido, reverberación como mínimo sin efecto) sobre el mezclador de
-  `android/src/audio.c`.
-- El sumidero XA de libcd (`psx_cd_set_xa_sink`) para la música en streaming.
-- Validar con el código de sonido del juego en el intérprete, como en
-  `tools/psxcheck_io.py`.
+Etapa 5, cierre del paso 8: **música XA**.
+- Decodificador XA-ADPCM (4/8 bits, mono/estéreo, 37,8/18,9 kHz) con
+  remuestreo a 44,1 kHz, conectado al sumidero de libcd
+  (`psx_cd_set_xa_sink`) y a la entrada de CD de la SPU.
+- Necesita una referencia independiente para validarlo (en el sistema no hay
+  ffmpeg).
+- Prueba: el lector del juego en modo XA (`spb_stream_start`, modos 1/2 con
+  ReadS) sobre libcd + libspu.
 
 Después: salida GLES de la VRAM en Android.
 
@@ -83,7 +84,11 @@ Hecho en la etapa 5:
   terreno de la misión 6 dibujado con la capa (`make psx-scene`);
 - **libcd/libetc/libpad**, validadas ejecutando el código del juego: packs
   abiertos, 127/127 registros por streaming idénticos y mando
-  (`tools/psxcheck_io.py`).
+  (`tools/psxcheck_io.py`);
+- **SPU por software y libspu** (8 funciones idénticas al original) con el
+  driver de sonido del juego tocando el banco común (`tools/psxcheck_snd.py`).
+  De paso se corrigió la fórmula de frecuencia de los sonidos (afecta al APK
+  0.7).
 
 APK más reciente: **0.7** (efectos de sonido originales), pendiente de prueba
 en la Retroid. Música: pendiente (qué pista XA suena en cada misión).

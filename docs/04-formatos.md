@@ -600,9 +600,15 @@ del registro 0000 (s3, 76 sonidos, ranuras 0-75), avión (ranuras 84-85: el
 motor), misión (88-107) y el de la interfaz (tipo 13, 84-106, solo en
 menús). El juego reproduce por id = ranura (`FUN_8002D724`, `FUN_8002EFA4`
 con posición). La voz usa `note` = campo "vol" (0x3C00 = nota 60) y
-`sample_note` = `note << 8 | u0`, así que la frecuencia es
-`44.100 · 2^((nota − nota_base)/12)` Hz: en 436 de los 963 sonidos sale
-exactamente 11.025 o 22.050 Hz. Los sonidos con posición llevan una
+`sample_note` = `note << 8 | u0`. `_spu_note2pitch` (0x800A0368, idéntica al
+original en `tools/psyqcheck_spu.py`) **suma** las partes bajas de las dos en
+1/128 de semitono, así que la frecuencia es
+`44.100 · 2^(((vol >> 8) − note + ((vol & 0xFF) + u0)/128)/12)` Hz.
+**Corregido el 2026-10-16:** antes se escribía `nota_base = note + u0/256`
+restando, lo que desafinaba hasta 1,3 semitonos los sonidos con u0 ≠ 0. Lo
+destapó el driver del juego al ejecutarse sobre libspu (`tools/psxcheck_snd.py`).
+Los de u0 = 0, entre ellos los 436 que dan 11.025 o 22.050 Hz exactos, no
+cambian. Los sonidos con posición llevan una
 desafinación aleatoria de ±2 semitonos (`FUN_8002ECB8`). Ids identificados:
 0x0E lanzamiento del misil, 0x1A otra arma, 0x11-0x15 disparos rectos,
 0x1B avión destruido, 0x1C explosión sin impacto, 0x1D impacto de misil,

@@ -63,9 +63,12 @@ int sound_load_bank(Sound *slots, const uint8_t *bank, uint32_t len) {
         free(s->pcm);
         memset(s, 0, sizeof *s);
         if (decode(s, adpcm, size, addr - base)) continue;
-        /* nota de reproduccion (campo "vol", 0x3C00 = 60) y nota base (note << 8 | u0) */
-        float note = rd16(e + 8) / 256.0f, base_note = e[11] + e[10] / 256.0f;
-        s->rate = 44100.0f * powf(2.0f, (note - base_note) / 12.0f);
+        /* nota de reproduccion (campo "vol", 0x3C00 = 60), nota base e[11] y afinacion u0
+         * (e[10]): _spu_note2pitch SUMA las partes bajas en 1/128 de semitono (ver
+         * tools/acesnd.py; corregido en la etapa 5) */
+        uint16_t vol = rd16(e + 8);
+        float semis = (float)(vol >> 8) - e[11] + ((vol & 0xFF) + e[10]) / 128.0f;
+        s->rate = 44100.0f * powf(2.0f, semis / 12.0f);
         int vl = rd16(e + 4), vr = rd16(e + 6);
         s->vol = ((vl > vr ? vl : vr) & 0x3FFF) / 16383.0f;
         loaded++;

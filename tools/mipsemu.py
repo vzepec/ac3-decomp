@@ -72,6 +72,7 @@ class Machine:
         self.scratch = memoryview(scratch).cast('B') if scratch is not None else bytearray(1024)
         self.hooks = {}
         self.depth = 0
+        self.io = None      # objeto con read(addr, size) / write(addr, size, value) para 0x1F801000-0x1F802FFF
         self.r = [0] * 32
         self.hi = self.lo = 0
         self.c2d = [0] * 32         # registros de datos de la GTE (solo movimientos y LZCS/LZCR)
@@ -100,31 +101,46 @@ class Machine:
             return self.ram, a & 0x1FFFFF
         raise MipsError('acceso fuera de memoria: %08x' % a)
 
+    def _isio(self, a):
+        return self.io is not None and 0x1F801000 <= (a & 0xFFFFFFFF) < 0x1F803000
+
     def lw(self, a):
         if a & 3:
             raise MipsError('lw desalineado %08x' % a)
+        if self._isio(a):
+            return self.io.read(a & 0xFFFFFFFF, 4) & 0xFFFFFFFF
         b, o = self._region(a)
         return struct.unpack_from('<I', b, o)[0]
 
     def lh(self, a):
+        if self._isio(a):
+            return self.io.read(a & 0xFFFFFFFF, 2) & 0xFFFF
         b, o = self._region(a)
         return struct.unpack_from('<H', b, o)[0]
 
     def lb(self, a):
+        if self._isio(a):
+            return self.io.read(a & 0xFFFFFFFF, 1) & 0xFF
         b, o = self._region(a)
         return b[o]
 
     def sw(self, a, v):
         if a & 3:
             raise MipsError('sw desalineado %08x' % a)
+        if self._isio(a):
+            return self.io.write(a & 0xFFFFFFFF, 4, v & 0xFFFFFFFF)
         b, o = self._region(a)
         struct.pack_into('<I', b, o, v & 0xFFFFFFFF)
 
     def sh(self, a, v):
+        if self._isio(a):
+            return self.io.write(a & 0xFFFFFFFF, 2, v & 0xFFFF)
         b, o = self._region(a)
         struct.pack_into('<H', b, o, v & 0xFFFF)
 
     def sb(self, a, v):
+        if self._isio(a):
+            return self.io.write(a & 0xFFFFFFFF, 1, v & 0xFF)
         b, o = self._region(a)
         b[o] = v & 0xFF
 
