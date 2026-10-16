@@ -526,7 +526,7 @@ Las teselas miden 2048×2048 unidades.
 
 | Off | Tipo | Campo |
 |---|---|---|
-| 0 | `u8` | `h0` (0-4) — `SIN RESOLVER` |
+| 0 | `u8` | `h0` (0-6; en las 41 misiones: 0×540, 1×10.049, 2×30.331, 3×69.322, 4×1.635, 5×7.120, 6×6) — `SIN RESOLVER`. No lo leen los renders de primitivas (`prims_ft4_draw`, `prims_gt4_draw`, `prim_subdivide`) ni los rayos contra el terreno (`terrain_raycast`, `terrain_raycast2`, que solo miran los bits `0x100`/`0x200` de `h1`); no depende del tamaño de la cara. Quizá sea un dato del editor sin uso en el juego |
 | 1 | `u8` | `h1`: 0 = cuadrilátero plano, 1 = triángulo, 2 = cuadrilátero no plano partido en `(i0,i1,i2)` + `(i1,i3,i2)` |
 | 2 | `u16` | 0 |
 | 4 | `u16`×2 | `e0`, `e1`: offsets en bytes a la **normal de la cara** en la sección 5; `e0 = e1` salvo con `h1 = 2` (una normal por triángulo) |

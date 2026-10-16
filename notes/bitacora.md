@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — `h0` de las primitivas: descartado en render y colisión
+
+`h0` vale 0-6 (sobre todo 3). Ninguna de las rutinas que recorren las
+primitivas de teselas y objetos (render FT4/GT4, subdivisión, los dos rayos
+contra el terreno) lo lee: solo usan los bits de `h1`. Tampoco se
+correlaciona con el tamaño de la cara. Sigue sin resolver; candidato a "dato
+del editor".
+
+Reproducir: recuento de `p['h'][0]` con `acemodel.models` sobre s1 y s4, y
+lectura de esas funciones en `data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-15 — Los sprites estirados son de disparos rectos, no del misil
 
 Las listas de `FUN_8006AE1C` se alimentan de un depósito de disparos en línea
