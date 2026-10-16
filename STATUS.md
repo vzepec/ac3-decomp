@@ -90,8 +90,9 @@ sol/destello y bruma (s13 + s8).
 7. ✅ Lista de proyectil: el misil no usa las listas de disparos rectos
    (correcciones para el próximo APK: quitar la llama al misil; interpolar
    superficies; ritmo de 25/30 ticks).
-8. Pendientes menores: `h0`, demos,
-   overlays 3-5.
+8. ✅ Overlays 3-5 (créditos, reproductor de música, reproductor de prueba)
+   y `h0` (descartado en render y colisión).
+9. Pendientes menores: demos (formato de grabación).
 
 ## Bloqueos conocidos
 

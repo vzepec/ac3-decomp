@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Overlays 3-5: créditos y dos reproductores de música
+
+Overlay 3 = créditos (197 líneas desde "NAMCO STAFF"; lo lanza el residente
+al final de la campaña). Overlay 5 = reproductor de música, abierto desde la
+interfaz de campaña. Overlay 4 = "MUSIC PLAYER (SAMPLE)", sin entrada
+encontrada. Clave para leerlos: los pasos de modo devuelven `0x60000000 |
+modo` para cambiar de modo (no `0x20000000 | modo`, que se buscó primero sin
+resultado).
+
+Reproducir: DumpAll de los overlays 3-5 y `grep 0x6000000 data/ghidra/all_*.c`.
+
 ## 2026-10-15 — `h0` de las primitivas: descartado en render y colisión
 
 `h0` vale 0-6 (sobre todo 3). Ninguna de las rutinas que recorren las
