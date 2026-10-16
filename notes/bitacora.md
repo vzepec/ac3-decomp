@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Estela del misil: perfil de intensidad sí, color no
+
+El color de cada punto de la estela es `FC · I`, con una intensidad que sube
+en ~6 ticks y cae linealmente con la vida restante (resuelto). FC sale de
+s8 `+0x20`, pero sus valores en las 41 misiones no parecen un RGB: queda sin
+resolver por análisis estático; candidato a la etapa con emulador.
+
+Reproducir: `FUN_8007A990` en `data/ghidra/all_ace_eu.c` y el recuento de
+s8 `+0x20` (bucle sobre `Record.section(8)`).
+
 ## 2026-10-15 — Superficies móviles: interpolación según los mandos (corrección)
 
 Encontrado el camino completo: la lógica de vuelo (`FUN_8006B90C`) convierte

@@ -430,10 +430,17 @@ no deja humo:
 | B (32 × 32 puntos de 2 posiciones) | aviones con `+5 & 8` (`FUN_8007C164`): un punto cada 2 fotogramas, dos posiciones según el tipo de avión (tabla `0x800B1EB4`, 16 B por tipo): **estelas de las puntas de ala** | `FUN_8007B5F0` / `FUN_8007B77C` | 63 ticks (`FUN_8007B834`) | `FUN_8007B928` |
 
 Ambas se dibujan como bandas de POLY_G4 semitransparentes sin textura entre
-puntos consecutivos (LINE_G2 semitransparente cuando están lejos), con el
-color atenuado por la edad del punto. `SIN RESOLVER`: el color exacto (la A
-carga el color lejano de la GTE desde s8 `+0x20`, pero reutiliza ese
-registro como temporal) y el modo de mezcla.
+puntos consecutivos (LINE_G2 semitransparente cuando están lejos).
+
+Color de la A (`FUN_8007A990`): `color = FC · I / 4096` (`DPCS` con RGB = 0),
+con FC = bytes `+0x20..+0x22` de s8 (×16) e intensidad por punto `I =
+edad·128` mientras `edad·16 < restante`, y después `I = restante·32`: sube
+en ~6 ticks hasta ~0,66 y cae linealmente hasta 0 al final de la vida.
+`SIN RESOLVER`: qué color resulta de verdad, porque ese campo de s8 no
+parece un RGB (en 22 de 41 misiones vale `80 80 00`; el primer byte varía
+entre 0x10 y 0xB0 y hay valores como `80 FF D0`), y el modo de mezcla, que
+fija un paquete de modo de dibujo fuera de esta función. Hace falta un
+emulador para cerrarlo.
 
 **Otros**: `FUN_8008EBDC` (postquemador, llamas de s1), `FUN_80090478` /
 `FUN_80090FE0` (cintas Gouraud entre dos puntos, depósito `+0x3964`; las
