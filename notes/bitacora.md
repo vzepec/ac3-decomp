@@ -5,6 +5,21 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — APK 0.6: rumbos, superficies, sol y ritmo reales
+
+Aplicadas las correcciones del cierre de la etapa 3: rumbos con 0x4000 =
+360° (con ello, el inicio de casi todas las misiones mira hacia el centro del
+terreno), superficies interpoladas y suavizadas como `FUN_8006B90C`/
+`FUN_800658B8`, misil sin la llama mal atribuida, y ritmo de 25/30 ticks
+según la región del disco. Portados el sol (dirección `RotMatrixYXZ(+0x3C,
++0x3E)`, disco y halo de s13; el halo es un cuarto de círculo que se dibuja
+reflejado cuatro veces) y las estrías de velocidad del clima 1 (que no son
+nubes: el campo de nubes de s13 solo lo usa la misión 16). El inicio se
+ajusta cuando el guion lo deja en un marcador (0, 0, 0) o lejos de la acción
+(ajuste propio, documentado en el README del APK).
+
+Reproducir: `android/build/test_render` con `SUNVIEW=0` o `SURF=1,0,1,1`.
+
 ## 2026-10-16 — Unidad de los ángulos: 0x4000 = 360° (segunda corrección)
 
 Historia, para no repetirla: primero se dijo "0x10000 = 360°" (con una

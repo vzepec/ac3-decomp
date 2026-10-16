@@ -245,7 +245,14 @@ static void parse_sky(Sky *k, const uint8_t *p, uint32_t len) {
     k->band_alt[2] = -2.0f * h10;
     k->band_alt[3] = -h10 / 2.0f;
     k->sun_heading = rds16(p + 0x3E) * (6.2831853f / 4096.0f);
-    k->sun = rds16(p + 0x6C) != 0;
+    k->sun_elev = rds16(p + 0x3C) * (6.2831853f / 4096.0f);
+    /* PS1: (cos rx sin ry, -sin rx, cos rx cos ry) con y abajo -> GL (x, -y, -z) */
+    k->sun_dir[0] = cosf(k->sun_elev) * sinf(k->sun_heading);
+    k->sun_dir[1] = sinf(k->sun_elev);
+    k->sun_dir[2] = -cosf(k->sun_elev) * cosf(k->sun_heading);
+    k->sun = rds16(p + 0x6C);   /* byte bajo: disco; byte alto: destello (FUN_8008A310) */
+    k->haze = p[0x6E];
+    k->weather = p[0x6F];
     k->ok = 1;
 }
 
@@ -259,7 +266,7 @@ static void parse_spawn(Spawn *o, const uint8_t *r) {
     o->x = (int32_t)rd32(r + 4) / 4096.0f;
     o->y = -(int32_t)rd32(r + 8) / 4096.0f;
     o->z = -(int32_t)rd32(r + 12) / 4096.0f;
-    o->yaw = (rd16(r + 0x16) & 0xFFF) * (6.2831853f / 4096.0f);  /* unidad PS1: 4096 = 360 */
+    o->yaw = (rd16(r + 0x16) & 0x3FFF) * (6.2831853f / 16384.0f);  /* 0x4000 = 360 (FUN_80030534) */
     o->mesh = o->mesh_dead = -1;
 }
 
@@ -321,6 +328,8 @@ static int scene_model(Scene *s, int key, const uint8_t *lod, uint32_t lodlen, c
 }
 
 int scene_load_common(Scene *s, Disc *d, AcePack *p) {
+    DiscFile f;
+    s->pal = disc_find_prefix(d, "SCES_", &f) == 0 || disc_find_prefix(d, "SLES_", &f) == 0;
     uint32_t size, len;
     uint8_t *raw = pack_read_record(d, p, 0, &size);
     Record r;

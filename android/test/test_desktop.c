@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     printf("entradas BPB: %u\n", p.count);
     scene_init(&s);
     printf("comun (registro 0000): %d  TIM %d\n", scene_load_common(&s, &d, &p), s.tims_loaded);
+    printf("region: %s\n", s.pal ? "PAL (25 ticks/s)" : "NTSC (30 ticks/s)");
     s.tims_loaded = 0;
     int rm = scene_load_mission(&s, &d, &p, atoi(argv[2]));
     int tims_mission = s.tims_loaded;
