@@ -170,7 +170,9 @@ no al cuarto año. Si cuesta 3 semanas, el proyecto merece seguir.
 
 ---
 
-## Etapa 5 — Capa de compatibilidad PsyQ
+## Etapa 5 — Capa de compatibilidad PsyQ 🔄 EN CURSO
+
+Plan, superficie de API y resultados en `docs/10-etapa5.md`; código en `psx/`.
 
 Reimplementar `libgpu` sobre GLES/Vulkan, `libgte` en punto fijo exacto,
 `libspu` sobre el audio de Android, `libcd` sobre lectura de archivos. Es el

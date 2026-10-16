@@ -58,8 +58,8 @@ etapa.
 | Paso | Entregable | Validación |
 |---|---|---|
 | 1 | Inventario de la API (`tools/psyqapi.py`) | ✅ este documento |
-| 2 | Intérprete MIPS de referencia (`tools/mipsemu.py`) | ejecuta `rsin`/`rcos` de `ACE.BIN` y coincide con su tabla |
-| 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | idéntico al código original en todas las entradas |
+| 2 | Intérprete MIPS de referencia (`tools/mipsemu.py`) | ✅ ejecuta las funciones de Sony de `ACE.BIN` |
+| 3 | `psx/` con libgte sin GTE (`rsin`, `rcos`, `ratan2`, `SquareRoot0`, `rand`) | ✅ **84.000 casos, 0 diferencias** (`make psx-check`) |
 | 4 | Emulador de la GTE (`psx/src/gte.c`) | especificación + pruebas de coherencia |
 | 5 | libgte con GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`, …) | oráculo MIPS con la GTE de `psx/` |
 | 6 | libgpu: tabla de ordenación, primitivas, VRAM, `DrawOTag` | listas de dibujo reales del juego |
@@ -68,3 +68,25 @@ etapa.
 
 **Esfuerzo:** meses. **Riesgo:** medio (la GTE es delicada; el resto es
 trabajo conocido gracias a Psy-X y a la documentación pública).
+
+## Resultados
+
+**Pasos 2-3 (2026-10-16).** `tools/mipsemu.py` es un intérprete R3000 de
+enteros (con hueco de retardo, 2 MB de RAM, scratchpad, y de la GTE solo los
+movimientos de registros y LZCS/LZCR). `tools/psyqcheck.py` ejecuta con él las
+funciones originales y las compara con `psx/`:
+
+| Función | Casos | Diferencias | Notas |
+|---|---|---|---|
+| `rsin`, `rcos` | 21.000 cada una | 0 | tabla generada: `round(4096·sen(2πi/4096))`, exacta en las 4.097 entradas |
+| `SquareRoot0` | 17.093 | 0 | tabla generada: `floor(√v · 512)`, v = 0x40..0xFF, exacta; reproduce la aproximación del original (√1.000.000 = 999) |
+| `ratan2` | 16.289 | 0 | la tabla **no** tiene fórmula exacta (el mejor ajuste acierta 996/1025): se lee del `ACE.BIN` del usuario, localizada por estructura (única en EU y US) |
+| `rand` | 8.500 | 0 | congruencial `s·0x41C64E6D + 0x3039`, devuelve `(s >> 16) & 0x7FFF` |
+
+**Validación del método** (regla 3): con errores introducidos a propósito
+(`rcos` desplazado una unidad, raíz redondeada en vez de truncada, constante
+de `rand` cambiada) el comparador detecta miles de diferencias.
+
+Decisión de diseño: las tablas de Sony se **generan** cuando hay fórmula
+exacta y, si no, se **leen del disco del usuario** en tiempo de ejecución;
+nunca se copian al código ni al APK.

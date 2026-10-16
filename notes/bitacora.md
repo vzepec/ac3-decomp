@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 5 abierta: inventario de API, oráculo MIPS y primeras funciones exactas
+
+API PsyQ que usa el código propio del juego: 175 funciones, más 2.351 usos de
+la GTE en línea (`tools/psyqapi.py`). Para validar sin PS1, un intérprete
+MIPS (`tools/mipsemu.py`) ejecuta las funciones originales de Sony de
+`ACE.BIN` como oráculo. Primeras funciones de `psx/` idénticas al original en
+84.000 casos: `rsin`, `rcos`, `SquareRoot0`, `ratan2`, `rand`. Las tablas de
+seno y raíz se generan por fórmula exacta; la de arcotangente no tiene fórmula
+y se lee del disco del usuario. El comparador se validó con errores
+introducidos a propósito.
+
+Reproducir: `make psx-check`, `make psyq-api`.
+
 ## 2026-10-16 — APK 0.6: rumbos, superficies, sol y ritmo reales
 
 Aplicadas las correcciones del cierre de la etapa 3: rumbos con 0x4000 =

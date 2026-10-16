@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -29,6 +29,8 @@ help:
 	@echo "make ghidra-import - importa y analiza data/exe/ace_eu.exe en Ghidra (~4 min)"
 	@echo "make ghidra-stats  - cifras de funciones -> data/ghidra/stats_eu.txt"
 	@echo "make check      - comprueba que las herramientas corren"
+	@echo "make psx-check  - etapa 5: compara psx/ con el codigo original de ACE.BIN (oraculo MIPS)"
+	@echo "make psyq-api   - etapa 5: API PsyQ que usa el juego"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -120,3 +122,9 @@ brief:
 
 check:
 	@$(PY) -c "import sys; sys.path.insert(0,'tools'); import psxiso, acepack, psexe, ulz, acerec, tim2png, acemodel, acesnd, acebin, aceovl; print('herramientas OK')"
+
+psx-check:
+	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
+
+psyq-api:
+	@$(PY) tools/psyqapi.py "$(GHIDRA)/Ghidra/Extensions/ghidra_psx_ldr/data/psyq/450" data/ghidra/all_ace_eu.c data/ghidra/all_overlay1.c data/ghidra/all_overlay2.c data/ghidra/all_overlay3.c data/ghidra/all_overlay4.c data/ghidra/all_overlay5.c

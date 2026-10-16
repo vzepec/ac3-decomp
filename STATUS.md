@@ -7,9 +7,9 @@
 
 ## Etapa actual
 
-**Etapa 3 — Análisis estático: CRITERIO CUMPLIDO** (2026-10-16). Etapa 4
-(rebanada vertical) también cumplida: APK 0.5 probado en la Retroid.
-Siguiente etapa por decidir con el usuario (ver abajo).
+**Etapa 5 — Capa de compatibilidad PsyQ: EN CURSO** (rama `etapa-5`,
+código en `psx/`, plan en `docs/10-etapa5.md`). Etapas 1-4 cerradas; el APK
+0.6 está pendiente de prueba en la Retroid.
 
 ## Hecho
 
@@ -65,10 +65,16 @@ Siguiente etapa por decidir con el usuario (ver abajo).
 
 ## Siguiente tarea concreta
 
-**APK 0.6 construido** (rumbos y superficies reales, sol, ritmo 25/30,
-inicio ajustado). Pendiente de prueba en la Retroid. A continuación, por
-petición del usuario: **etapa 5** (capa de compatibilidad PsyQ), en la rama
-`etapa-5`.
+Etapa 5, paso 4 de `docs/10-etapa5.md`: **emulador de la GTE**
+(`psx/src/gte.c`) con las órdenes que usa el juego (`RTPS`, `RTPT`, `NCLIP`,
+`AVSZ3/4`, `MVMVA`, `DPCS/DPCT`, `INTPL`, `NCS/NCT/NCCS`, `GPF/GPL`, `SQR`),
+banderas y saturaciones según psx-spx. Después, conectarlo al intérprete
+(`tools/mipsemu.py`) para validar con el oráculo las funciones de libgte que
+calculan con la GTE (`RotMatrixYXZ`, `MulMatrix`, `RotTransPers`…).
+
+Hecho en la etapa 5: inventario de API (175 funciones + GTE en línea),
+oráculo MIPS, y `rsin`/`rcos`/`SquareRoot0`/`ratan2`/`rand` exactas
+(`make psx-check`: 84.000 casos, 0 diferencias).
 
 Ya localizado para el APK 0.4: explosiones, humo, restos y estelas de
 proyectil (registro 0000); cielo por bandas y niebla (preludio); nubes,
