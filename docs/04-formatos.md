@@ -678,25 +678,51 @@ la grabación está `SIN RESOLVER`.
 
 #### Superficies móviles del avión del jugador
 
-Los 12 modelos del preludio del tipo 4 tienen un orden fijo. El render
-(`scene_objects_sort`) pasa los modelos 2-11 como **10 bloques de vértices
-alternativos** y asigna por defecto el 0, el 5 y el 7 (el primer estado de
-cada grupo). Son **estados discretos**, no una interpolación:
+Los 12 modelos del preludio del tipo 4 tienen un orden fijo. Los modelos
+2-11 son **posiciones extremas** de tres piezas, y el juego **interpola**
+entre la neutra y la extrema (corrige una versión anterior de este documento
+que hablaba de "estados discretos"):
 
-| Modelo | Pieza | Estados (medidos con `tools/acesurf.py`) |
+| Modelo | Pieza | Medido con `tools/acesurf.py` |
 |---|---|---|
 | 0 | tobera | — |
 | 1 | fuselaje | — |
-| 2 | alas, posición neutra | — |
+| 2 | alas, neutra | — |
 | 3 / 4 | alas: alerones a un lado / al otro (antisimétrico) | 19 de 22 aviones |
 | 5 / 6 | alas: cabeceo (simétrico; el signo cambia según el avión) | 18 de 22 |
-| 7 / 8 | pieza dorsal: **aerofreno** recogido / abierto (sube 30-42 u.) | 10 de 22 |
+| 7 / 8 | pieza dorsal: aerofreno recogido / abierto (sube 30-42 u.) | 10 de 22 |
 | 9 / 10 / 11 | deriva: timón neutro / a +x / a −x | 17 de 22 |
 
-Los registros 47, 65 y 66 (diseños ficticios) tienen todos los estados
-idénticos: sin superficies móviles. `SIN RESOLVER`: qué control elige cada
-estado y con qué umbral (probablemente la callback de pieza de `0x800B09D0`
-o la lógica de vuelo), y qué estado de 3/4 es alabeo a la izquierda.
+Los registros 47, 65 y 66 (diseños ficticios) tienen todas las posiciones
+idénticas: sin superficies móviles.
+
+**De los mandos a los vértices** (desde el código):
+
+1. `FUN_8006B90C` (y sus variantes `FUN_8006BEA8`, `FUN_8006C58C`,
+   `FUN_80072494`) lee 4 ejes de mando de `g_state + 0x120` (bits digitales
+   en `+8`, o analógicos en `+0x1C`..`+0x28` si `+0x18` lo indica) y escribe 5
+   valores s16 en `DAT_800BAF18`, cada uno acercándose a su objetivo
+   `|dif|/4 + 2` por tick:
+
+   | Valor | Objetivo (±0x1000) | Pieza |
+   |---|---|---|
+   | `v[0]` | eje C (bits `0x2000000` / `0x4000000`) | alerones (3 si > 0, 4 si < 0) |
+   | `v[1]` | eje A (bits `0x800000` / `0x1000000`) | cabeceo (5 si > 0, 6 si < 0) |
+   | `v[2]` | eje B (bits `0x20000000` / `0x40000000`) | timón (10 si > 0, 11 si < 0) |
+   | `v[3]` | `(acelerador + 0x1000) / 2` | intensidad de las toberas (`FUN_8008A874`) |
+   | `v[4]` | `−2·(acelerador + 0x800)` si el acelerador < −0x800 (±0x80 por tick) | aerofreno (8) |
+
+2. `FUN_800658B8`, antes de dibujar, genera los vértices de cada pieza con
+   `FUN_800652CC`: `v = base + (extremo − base) · t / 4096` (operación INTPL
+   de la GTE). Timón: `t = |v[2]|`; aerofreno: `t = v[4]`. Alas
+   (`FUN_80065728` + `FUN_80065448`): primero `mezcla = lerp(alabeo,
+   cabeceo, r)` con `r` según la proporción entre `|v[0]|` y `|v[1]|`
+   (0x800 si son iguales), y después `lerp(neutra, mezcla, m)` con `m =
+   (|v[0]| + |v[1]|) · max(r, 1 − r)`, limitado a 0x1000.
+
+Qué eje físico del mando es cada letra (A, B, C) depende de la
+configuración de controles: `SIN RESOLVER`; por la pieza que mueven, A es el
+cabeceo, B la guiñada y C el alabeo.
 
 #### Tipo 5 — briefings de misión (40 registros)
 

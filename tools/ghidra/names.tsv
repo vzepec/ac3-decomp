@@ -94,3 +94,7 @@
 0x8007A990	f	smoke_trails_draw	bandas Gouraud semitransparentes (A)
 0x8007B928	f	wingtip_trails_draw	bandas Gouraud semitransparentes (B)
 0x80032514	f	mission_init	entidades, modelos, VSync(2) en mision
+0x8006B90C	f	flight_controls	ejes de mando -> velocidades de giro y valores de superficie
+0x800658B8	f	surfaces_morph	interpola alas, aerofreno y timon del jugador
+0x800652CC	f	vertices_lerp	INTPL entre dos bloques de vertices
+0x80065728	f	wing_mix	mezcla alabeo/cabeceo de las alas

@@ -4,9 +4,10 @@
 Los 12 modelos del preludio (ver acemodel.player_models) se agrupan asi:
   0 tobera, 1 fuselaje, 2-6 alas (5 estados), 7-8 pieza dorsal (2 estados),
   9-11 deriva (3 estados).
-El render (scene_objects_sort, 0x80065CC4) pasa los modelos 2-11 como 10
-bloques de vertices alternativos y usa por defecto el 0, el 5 y el 7: el
-primer estado de cada grupo. Son estados discretos, no una interpolacion.
+Los modelos 3-6, 8, 10 y 11 son posiciones EXTREMAS: el juego interpola
+entre la neutra (2, 7, 9) y ellas segun los mandos (FUN_800658B8 y
+FUN_800652CC; ver docs/04-formatos.md). Una version anterior de este texto
+decia "estados discretos": era incorrecto.
 
 Esta herramienta mide cada estado frente al primero de su grupo:
   alas: desplazamiento vertical de los vertices con |x| > 0,4 * envergadura, por lado

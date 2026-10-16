@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-15 — Superficies móviles: interpolación según los mandos (corrección)
+
+Encontrado el camino completo: la lógica de vuelo (`FUN_8006B90C`) convierte
+4 ejes de mando en 5 valores (alerones, cabeceo, timón, toberas, aerofreno)
+que se suavizan por tick, y `FUN_800658B8` interpola los vértices entre la
+posición neutra y la extrema con la operación INTPL de la GTE. Corrige la
+entrada anterior ("estados discretos"): aquellos modelos son los extremos.
+La asignación pieza ↔ maniobra coincide con la que se dedujo midiendo los
+vértices (`acesurf.py`), lo que valida ambas.
+
+Reproducir: `FUN_8006B90C`, `FUN_800658B8`, `FUN_80065728`, `FUN_800652CC`
+en `data/ghidra/all_ace_eu.c`.
+
 ## 2026-10-15 — Ritmo de ticks: 25/s en la versión europea, 30/s en la americana
 
 En misión el bucle principal espera 2 refrescos por tick (`VSync(2)`). La EU
