@@ -1,6 +1,7 @@
 /* Entorno de ejecucion del codigo recompilado (ver recomp_rt.h). */
 #include <setjmp.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "recomp_rt.h"
 
@@ -57,9 +58,22 @@ static void (*find(const RcFunc *t, unsigned n, uint32_t addr))(RCpu *) {
     return 0;
 }
 
+/* firmas de los overlays: si estan registradas, el overlay cargado se detecta solo */
+static const uint8_t (*g_sigs)[64];
+static int g_nsigs;
+void rc_set_overlay_sigs(const uint8_t (*sigs)[64], int n) { g_sigs = sigs; g_nsigs = n; }
+
 static void (*lookup(uint32_t addr))(RCpu *) {
     void (*fn)(RCpu *) = find(g_funcs, g_nfuncs, addr);
-    if (!fn && g_cur_ovl && addr >= 0x800C9DC0u) fn = find(g_ovl[g_cur_ovl], g_novl[g_cur_ovl], addr);
+    if (!fn && addr >= 0x800C9DC0u) {
+        if (g_sigs) {
+            const uint8_t *ram = psx_ram + 0xC9DC0;
+            g_cur_ovl = 0;
+            for (int k = 0; k < g_nsigs; k++)
+                if (!memcmp(ram, g_sigs[k], 64)) { g_cur_ovl = k + 1; break; }
+        }
+        if (g_cur_ovl) fn = find(g_ovl[g_cur_ovl], g_novl[g_cur_ovl], addr);
+    }
     return fn;
 }
 
@@ -71,9 +85,52 @@ void rc_call(RCpu *c, uint32_t addr) {
     rc_fault(RC_NOFUNC, 0, addr);
 }
 
+static const RcFunc *g_hle;
+static unsigned g_nhle;
+void rc_set_hle(const RcFunc *table, unsigned n) { g_hle = table; g_nhle = n; }
+
 void rc_libcall(RCpu *c, uint32_t addr) {
     if (g_libcall) { g_libcall(c, addr); c->r[0] = 0; return; }
+    void (*fn)(RCpu *) = g_hle ? find(g_hle, g_nhle, addr) : 0;
+    if (fn) { fn(c); c->r[0] = 0; return; }
     rc_fault(RC_NOFUNC, 0, addr);
+}
+
+/* ---- reloj del modo nativo ---- */
+static void (*g_tick)(void);
+static int64_t g_tick_every;
+static int g_in_tick;
+void rc_set_tick(void (*fn)(void), int64_t every) { g_tick = fn; g_tick_every = every; rc_budget = every; }
+static void (*g_frame_hook)(void);
+void rc_set_frame_hook(void (*fn)(void)) { g_frame_hook = fn; }
+void rc_vsync_hook(void) { if (g_tick) rc_budget = g_tick_every; if (g_frame_hook) g_frame_hook(); }
+
+void rc_budget_out(uint32_t pc) {
+    if (g_jmp || !g_tick) { rc_fault(RC_TIMEOUT, pc, 0); rc_budget = INT64_MAX; return; }
+    rc_budget = g_tick_every;
+    if (g_in_tick) return;
+    g_in_tick = 1;
+    g_tick();
+    g_in_tick = 0;
+}
+
+/* callbacks de la capa (VSync, CD, MDEC, eventos): como una interrupcion, con su propio
+ * estado de CPU y una pila en la RAM baja (0x80000000-0x8000FFFF, de la BIOS: el juego no la
+ * usa). Se conserva la direccion de retorno esperada del codigo interrumpido. */
+void rc_host_callback(uint32_t addr, uint32_t a0, uint32_t a1) {
+    static int depth;
+    RCpu cb;
+    memset(&cb, 0, sizeof cb);
+    cb.r[4] = a0; cb.r[5] = a1;
+    cb.r[28] = 0x800BA9F4u;
+    cb.r[29] = 0x8000F000u - 0x800u * (uint32_t)depth;
+    cb.r[31] = 0x8000FFF0u;
+    uint32_t ret = rc_ret;
+    depth++;
+    rc_ret = cb.r[31];
+    rc_call(&cb, addr);
+    depth--;
+    rc_ret = ret;
 }
 
 /* ejecuta la funcion `addr` con el estado c; devuelve RC_OK o el codigo de fallo */

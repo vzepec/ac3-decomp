@@ -155,7 +155,11 @@ def jump_table(img, start, pc, limit):
     """tabla de saltos de un jr: propagacion de constantes (lui, addiu, ori, addu, sll) desde
     unas instrucciones antes; devuelve los destinos validos leidos de la tabla"""
     known, based = {}, {}
-    a = max(start, pc - 4 * 24)
+    # desde el inicio de la funcion de Ghidra que contiene el salto (la entrada actual puede
+    # ser un fragmento): la base de la tabla puede estar en un registro s cargado al
+    # principio (bucles con switch); recorrido lineal, aproximado (lo valida check.py)
+    a = max([n for n in NAMES if n <= pc and img.own(n)] or [start])
+    a = min(a, start)
     reg = (img.word(pc) >> 21) & 31
     table = None
     count = None
@@ -299,6 +303,7 @@ OVL_END = {1: 0x800DB010, 2: 0x800F9E18, 3: 0x800DECE8, 4: 0x800D96C0, 5: 0x800C
 PREFIX = 'f'
 STRICT_DATA = False
 LABS = set()
+NAMES = set()
 
 
 class Emitter:
@@ -412,6 +417,7 @@ def main():
         resident = [m['addr'] for m in json.load(open(args[args.index('--resident') + 1]))]
     img = Image(args[0])
     entries, names = find_entries(img, args[1])
+    NAMES.update(names)
     if '--from' in args:   # residente: destinos que le llegan desde los overlays (jal/j y lui/addiu)
         extra = set()
         for path in args[args.index('--from') + 1].split(','):

@@ -67,20 +67,16 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-Etapa 6, paso 4 de `docs/11-etapa6.md` (rama `etapa-6-paso-4`): **arranque
-nativo en el PC**.
-- Enlazar `data/recomp/librecomp.so` con la capa de verdad: el enganche de
-  librería (`rc_set_libcall`) debe llamar a las funciones de `psx/` con los
-  argumentos de la ABI MIPS (punteros PS1 → `psx_ptr`), una por cada una de
-  las 152.
-- Cargar ACE.BIN como lo hace el ejecutable de arranque y arrancar
-  `ac3_main`; carga de overlays (`rc_set_overlay`).
-- Bucle de fotogramas con `psx_vblank`, imagen por `psx_display` y audio por
-  la SPU.
-- **Validación con estados reales:** el mismo arranque en el intérprete y en
-  el código traducido, con la RAM comparada fotograma a fotograma. Cubre las
-  149 funciones "sin caso" y las mutaciones que los casos aleatorios no ven.
-- Meta: la pantalla de título.
+Etapa 6, paso 4 (rama `etapa-6-paso-4`): **APK de prueba 1.0-alfa** con el
+juego recompilado, solo para uso personal (lleva código del juego traducido:
+no se distribuye).
+- Aplicación Android con el bucle del juego en un hilo, la imagen por
+  `psx_present` y el sonido de la SPU por AAudio.
+- Mando de la Retroid y ritmo real de 50 Hz.
+- Disco elegido con el selector y ACE.BIN incrustado en la compilación
+  personal.
+
+Ya funciona en el PC: `make native` llega a la primera misión en vuelo.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);

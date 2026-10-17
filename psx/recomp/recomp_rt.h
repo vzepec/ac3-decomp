@@ -121,7 +121,10 @@ static inline void rc_mtc2(int r, uint32_t v) { psx_gte_write_data(rc_gte, r, v)
 static inline void rc_ctc2(int r, uint32_t v) { psx_gte_write_ctrl(rc_gte, r, v); }
 
 /* ---- control ---- */
-#define RC_BUDGET(pc) do { if (--rc_budget < 0) rc_fault(RC_TIMEOUT, (pc), 0); } while (0)
+/* presupuesto: en las pruebas, agotarlo es tiempo agotado; en el juego nativo, es el reloj
+ * (rc_budget_out llama al VBlank de la capa y lo recarga) */
+void rc_budget_out(uint32_t pc);
+#define RC_BUDGET(pc) do { if (--rc_budget < 0) rc_budget_out(pc); } while (0)
 static inline void rc_break(RCpu *c, uint32_t pc) { (void)c; rc_fault(RC_BREAK, pc, 0); }
 static inline void rc_syscall(RCpu *c, uint32_t pc) { (void)c; rc_fault(RC_SYSCALL, pc, 0); }
 static inline void rc_illegal(RCpu *c, uint32_t pc) { (void)c; rc_fault(RC_ILLEGAL, pc, 0); }
@@ -130,5 +133,13 @@ void rc_call(RCpu *c, uint32_t addr);
 /* llamada a una funcion de libreria de Sony: la atiende el anfitrion (psx/ o, en las
  * pruebas, un stub determinista) */
 void rc_libcall(RCpu *c, uint32_t addr);
+
+/* ---- modo nativo (psx/recomp/native_main.c y la app de Android) ---- */
+void rc_set_hle(const RcFunc *table, unsigned n);              /* enlace generado (gen_hle.py) */
+void rc_set_overlay_sigs(const uint8_t (*sigs)[64], int n);    /* deteccion del overlay cargado */
+void rc_set_tick(void (*fn)(void), int64_t every);             /* reloj: VBlank cada `every` */
+void rc_vsync_hook(void);                                      /* el juego llamo a VSync */
+void rc_set_frame_hook(void (*fn)(void));                       /* aviso al host tras VSync */
+void rc_host_callback(uint32_t addr, uint32_t a0, uint32_t a1);  /* callbacks de la capa */
 
 #endif

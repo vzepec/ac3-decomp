@@ -34,6 +34,9 @@ int32_t StartCARD(void);
 int32_t StopCARD(void);
 void _bu_init(void);
 int32_t _card_format(int32_t chan);
+int32_t _card_info(int32_t chan);
+int32_t _card_load(int32_t chan);
+int32_t _card_clear(int32_t chan);
 
 /* ---- BIOS (archivos en la tarjeta) ----
  * Con prefijo bios_ para no chocar con las de POSIX del anfitrion; el codigo del juego

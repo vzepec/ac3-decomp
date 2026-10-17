@@ -1,3 +1,4 @@
+#include <stdlib.h>
 #include <stdio.h>
 /* libgpu: funciones que solo escriben en memoria. Reimplementadas a partir de ACE.BIN EU
  * (direcciones en tools/psyqcheck_gpu.py) y validadas contra el codigo original. */
@@ -124,6 +125,11 @@ uint32_t *ClearOTag(uint32_t *ot, int n) {
 void DrawOTag(uint32_t *ot) { psx_gpu_draw_list(&g_gpu, psx_addr(ot)); }
 
 DRAWENV *PutDrawEnv(DRAWENV *env) {
+    if (getenv("PSX_DISPDBG")) {
+        static int n;
+        if (n++ % 50 == 0) fprintf(stderr, "PutDrawEnv clip=(%d,%d,%d,%d) ofs=(%d,%d) dfe=%d\n", env->clip.x, env->clip.y, env->clip.w, env->clip.h,
+                                   env->ofs[0], env->ofs[1], env->dfe);
+    }
     int x2 = env->clip.x + env->clip.w - 1, y2 = env->clip.y + env->clip.h - 1;
     psx_gpu_gp0(&g_gpu, area_cmd(0xE3000000u, env->clip.x, env->clip.y));
     psx_gpu_gp0(&g_gpu, area_cmd(0xE4000000u, x2, y2));
@@ -137,6 +143,11 @@ DRAWENV *PutDrawEnv(DRAWENV *env) {
 }
 
 DISPENV *PutDispEnv(DISPENV *env) {
+    if (getenv("PSX_DISPDBG")) {   /* depuracion: entornos de pantalla del juego */
+        static int n;
+        if (n++ % 25 == 0) fprintf(stderr, "PutDispEnv disp=(%d,%d,%d,%d) screen=(%d,%d,%d,%d) inter=%d rgb24=%d\n", env->disp.x, env->disp.y,
+                              env->disp.w, env->disp.h, env->screen.x, env->screen.y, env->screen.w, env->screen.h, env->isinter, env->isrgb24);
+    }
     g_disp_x = env->disp.x;
     g_disp_y = env->disp.y;
     g_disp_w = env->disp.w;
