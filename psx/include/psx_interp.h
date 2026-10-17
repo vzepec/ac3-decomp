@@ -47,8 +47,9 @@ typedef struct {
 void psx_interp_perf(PsxInterpPerf *p, int reset);
 
 extern int psx_interp_on;
-/* prueba (tools: AC3_INTERP_TEST de native_main): un paso de cada dos se entrega con fase 0/0
- * y no sirve de referencia, para comparar la intermedia de k y k+2 con el k+1 real */
+/* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase
+ * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1
+ * con el paso real del medio (S impar; S = 3 simula movimientos el doble de rapidos) */
 extern int psx_interp_skip_test;   /* atajo para la GTE */
 
 #endif

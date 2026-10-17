@@ -5,6 +5,47 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Terreno lejano en giros rápidos: fondo sin GTE, caras que se dan la vuelta (APK 1.4-alfa)
+
+**Informe:** con la 1.3, en giros rápidos aparecen parpadeos y "terreno
+negro" en el terreno lejano.
+
+**Herramientas nuevas:**
+- `AC3_INTERP_TEST=S`: verdad conocida con movimientos S+1 veces mayores.
+- Medida de agujeros en la prueba y `tools/interp_holes.py` (prueba
+  sintética: 80 de 80).
+- `PSX_INTERP_PROBE=vb,x,y`: qué paquete escribe un píxel de la intermedia.
+- `PSX_INTERP_PRIMDUMP`: vuelco de la lista.
+
+**Hallazgos:**
+- **Fondo:** el cielo y la bruma son un cuadrilátero que cubre la pantalla.
+  Lo coloca la CPU (sin GTE) con el desplazamiento de dibujo del espacio 3D,
+  y no se movía en las intermedias.
+- **Puntos oscuros (sonda, S=5):** son caras de ladera de espaldas en el paso
+  anterior y de cara en este. Interpolando los vértices quedan de cara antes
+  de tiempo (superficie −120 → +12 → +29).
+- **Parejas:** los vértices repetidos del terreno se emparejaban mal con la
+  predicción global.
+- **La grieta por vértice compartido no aparece en el PC:** con los giros del
+  guion, la medida de agujeros es igual que entre reales (9 por imagen).
+
+**Arreglos:**
+- parejas por vecinos;
+- fondo interpolado con sus propios vértices;
+- ocultar caras antes de que se den la vuelta;
+- un único desplazamiento por punto;
+- saltos de hasta 128 px si cuadran con la predicción;
+- imagen real como base.
+
+**Validación:**
+- PSNR con S=1: de 28,34 a 28,47 dB.
+- S=3 y S=5 iguales, dentro de ±0,07 dB.
+- El fondo mejora 9 de 127 casos con S=5, sin empeorar ninguno.
+- Con hilos y sin ellos: 44 de 44 iguales.
+
+**SIN RESOLVER:** el giro de la Retroid no se reproduce en el PC (sin palanca
+de cámara en el guion).
+
 ## 2026-10-17 — Titileo: los pasos sin intermedias no llegaban a la pantalla (APK 1.3-alfa)
 
 **Informe:** en la Retroid, la 1.2-alfa va a 60 FPS (VEL 100 %, INT 3, CPU
