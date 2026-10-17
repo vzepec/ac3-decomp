@@ -65,7 +65,7 @@ def cmd_count(ghidra):
     data = json.load(open(JSON)) if os.path.exists(JSON) else {}
     mods = {}
     res = funcs(os.path.join(ROOT, 'data', 'ghidra', 'all_ace_eu.c'))
-    own = {n: b for n, a, b in res if (OWN_START <= a < LIB_START or LIB_END < a < OVL_BASE) and n not in sym}
+    own = {n: b for n, a, b in res if (OWN_START <= a < LIB_START or 0x800AE118 <= a < 0x800AE528) and n not in sym}
     libaddr = {n: a for n, a, b in res if LIB_START <= a <= LIB_END or n in sym}
     mods['residente'] = len(own)
     bodies = dict(own)

@@ -8,12 +8,12 @@
   "overlay 5": 8
  },
  "recompiladas": {
-  "residente": 0,
-  "overlay 1": 0,
-  "overlay 2": 0,
-  "overlay 3": 0,
-  "overlay 4": 0,
-  "overlay 5": 0
+  "residente": 1130,
+  "overlay 1": 142,
+  "overlay 2": 362,
+  "overlay 3": 20,
+  "overlay 4": 10,
+  "overlay 5": 8
  },
  "capa": {
   "necesarias": 152,
@@ -22,8 +22,8 @@
  },
  "pasos": {
   "total": 8,
-  "hechos": 2,
-  "actual": "Paso 3: recompilador MIPS a C"
+  "hechos": 3,
+  "actual": "Paso 4: arranque nativo en el PC (pantalla de titulo)"
  },
  "recorrido": {
   "total": 46,

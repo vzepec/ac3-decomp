@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Etapa 6, paso 3: el juego recompilado a C, 1.672/1.821 funciones validadas
+
+`tools/recomp/recomp.py` traduce el residente y los 5 overlays a C sobre
+`psx/recomp/` (el C generado, en `data/recomp/`, fuera de git). Se compara
+cada función con el intérprete con estados aleatorios (24 casos):
+- 0 distintas;
+- 1.672 de las 1.821 funciones de Ghidra validadas;
+- las 149 restantes, sin caso: necesitan estados reales.
+
+Hallazgos del código del juego:
+- finales de función compartidos (saltos a mitad de otra función);
+- tablas de manejadores en datos;
+- `switch` con tabla y número de casos (`sltiu`);
+- `ulz_decompress` (0x800AE118, colocado tras las librerías) con tabla de
+  saltos en línea y saltos a un hueco de retardo.
+
+Sensibilidad medida con mutaciones: 53 % con 24 casos, 65 % con 120. La
+validación fuerte, con estados reales, es parte del paso 4.
+
+Reproducir: `make recomp`, `make recomp-check`.
+
 ## 2026-10-16 — APK 0.9: la capa PsyQ funcionando en el dispositivo
 
 Version de prueba con una demo (R3, o L2 + R2 + A) en la que todo sale de `psx/`:
