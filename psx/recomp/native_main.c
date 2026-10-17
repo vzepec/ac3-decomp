@@ -132,7 +132,7 @@ int main(int argc, char **argv) {
     memcpy(psx_ram + 0x10000, ace, n);
     psx_gte_tables_init(ace, n);
     if (psx_cd_open(argv[1])) { puts("no se abre la imagen"); return 1; }
-    psx_pad_connect(0, 0x41);
+    psx_pad_connect(0, getenv("AC3_PAD_ID") ? (int)strtol(getenv("AC3_PAD_ID"), NULL, 16) : 0x41);   /* 73 = analogico */
     psx_pad_connect(1, 0);
     psx_card_attach(0, "/tmp/ac3_native_tarjeta1.mcd");
     psx_card_detach(1);
