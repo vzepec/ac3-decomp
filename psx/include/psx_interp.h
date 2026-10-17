@@ -41,7 +41,7 @@ void psx_interp_threads(int n, void (*on_start)(void));
  * hilos, pasos sin intermedias porque los hilos no habian terminado; ms por paso en el hilo del
  * juego (emparejar, instantanea, dibujo real) y ms por trabajo en cada hilo de dibujo */
 typedef struct {
-    int steps, jobs, skipped, nfrac, threads;
+    int steps, jobs, skipped, unpaired, nfrac, threads;   /* unpaired: pasos sin bastantes parejas */
     double pair_ms, snap_ms, real_ms, worker_ms, worker_max_ms;
 } PsxInterpPerf;
 void psx_interp_perf(PsxInterpPerf *p, int reset);

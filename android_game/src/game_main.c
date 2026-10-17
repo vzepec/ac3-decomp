@@ -89,7 +89,7 @@ static struct {
     volatile int interp_enabled;
     uint32_t show[640 * 512];        /* copia de lo que se presenta (fuera del cerrojo) */
     /* cifras del contador, publicadas por el hilo del juego cada segundo */
-    volatile int st_cpu, st_nfrac, st_core, st_skip, st_steps;
+    volatile int st_cpu, st_nfrac, st_core, st_skip, st_steps, st_unpaired;
     volatile float st_worker_ms, st_real_ms;
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
@@ -141,10 +141,13 @@ static void frame_wait(void) {
         double avg = sleep_sum / sleep_n * 1000;   /* ms dormidos por VBlank de 20 ms */
         PsxInterpPerf p;
         psx_interp_perf(&p, 1);
+        /* subir solo tras 5 ventanas seguidas holgadas: cada cambio altera la cadencia */
+        static int good;
         int want = g_nfrac;
-        if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1;
-        else if (avg < 3) want = g_nfrac - 1;
-        else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) want = g_nfrac + 1;
+        if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
+        else if (avg < 3) want = g_nfrac - 1, good = 0;
+        else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) { if (++good >= 5) want = g_nfrac + 1, good = 0; }
+        else good = 0;
         want = want < 1 ? 1 : want > 3 ? 3 : want;
         if (want != g_nfrac && G.interp_enabled) {
             g_nfrac = want;
@@ -157,6 +160,7 @@ static void frame_wait(void) {
         G.st_core = sched_getcpu();
         G.st_skip = p.skipped;
         G.st_steps = p.steps;
+        G.st_unpaired = p.unpaired;
         G.st_worker_ms = (float)p.worker_ms;
         G.st_real_ms = (float)(p.pair_ms + p.snap_ms + p.real_ms);
         sleep_sum = 0;
@@ -532,9 +536,9 @@ void android_main(struct android_app *app) {
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%", G.st_nfrac, G.st_cpu);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%", G.st_cpu);
             if (G.running)
-                LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d), "
+                LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, cada hilo de dibujo %.1f", c_fps, c_vel, G.st_nfrac, G.st_cpu, G.st_core,
-                    G.st_steps, G.st_skip, G.st_real_ms, G.st_worker_ms);
+                    G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms);
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
         if (sw && sh) {
