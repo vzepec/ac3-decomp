@@ -618,3 +618,93 @@ paréntesis, el mejor vecino real):**
   ~60° coloca mal la silueta del terreno. Es el límite de la interpolación
   2D: quedan caras de ladera oscuras donde la imagen real del medio ya
   muestra cielo.
+
+### Paso 9: radar, mapa y temblor del terreno (APK 1.5-alfa)
+
+**Informe de la Retroid (1.4-alfa):**
+- 7 capturas y un vídeo de la primera misión, guardados en la carpeta
+  `imagenes bugs/`, que no se versiona.
+- Defectos visibles:
+  - al radar le falta una cuña;
+  - bloques del mapa grande (botón X de la Retroid = cuadrado) desplazados;
+  - franjas y puntos oscuros en el horizonte y en la silueta de la costa;
+  - temblor del terreno en giros del avión o de la cámara (palanca
+    derecha).
+
+**Herramientas:**
+- **El guion de `native_main` acepta palancas** (`lizq`, `lder`, `larr`,
+  `laba`, `rizq`, `rder`, `rarr`, `raba`), con `AC3_PAD_ID=73`. Así se
+  reproduce el giro de cámara de la Retroid.
+- **Nueva medida, `tools/interp_dark.py`:** píxeles de la intermedia más de
+  60 niveles más oscuros que en las dos reales.
+- **Depuración, `PSX_INTERP_DBG2`:** una línea por paso con las coordenadas
+  reconocidas, emparejadas, arrastradas y quietas, y si hay movimiento
+  global.
+- **Vídeo de la Retroid:** se analizó con un buscador automático de
+  parpadeos, es decir, imágenes que se apartan de su anterior y de su
+  siguiente más de lo que esas dos se apartan entre sí. Se usó el ffmpeg de
+  `imageio-ffmpeg`, instalado en un entorno aislado dentro de la carpeta
+  temporal.
+
+**Hallazgos:**
+1. **El HUD, el radar y el mapa también usan la GTE**, porque giran, pero se
+   dibujan con otro desplazamiento de dibujo (0,256) o en su propia área.
+   - Volcado de un paso: 94 coordenadas de la GTE en el espacio del HUD y 9
+     en la textura del radar (320,256).
+   - Se interpolaban como si fueran escena 3D y sus vértices falseaban el
+     movimiento global.
+2. **El movimiento global fallaba en uno de cada dos pasos** (`PSX_INTERP_DBG2`
+   en el guion de la misión: modelo 1/0 alternando).
+   - En esos pasos, ~160 coordenadas del terreno (12 %) quedaban quietas
+     mientras el resto se movía: un parpadeo del terreno a 12,5 Hz.
+   - **Causa:** solo se ajustaba con claves únicas. Contando solo el espacio
+     3D, únicas en los dos pasos quedan 15, menos del mínimo de 24, porque el
+     terreno repite coordenadas.
+3. **Giros de cámara con la palanca derecha:**
+   - El terreno se desplaza más de 128 px por paso y lo único emparejado es
+     el avión propio.
+   - Se pasaba el control de calidad, pero el terreno quedaba mitad movido y
+     mitad quieto: grietas por las que se ve el cielo (caso 3992 del guion de
+     estrés).
+
+**Cambios** (`psx/src/interp.c`):
+- **Espacio 3D:** es el espacio de dibujo (desplazamiento E5 + origen del área
+  E3) con más coordenadas de la GTE. Solo él se interpola. El HUD, el radar y
+  el mapa quedan como en la imagen real.
+- **Unicidad y referencias:** se cuentan solo con vértices del espacio 3D, y
+  el paso anterior guarda solo esos.
+- **Movimiento global en dos ajustes** (`fit_affine`):
+  - antes de emparejar, con claves únicas (mínimo 12);
+  - después, con todas las parejas 3D, descartando las que se apartan más de
+    6 px (mínimo 24).
+  - El segundo es el que mueve lo que queda sin pareja y el fondo.
+- **Paso sin intermedias** si más del 3 % de las coordenadas 3D no se pueden
+  mover.
+
+**Validación:**
+
+| Prueba | Medida | 1.3/1.4 | 1.5 |
+|---|---|---|---|
+| Verdad conocida, guion de la misión, S=1 | PSNR | 28,47 dB (393 casos) | 28,39 dB (398 casos) |
+| Verdad conocida, guion de estrés con palancas | PSNR | 26,72 dB (289 casos) | 27,06 dB (308 casos) |
+| Velocidad real, alabeo | px oscuros por intermedia | 16,0 (peor 181) | 0,2 (peor 11) |
+| Mapa abierto en giro | diferencia media frente a la real | 1,87 | 1,23 |
+
+- **Verdad conocida, S=1:** el mejor vecino real da 27,50 dB. Con el guion de
+  estrés da 25,47 dB en la 1.5.
+- **Alabeo:** el peor caso de la 1.4 era el indicador de velocidad del HUD
+  deformado.
+- **Mapa:** los bloques corridos desaparecen.
+- **Caso 3992:** sin grietas.
+- Con hilos y sin ellos: 47 de 47 capturas idénticas.
+- Emparejar cuesta 0,3 ms por paso.
+- `make psx-check` sin fallos.
+
+**SIN RESOLVER:**
+- Los puntos oscuros en la silueta de la costa del vídeo no se reprodujeron
+  igual en el PC, donde la escena tiene bosque y no mar.
+- Los giros de cámara muy bruscos siguen siendo un límite de la interpolación
+  en línea recta:
+  - la cámara cambia de velocidad dentro del paso;
+  - los saltos de más de 128 px no se interpolan: ese paso va sin
+    intermedias, con un tirón a 25 fps.
