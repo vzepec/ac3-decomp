@@ -841,3 +841,39 @@ EU en el aparato. Al elegir el disco, la US comprueba que contiene
 - `tools/recomp/record.py` y `boot.py` (comparador con estados reales en el
   intérprete) siguen siendo solo EU.
 - Los nombres propios de `tools/ghidra/names.tsv` (EU) no se aplican a la US.
+
+### APK universal (1.6-alfa)
+
+Una sola app para los discos europeo y americano. Petición del dueño tras
+probar la 1.5 de cada versión; según él, la americana va más estable y con
+menos artefactos.
+
+- **Tabla por versión** (`android_game/src/ac3_regions.h`): dirección de
+  `ac3_main`, `gp`, BSS, overlays, librería, refresco, código traducido,
+  tablas de HLE, firmas de overlays, `ACE.BIN` y ejecutable de arranque del
+  disco.
+  - `regions.c` se compila una vez por versión. La americana toma sus
+    valores de `data/recomp_us/ac3_region.h` (`tools/recomp/region.py`).
+- **Elección:** `game_main.c` (`disc_region`) busca en el disco abierto el
+  ejecutable de arranque de cada versión que lleva el APK (`SCES_020.66`,
+  `SLUS_009.72`). El refresco (50/60 Hz) y las muestras de audio por VBlank
+  (882/735) pasan a ser variables.
+- **Símbolos:** las funciones traducidas se llaman por su dirección
+  (`f_<direccion>`) y las tablas tienen el mismo nombre en las dos versiones.
+  `build.sh` renombra todos los símbolos definidos en los objetos americanos
+  con el sufijo `_us` (`llvm-nm` + `llvm-objcopy --redefine-syms`), y el
+  cambio alcanza también las referencias entre ellos.
+- **`build.sh`:**
+  - `REGION=all`, el valor por defecto, genera el universal,
+    `ac3game-<version>.apk`, paquete `com.vzepec.ac3game`.
+  - `REGION=eu` y `REGION=us` generan las versiones sueltas con paquete propio
+    (`.eu`, `.us`).
+
+**Comprobado:**
+- Enlaza sin símbolos duplicados.
+- La biblioteca define `ac3_region_eu` y `ac3_region_us`, con 4.077
+  funciones `f_` entre las dos versiones.
+- Lo único sin resolver son las bibliotecas del sistema.
+- Las tres variantes se generan: universal de 7,0 MB y sueltas de 3,6 MB.
+
+**SIN RESOLVER:** la prueba en la Retroid con los dos discos.

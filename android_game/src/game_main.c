@@ -52,32 +52,11 @@
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "AC3Game", __VA_ARGS__)
 
-/* direcciones de la version: por defecto las del ACE.BIN europeo; la US las trae en la cabecera
- * que genera tools/recomp/region.py (build.sh REGION=us: -include data/recomp_us/ac3_region.h) */
-#ifndef AC3_MAIN
-#define AC3_MAIN 0x80025D08u
-#define AC3_GP 0x800BA9F4u
-#define AC3_BSS_START 0x800BACB0u
-#define AC3_BSS_END 0x800C9DC0u
-#define AC3_OVL_BASE 0x800C9DC0u
-#define AC3_LIB_LO 0x80099DE0u
-#define AC3_LIB_HI 0x800AE09Cu
-#define AC3_LIB_MAIN 0x80025214u
-#define AC3_REFRESH 50
-#define AC3_RC_FUNCS rc_funcs_ace_eu
-#define AC3_RC_NFUNCS rc_nfuncs_ace_eu
-#endif
-#define AC3_SPF (44100 / AC3_REFRESH)   /* muestras de audio por VBlank: 882 (PAL), 735 (NTSC) */
-
-extern const RcFunc AC3_RC_FUNCS[], rc_funcs_overlay1[], rc_funcs_overlay2[], rc_funcs_overlay3[],
-    rc_funcs_overlay4[], rc_funcs_overlay5[];
-extern const unsigned AC3_RC_NFUNCS, rc_nfuncs_overlay1, rc_nfuncs_overlay2, rc_nfuncs_overlay3,
-    rc_nfuncs_overlay4, rc_nfuncs_overlay5;
-extern const RcFunc hle_table[];
-extern const unsigned hle_count;
-extern const uint8_t ovl_sig[5][64];
-extern const uint8_t ace_image[];
-extern const unsigned ace_image_len;
+/* la version del juego (europea o americana): la elige el disco (disc_region); el APK
+ * universal lleva las dos (ac3_regions.h, regions.c) */
+#include "ac3_regions.h"
+static const Ac3Region *R;
+static int g_refresh = 50, g_spf = 882;   /* VBlank por segundo; muestras de audio por VBlank */
 void rc_register(const RcFunc *funcs, unsigned n);
 void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
 
@@ -142,7 +121,7 @@ static void frame_wait(void) {
     double t = now();
     while (G.paused && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
-    next += 1.0 / AC3_REFRESH;
+    next += 1.0 / g_refresh;
     double slack = next - t;
     if (slack > 0) usleep((useconds_t)(slack * 1e6));
     /* cada 50 VBlank: uso del hilo del juego y numero de intermedias adaptativo. Se baja si los
@@ -152,7 +131,7 @@ static void frame_wait(void) {
     static int sleep_n;
     sleep_sum += slack > 0 ? slack : 0;
     if (win_t0 == 0) win_t0 = t;
-    if (++sleep_n == AC3_REFRESH) {
+    if (++sleep_n == g_refresh) {
         double tn = now(), span = tn - win_t0;
         double avg = sleep_sum / sleep_n * 1000;   /* ms dormidos por VBlank de 20 ms */
         PsxInterpPerf p;
@@ -184,15 +163,15 @@ static void frame_wait(void) {
         win_t0 = tn;
     }
     /* audio de este fotograma; si AAudio va atrasado (anillo casi lleno) no se acumula */
-    static int16_t pcm[AC3_SPF * 2];
-    psx_spu_render(psx_spu(), pcm, AC3_SPF);
+    static int16_t pcm[882 * 2];   /* el mayor: 882 (PAL); 735 en NTSC */
+    psx_spu_render(psx_spu(), pcm, g_spf);
     uint32_t wpos = G.ring_w;
-    if (wpos - G.ring_r <= 16384 - AC3_SPF) {
-        for (int i = 0; i < AC3_SPF; i++) {
+    if (wpos - G.ring_r <= 16384 - (uint32_t)g_spf) {
+        for (int i = 0; i < g_spf; i++) {
             G.ring[((wpos + i) & 16383) * 2] = pcm[i * 2];
             G.ring[((wpos + i) & 16383) * 2 + 1] = pcm[i * 2 + 1];
         }
-        __atomic_store_n(&G.ring_w, wpos + AC3_SPF, __ATOMIC_RELEASE);
+        __atomic_store_n(&G.ring_w, wpos + (uint32_t)g_spf, __ATOMIC_RELEASE);
     }
     /* L3+R3 cambia G.interp_enabled en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1;
@@ -215,7 +194,7 @@ static void tick(void) { psx_vblank(); }
  * intermedias): hora de salida = hora del paso + fase */
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step) {
     if (w * h > 640 * 512) return;
-    double due = t_step + (double)num / den * vb / (double)AC3_REFRESH;
+    double due = t_step + (double)num / den * vb / (double)g_refresh;
     pthread_mutex_lock(&G.lock);
     int k = 0;   /* la ranura libre o la mas antigua */
     for (int i = 0; i < 8; i++) {
@@ -253,23 +232,20 @@ static void pin_fast_cores(void) {
 
 static void *game_thread(void *arg) {
     (void)arg;
-    memcpy(psx_ram + 0x10000, ace_image, ace_image_len);
-    psx_gte_tables_init(ace_image, ace_image_len);
+    LOG("version %s (%d Hz)", R->name, R->refresh);
+    memcpy(psx_ram + 0x10000, R->image, *R->image_len);
+    psx_gte_tables_init(R->image, *R->image_len);
     psx_pad_connect(0, 0x73);   /* analogico: los sticks de la Retroid */
     psx_pad_connect(1, 0);
     psx_card_attach(0, G.card_path);
     psx_card_detach(1);
-    psx_set_refresh(AC3_REFRESH);
+    psx_set_refresh(R->refresh);
     psx_audio_connect();        /* audio XA del CD -> entrada de CD de la SPU */
-    rc_set_region(AC3_OVL_BASE, AC3_LIB_LO, AC3_LIB_HI, AC3_LIB_MAIN, AC3_GP);
-    rc_register(AC3_RC_FUNCS, AC3_RC_NFUNCS);
-    rc_register_overlay(1, rc_funcs_overlay1, rc_nfuncs_overlay1);
-    rc_register_overlay(2, rc_funcs_overlay2, rc_nfuncs_overlay2);
-    rc_register_overlay(3, rc_funcs_overlay3, rc_nfuncs_overlay3);
-    rc_register_overlay(4, rc_funcs_overlay4, rc_nfuncs_overlay4);
-    rc_register_overlay(5, rc_funcs_overlay5, rc_nfuncs_overlay5);
-    rc_set_overlay_sigs(ovl_sig, 5);
-    rc_set_hle(hle_table, hle_count);
+    rc_set_region(R->ovl_base, R->lib_lo, R->lib_hi, R->lib_main, R->gp);
+    rc_register(R->funcs, *R->nfuncs);
+    for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
+    rc_set_overlay_sigs(R->sig, 5);
+    rc_set_hle(R->hle, *R->nhle);
     rc_gte = (PsxGte *)psx_gte_get_context();
     psx_set_call(rc_host_callback);
     psx_set_frame_wait(frame_wait);
@@ -277,15 +253,15 @@ static void *game_thread(void *arg) {
     psx_interp_config(g_nfrac, 2, interp_sink);   /* luego se ajusta solo (frame_wait) */
     psx_interp_threads(3, pin_fast_cores);
     rc_set_tick(tick, BUDGET_PER_FRAME);
-    memset(psx_ram + (AC3_BSS_START & 0x1FFFFFu), 0, AC3_BSS_END - AC3_BSS_START);   /* BSS, como ac3_start */
+    memset(psx_ram + (R->bss_start & 0x1FFFFFu), 0, R->bss_end - R->bss_start);   /* BSS, como ac3_start */
     RCpu c;
     memset(&c, 0, sizeof c);
-    c.r[28] = AC3_GP;
+    c.r[28] = R->gp;
     c.r[29] = 0x801FFF00u;
     c.r[31] = 0x8000FFF0u;
     rc_ret = c.r[31];
     LOG("arranca ac3_main");
-    rc_call(&c, AC3_MAIN);   /* no vuelve */
+    rc_call(&c, R->main);   /* no vuelve */
     LOG("ac3_main ha vuelto");
     return NULL;
 }
@@ -488,19 +464,16 @@ static uint32_t frame_hash(const uint32_t *img, int w, int h) {
     return x ^ (uint32_t)(w * 4099 + h);
 }
 
-/* el disco elegido es de la version de la compilacion: lleva su ejecutable de arranque
- * (AC3_BOOT_EXE, de SYSTEM.CNF; lo pone region.py --disc). Sin la macro (EU), no se comprueba */
-static int disc_matches(void) {
-#ifdef AC3_BOOT_EXE
-    CdlFILE f;
-    return CdSearchFile(&f, AC3_BOOT_EXE) != NULL;
-#else
-    return 1;
-#endif
+/* la version del disco elegido, por su ejecutable de arranque (SYSTEM.CNF), entre las que lleva
+ * el APK; NULL si no es ninguna */
+static const Ac3Region *disc_region(void) {
+    const Ac3Region *all[2] = {&ac3_region_eu, &ac3_region_us};
+    for (int i = 0; i < 2; i++) {
+        CdlFILE f;
+        if (all[i] && CdSearchFile(&f, (char *)all[i]->boot_exe)) return all[i];
+    }
+    return NULL;
 }
-#ifndef AC3_BOOT_EXE
-#define AC3_BOOT_EXE "(sin comprobar)"
-#endif
 
 /* MainActivity.pickDisc() desde el hilo principal */
 static void ask_disc(void) {
@@ -533,13 +506,16 @@ void android_main(struct android_app *app) {
         int fd = __atomic_exchange_n(&G.disc_fd, -1, __ATOMIC_SEQ_CST);
         if (fd >= 0 && !G.running) {
             int ok = psx_cd_open_fd(fd) == 0;
-            if (ok && !disc_matches()) {
-                /* imagen de otra version (el ACE.BIN incrustado es de la region de la
-                 * compilacion): se descarta y se vuelve a pedir */
+            if (ok) R = disc_region();
+            if (ok && !R) {
+                /* ningun ejecutable de las versiones que lleva el APK: se pide otro disco */
                 psx_cd_close();
-                LOG("el disco no es de esta version (falta %s): se pide otro", AC3_BOOT_EXE);
+                LOG("el disco no es de ninguna version de este APK (%s%s): se pide otro", &ac3_region_eu ? "EU " : "",
+                    &ac3_region_us ? "US" : "");
                 ask_disc();
             } else if (ok) {
+                g_refresh = R->refresh;
+                g_spf = 44100 / g_refresh;
                 G.running = 1;
                 audio_start();
                 pthread_attr_t at;   /* pila grande: el codigo traducido anida mucho */
@@ -582,7 +558,7 @@ void android_main(struct android_app *app) {
         if (t - c_t0 >= 1.0) {
             uint32_t vb = (uint32_t)VSync(-1);
             c_fps = (int)lrint(c_new / (t - c_t0));
-            c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / AC3_REFRESH);   /* % de 50 (o 60) VBlank/s */
+            c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%", G.st_nfrac, G.st_cpu);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%", G.st_cpu);

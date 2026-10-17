@@ -5,6 +5,29 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — APK universal EU + US (1.6-alfa)
+
+**Fusión:** `etapa-6-rom-us` (subagente) entra en `etapa-6`.
+- El dueño probó en la Retroid el APK americano 1.5: va más estable y con
+  menos artefactos que el europeo. **SIN RESOLVER:** por qué. Hipótesis: 30
+  pasos/s frente a 25, con desplazamientos menores por paso.
+
+**APK universal:** una app con las dos versiones, elegida por el ejecutable
+de arranque del disco.
+- Tablas por versión en `android_game/src/regions.c`.
+- Símbolos americanos con sufijo `_us` (`llvm-objcopy --redefine-syms`).
+
+**Comprobado:** enlaza sin duplicados, define las dos tablas (4.077 funciones
+`f_`) y genera las tres variantes (`REGION=all|eu|us`). Falta probarlo en la
+Retroid.
+
+**Release en GitHub:** no se adjuntan APK, porque llevan código traducido y
+el `ACE.BIN` de Namco (docs/06-legal.md). El dueño decidió esperar a un APK
+distribuible.
+
+**Reproducir:** `make native`, `make us-prep ghidra-us native-us` y
+`android_game/build.sh`.
+
 ## 2026-10-17 — La versión americana, recompilada y en vuelo (rama `etapa-6-rom-us`)
 
 **Problema:** las herramientas de la etapa 6 llevaban escritas las direcciones

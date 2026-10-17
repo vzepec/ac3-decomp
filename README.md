@@ -17,7 +17,7 @@ Se regenera con `make progress`. Plan en
 de compatibilidad PsyQ en `psx/`). **Etapa 6 en curso:** el juego nativo por
 recompilación estática. **Compatible con los discos europeo (SCES-02066) y
 americano (SLUS-00972):** las dos versiones se recompilan, arrancan en el PC
-hasta la primera misión y generan su APK personal para Android, con imágenes
+hasta la primera misión y van en un APK personal universal para Android, con imágenes
 intermedias a 60 fps en la misión. El código recompilado y los APK se generan
 desde el disco del usuario y **no se distribuyen** (llevan código de Namco).
 
@@ -28,9 +28,8 @@ Android (ver [`android_game/README.md`](android_game/README.md)).
 
 ```bash
 make native                          # europea: recompila y prueba en el PC
-sh android_game/build.sh             # -> data/android/ac3game-<version>.apk
 make us-prep ghidra-us native-us     # americana
-REGION=us sh android_game/build.sh   # -> data/android/ac3game-<version>-us.apk
+sh android_game/build.sh             # APK universal (los dos discos) -> data/android/ac3game-<version>.apk
 ```
 
 - 👉 **Agentes de IA: empezad por [`CLAUDE.md`](CLAUDE.md)** (bootstrap) y

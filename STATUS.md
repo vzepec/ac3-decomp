@@ -13,8 +13,9 @@
 
 **Compatible con los discos europeo y americano.** Los dos se recompilan
 (0 funciones distintas del original), arrancan en el PC hasta la primera
-misión y tienen su APK personal (`ac3game-1.5-alfa.apk` y
-`ac3game-1.5-alfa-us.apk`), probados en la Retroid. Según el dueño, la
+misión y tienen APK personal: en la 1.5, una app por versión, probadas en la
+Retroid; desde la 1.6, el universal `ac3game-1.6-alfa.apk`, con las dos
+versiones y la del disco elegida al abrirlo (sin probar aún en la Retroid). Según el dueño, la
 americana va más estable y con muchos menos artefactos que la europea.
 
 ## Hecho
@@ -78,9 +79,8 @@ por paso, y la europea tiene más pasos al límite del emparejamiento. Medirlo
 con el guion de estrés en las dos.
 
 Pendiente:
-1. **APK universal** (una sola app para los dos discos, elegido por el
-   ejecutable `SCES_020.66` / `SLUS_009.72`), si el dueño lo quiere. Seguiría
-   siendo de uso personal.
+1. **Probar el APK universal 1.6-alfa** con los dos discos: que elija la
+   versión correcta y que la US vaya a 60 Hz (`VEL` 100 %).
 2. **APK distribuible sin nada de Namco**, que lea el disco del usuario y
    genere o interprete el código en el aparato. Es el único que se puede
    publicar (docs/06-legal.md).
@@ -97,10 +97,10 @@ Hecho en la etapa 6:
 - paso 1, capa completa (152/152);
 - paso 2, salida de vídeo;
 - paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas);
-- pasos 4-9: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
+- pasos 4-9 y APK universal: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
   intermedias en hilos aparte y contador; 1.3 sin titileo en pasos sin
   parejas; 1.4 terreno lejano en giros rápidos; 1.5 radar, mapa y temblor
-  del terreno);
+  del terreno; 1.6 universal EU + US);
 - versión americana: perfil de direcciones (`tools/recomp/region.py`), 1.671/1.824
   funciones validadas y 0 distintas, nativa en el PC hasta la primera misión en
   vuelo (`make native-us`) y APK `-us` (sin probar en la Retroid).
