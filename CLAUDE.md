@@ -42,6 +42,9 @@ que **no** hay que repetir.
    `data/` desde el disco del usuario y nunca entra en git ni en un APK
    distribuido.** La rebanada de `android/` sigue sin datos del juego.
    Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
+   **Dentro de la etapa 6, una rama por paso** (`etapa-6-paso-N`), que se fusiona
+   en la rama común `etapa-6`. Al cerrar un paso, `make progress` actualiza la
+   infografía del README.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.
 

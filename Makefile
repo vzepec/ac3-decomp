@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -32,6 +32,7 @@ help:
 	@echo "make psx-check  - etapa 5: pruebas de la GTE y comparacion de psx/ con ACE.BIN (oraculo MIPS)"
 	@echo "make psyq-api   - etapa 5: API PsyQ que usa el juego"
 	@echo "make psx-scene  - etapa 5: terreno de la mision 6 dibujado con la capa PsyQ (GTE + GPU)"
+	@echo "make progress   - etapa 6: recalcula docs/progreso.json y la infografia del README"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -149,3 +150,6 @@ psx-scene:
 	@cc -O2 -Wall -Ipsx/include -Iandroid/src psx/test/test_scene.c psx/src/*.c android/src/ace.c -lm -o psx/build/test_scene
 	@psx/build/test_scene "$(EU)" 6 data/psx_scene.ppm 14000 -2200 -14000 3584 -360
 	@echo "imagen: data/psx_scene.ppm"
+
+progress:
+	@$(PY) tools/progress.py count "$(GHIDRA)"

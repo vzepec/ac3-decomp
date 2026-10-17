@@ -46,6 +46,18 @@ distribuido (`docs/06-legal.md`).
   adelante.
 - El APK de la rebanada (`android/`) sigue sin llevar nada del juego.
 
+## Ramas y seguimiento
+
+- Cada paso en su rama: `etapa-6-paso-N`, creada desde `etapa-6` y fusionada
+  en ella al terminar el paso. `etapa-6` se integra en `develop`.
+- `make progress` (`tools/progress.py`) recalcula `docs/progreso.json` (solo
+  números) y la infografía `docs/img/progreso.svg` del README:
+  - funciones propias recompiladas y validadas, sobre 1.820: residente 1.236,
+    overlays 144 / 401 / 21 / 10 / 8;
+  - funciones de Sony cubiertas por la capa;
+  - pasos de la etapa;
+  - recorrido 1:1.
+
 ## Plan
 
 | Paso | Qué | Estado |

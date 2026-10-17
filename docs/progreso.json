@@ -1,0 +1,46 @@
+{
+ "funciones": {
+  "residente": 1236,
+  "overlay 1": 144,
+  "overlay 2": 401,
+  "overlay 3": 21,
+  "overlay 4": 10,
+  "overlay 5": 8
+ },
+ "recompiladas": {
+  "residente": 0,
+  "overlay 1": 0,
+  "overlay 2": 0,
+  "overlay 3": 0,
+  "overlay 4": 0,
+  "overlay 5": 0
+ },
+ "capa": {
+  "necesarias": 127,
+  "hechas": 115,
+  "faltan": [
+   "DecDCTReset",
+   "DecDCTin",
+   "DecDCTout",
+   "DecDCToutCallback",
+   "DecDCToutSync",
+   "DecDCTvlc2",
+   "DecDCTvlcBuild",
+   "DecDCTvlcSize2",
+   "InitCARD",
+   "StartCARD",
+   "StopCARD",
+   "_bu_init"
+  ]
+ },
+ "pasos": {
+  "total": 8,
+  "hechos": 0,
+  "actual": "Paso 1: completar la capa"
+ },
+ "recorrido": {
+  "total": 46,
+  "validadas": 0,
+  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final"
+ }
+}
