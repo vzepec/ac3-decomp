@@ -5,6 +5,26 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Titileo: los pasos sin intermedias no llegaban a la pantalla (APK 1.3-alfa)
+
+**Informe:** en la Retroid, la 1.2-alfa va a 60 FPS (VEL 100 %, INT 3, CPU
+15 %). En pruebas de estrés (giros, mapa) aparecen artefactos y titileo.
+
+**Causa:** un paso con pocas parejas, o el primero tras cada ajuste del
+número de intermedias, no entregaba su imagen a la cola. La pantalla mostraba
+la vieja y a los 0,15 s cambiaba de vía, de ahí la alternancia.
+
+**Medida:** 5 de 480 pasos con el guion de la misión (`make native` con
+`AC3_INTERP=3`; línea "sin bastantes parejas").
+
+**Arreglo:** esos pasos entregan la imagen real. El número de intermedias
+sube con más histéresis.
+
+**Corrección del paso 5:** la prueba de verdad conocida da 28,34 dB en 393
+casos, frente a 27,27 y 27,57 dB de los vecinos. Es igual con el binario de
+`5fac7bc` compilado de nuevo. Las cifras anotadas antes (28,7 dB y 390 casos)
+venían de un binario anterior.
+
 ## 2026-10-17 — Intermedias en hilos aparte y contador de FPS (APK 1.2-alfa)
 
 **Problema:** en la Retroid, la 1.1-alfa con intermedias bajaba a ~5-10

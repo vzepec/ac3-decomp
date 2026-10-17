@@ -473,3 +473,48 @@ el guion de la misión, con y sin `AC3_INTERP_THREADS=3`):
   pruebas.
 
 **SIN RESOLVER:** las cifras reales de la Retroid. Las dirá el contador.
+
+### Paso 7: titileo en pasos sin intermedias (APK 1.3-alfa)
+
+**Informe de la Retroid con la 1.2-alfa:**
+- En vuelo normal: 60 FPS, VEL 100 %, INT 3, CPU 15 %.
+- En pruebas de estrés (giros rápidos, muchos objetos, mapa en pantalla):
+  artefactos, titileo y pérdida de estabilidad.
+
+**Defecto encontrado en el código:**
+- Si un paso no reúne bastantes parejas (menos de ¼ de las coordenadas
+  reconocidas), `psx_interp_draw` devolvía 0. También pasaba en el primer
+  paso tras cada `psx_interp_config`, es decir, cada vez que el número de
+  intermedias se adapta.
+- En ese caso el juego dibujaba el paso por su cuenta, pero la imagen **no
+  llegaba a la cola** de la pantalla.
+- La pantalla seguía mostrando la imagen del paso anterior y, a los 0,15 s
+  sin imágenes nuevas, saltaba a la otra vía, la del área visible.
+- Resultado: imagen congelada y alternancia entre imágenes viejas y nuevas.
+- **Medido:** con el guion de la misión, 5 de 480 pasos caen en este caso
+  (`make native` con `AC3_INTERP=3`, línea "interpolacion: ... sin bastantes
+  parejas"). Es previsible que en los giros bruscos y al abrir el mapa sean
+  muchos más.
+
+**Arreglo:**
+- Esos pasos también entregan su imagen real al sumidero, con la misma hora
+  de salida que una real normal.
+- El número de intermedias solo sube tras 5 ventanas seguidas con holgura,
+  porque cada cambio altera la cadencia.
+- Logcat añade "sin parejas" por segundo.
+
+**Validación:**
+- Con hilos y sin ellos: 16 de 16 capturas idénticas.
+- Prueba de verdad conocida sin cambios: 28,34 dB en 393 casos, igual que el
+  binario del paso 5 (`5fac7bc`) compilado de nuevo.
+  - **Corrección:** las cifras que se anotaron en el paso 5 (28,7 dB, 390
+    casos) venían de un binario anterior. Con el guion de la misión y el
+    binario de `5fac7bc`, la prueba da 28,34 dB frente a 27,27 y 27,57 dB de
+    los vecinos.
+
+**SIN RESOLVER:**
+- **Artefactos por emparejamiento en giros muy rápidos:** saltos de más de 48
+  px por paso no se interpolan, y los vértices repetidos pueden emparejarse
+  mal. No se pudo reproducir en el PC sin el mando real.
+- **Sprites colocados por la CPU:** las llamas de los motores y las
+  explosiones saltan al ritmo de 25.

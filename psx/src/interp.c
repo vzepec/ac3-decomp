@@ -187,7 +187,7 @@ static struct {
     PsxInterpSink sink;
     /* rendimiento */
     double worker_s, worker_max;
-    int jobs, skipped, steps;
+    int jobs, skipped, steps, unpaired;
     double pair_s, snap_s, real_s;
 } J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER};
 
@@ -251,12 +251,12 @@ void psx_interp_threads(int n, void (*on_start)(void)) {
 
 void psx_interp_perf(PsxInterpPerf *p, int reset) {
     pthread_mutex_lock(&J.mu);
-    p->steps = J.steps; p->jobs = J.jobs; p->skipped = J.skipped; p->nfrac = g_nfrac; p->threads = J.nthreads;
+    p->steps = J.steps; p->jobs = J.jobs; p->skipped = J.skipped; p->nfrac = g_nfrac; p->threads = J.nthreads; p->unpaired = J.unpaired;
     int n = J.steps ? J.steps : 1;
     p->pair_ms = J.pair_s * 1000 / n; p->snap_ms = J.snap_s * 1000 / n; p->real_ms = J.real_s * 1000 / n;
     p->worker_ms = J.jobs ? J.worker_s * 1000 / (J.jobs * (J.nthreads ? J.nthreads : 1)) : 0;
     p->worker_max_ms = J.worker_max * 1000;
-    if (reset) { J.steps = J.jobs = J.skipped = 0; J.pair_s = J.snap_s = J.real_s = J.worker_s = J.worker_max = 0; }
+    if (reset) { J.steps = J.jobs = J.skipped = J.unpaired = 0; J.pair_s = J.snap_s = J.real_s = J.worker_s = J.worker_max = 0; }
     pthread_mutex_unlock(&J.mu);
 }
 
@@ -409,7 +409,20 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     have_prev = 1;
     ncur = 0;
     occ_gen++;
-    if (!ok) return 0;
+    if (!ok) {
+        /* paso sin intermedias (pocas parejas: giro brusco, el mapa que aparece...): la imagen
+         * real tambien va al sumidero. Si no, la pantalla seguiria con la del paso anterior y,
+         * pasados 0,15 s, saltaria a la otra via: imagen congelada y titileo (Retroid, 1.2).
+         * Tambien el primer paso tras psx_interp_config (sin paso anterior) */
+        if (psx_interp_skip_test || !g_sink || interval < g_min_vb) return 0;
+        pthread_mutex_lock(&J.mu);
+        J.unpaired++;
+        pthread_mutex_unlock(&J.mu);
+        g_tstep = ta;
+        psx_gpu_draw_list(g, ot);
+        capture(g, 1, 1, interval);
+        return 1;
+    }
     g_tstep = ta;
     if (J.nthreads > 0) {   /* hilos de dibujo */
         double tb = tnow();
@@ -448,6 +461,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     }
     /* imagenes intermedias: la lista con las posiciones mezcladas, sobre una copia del estado */
     double tb = tnow(); tm_pair += tb - ta;
+    J.steps++;   /* sin hilos de dibujo: solo este hilo toca J */
     static PsxGpu saved;
     memcpy(&saved, g, sizeof saved);
     tm_copy += tnow() - tb;

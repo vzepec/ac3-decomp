@@ -263,6 +263,12 @@ int main(int argc, char **argv) {
     clock_t t0 = clock();
     if (!setjmp(stop)) rc_call(&c, AC3_MAIN);
     double dt = (double)(clock() - t0) / CLOCKS_PER_SEC;
+    if (getenv("AC3_INTERP")) {
+        PsxInterpPerf pf;
+        psx_interp_perf(&pf, 0);
+        printf("interpolacion: %d pasos con intermedias, %d sin bastantes parejas, %d saltados (hilos ocupados)\n",
+               pf.steps, pf.unpaired, pf.skipped);
+    }
     if (t_n) printf("prueba de interpolacion (%d casos): PSNR frente al paso intermedio real: interpolada %.2f dB, "
                     "anterior real %.2f dB, siguiente real %.2f dB; peor ganancia %.2f dB\n", t_n, t_sum_int / t_n,
                     t_sum_prev / t_n, t_sum_next / t_n, t_min_gain);
