@@ -72,6 +72,8 @@ DRAWENV *PutDrawEnv(DRAWENV *env);
 DISPENV *PutDispEnv(DISPENV *env);
 /* zona de la VRAM que se muestra (ultimo PutDispEnv) y si la pantalla esta activa */
 void psx_gpu_display(int *x, int *y, int *w, int *h, int *enabled);
+/* modo de la pantalla del ultimo PutDispEnv: 24 bits y entrelazado */
+void psx_gpu_display_mode(int *rgb24, int *interlaced);
 
 DRAWENV *SetDefDrawEnv(DRAWENV *env, int x, int y, int w, int h);
 DISPENV *SetDefDispEnv(DISPENV *env, int x, int y, int w, int h);

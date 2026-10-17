@@ -66,17 +66,20 @@ Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 
 ## Siguiente tarea concreta
 
-Etapa 6, paso 2 de `docs/11-etapa6.md` (rama `etapa-6-paso-2`): **salida de
-vídeo**.
-- El área visible de la VRAM (la de `PutDispEnv`) a pantalla con GLES, 1:1,
-  primero en el PC (EGL, como `android/test/test_render.c`) y después en
-  Android.
-- Modos de 15 y 24 bits (las películas usan 24 bits si el juego lo pide).
-- Prueba: `make psx-scene` mostrado en ventana o volcado igual píxel a píxel
-  a la VRAM.
+Etapa 6, paso 3 de `docs/11-etapa6.md` (rama `etapa-6-paso-3`): **el
+recompilador MIPS → C** (`tools/recomp/`).
+- Una función de C por función del juego (límites de Ghidra), con huecos de
+  retardo, saltos indirectos por un despachador de direcciones y las llamadas
+  a librería enlazadas con `psx/`.
+- Primero el residente; los 5 overlays, cada uno con su dirección de carga.
+- Validación función a función contra `tools/mipsemu.py` (mismas entradas,
+  misma RAM y registros a la salida).
+- El C generado va a `data/` y no entra en git; `make progress` cuenta las
+  funciones validadas.
 
-Paso 1 hecho: la capa cubre las 152 funciones de Sony que llama el juego
-(residente y overlays), todas validadas.
+Hecho en la etapa 6:
+- paso 1, capa completa (152/152);
+- paso 2, salida de vídeo (VRAM a RGBA y GLES, idéntica píxel a píxel).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;
