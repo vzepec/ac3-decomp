@@ -5,6 +5,29 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Los 25 fps son del juego, y su lógica va atada a las imágenes
+
+En la misión, el bucle principal (`ac3_main`) llama a `VSync(n)` con `n`
+leído de `[DAT_800bacb8]+0x14`. Vale 1 en los menús y 2 en la misión, lo que
+da **25 imágenes por segundo en PAL** (30 en NTSC).
+
+Con `PSX_FPSDBG=1` se miden los `DrawOTag` por cada 100 VBlank: 100 en los
+menús y 50 en la misión.
+
+Experimento con `PSX_VSYNC_MAX=1`, que hace esperar 1 VBlank por imagen:
+- La misión dibuja 100 imágenes cada 100 VBlank.
+- El reloj del HUD avanza 4 s por cada 2 s reales (00:07 → 00:27 frente a
+  00:02 → 00:12, en los fotogramas 3700 → 4200).
+- **La lógica avanza un paso por imagen.** El juego no usa el valor que
+  devuelve `VSync` como tiempo transcurrido.
+
+Consecuencia: para ver 60 fps sin acelerar el juego hay dos caminos:
+- **interpolar** imágenes intermedias entre dos pasos de lógica;
+- **partir el paso** de toda la lógica: física, IA, animaciones y relojes.
+
+Reproducir con `make native` (el binario de `data/recomp/native/`) y esas
+variables de entorno.
+
 ## 2026-10-17 — APK personal 1.0-alfa con el juego recompilado
 
 `android_game/build.sh` empaqueta el juego recompilado con la capa en una app

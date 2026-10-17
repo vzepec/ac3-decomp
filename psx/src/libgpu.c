@@ -122,7 +122,17 @@ uint32_t *ClearOTag(uint32_t *ot, int n) {
     return ot;
 }
 
-void DrawOTag(uint32_t *ot) { psx_gpu_draw_list(&g_gpu, psx_addr(ot)); }
+int VSync(int);
+void DrawOTag(uint32_t *ot) {
+    if (getenv("PSX_FPSDBG")) {   /* depuracion: imagenes dibujadas por segundo de VBlank */
+        static int n, v0 = -1;
+        int v = VSync(-1);
+        if (v0 < 0) v0 = v;
+        n++;
+        if (v - v0 >= 100) { fprintf(stderr, "fps: VBlank %d: %d DrawOTag en %d VBlank\n", v, n, v - v0); n = 0; v0 = v; }
+    }
+    psx_gpu_draw_list(&g_gpu, psx_addr(ot));
+}
 
 DRAWENV *PutDrawEnv(DRAWENV *env) {
     if (getenv("PSX_DISPDBG")) {
