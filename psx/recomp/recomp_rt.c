@@ -88,9 +88,17 @@ static void (*lookup(uint32_t addr))(RCpu *) {
 }
 
 
+/* interprete del codigo de la RAM (psx/recomp/mipsi.c, etapa 7): atiende las llamadas sin
+ * funcion traducida. Sin el, esas llamadas son un fallo (RC_NOFUNC), como hasta ahora */
+static void (*g_interp)(RCpu *, uint32_t);
+void rc_set_interpreter(void (*fn)(RCpu *, uint32_t)) { g_interp = fn; }
+int rc_is_lib(uint32_t a) { return (a >= g_lib_lo && a < g_lib_hi) || a == g_lib_main; }
+void (*rc_find(uint32_t addr))(RCpu *) { return g_nfuncs || g_cur_ovl || g_sigs ? lookup(addr) : 0; }
+
 void rc_call(RCpu *c, uint32_t addr) {
     void (*fn)(RCpu *) = lookup(addr);
     if (fn) { fn(c); c->r[0] = 0; return; }
+    if (g_interp && !rc_is_lib(addr)) { g_interp(c, addr); c->r[0] = 0; return; }
     if (g_libcall && ((addr >= g_lib_lo && addr < g_lib_hi) || addr == g_lib_main)) { g_libcall(c, addr); return; }
     rc_fault(RC_NOFUNC, 0, addr);
 }

@@ -143,5 +143,9 @@ void rc_set_tick(void (*fn)(void), int64_t every);             /* reloj: VBlank 
 void rc_vsync_hook(void);                                      /* el juego llamo a VSync */
 void rc_set_frame_hook(void (*fn)(void));                       /* aviso al host tras VSync */
 void rc_host_callback(uint32_t addr, uint32_t a0, uint32_t a1);  /* callbacks de la capa */
+/* etapa 7: interprete para las llamadas sin funcion traducida (mipsi_call de mipsi.c) */
+void rc_set_interpreter(void (*fn)(RCpu *, uint32_t));
+void mipsi_call(RCpu *c, uint32_t addr);
+extern uint64_t mipsi_steps;
 
 #endif

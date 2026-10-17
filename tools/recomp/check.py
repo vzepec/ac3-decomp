@@ -20,6 +20,9 @@ agotado en los dos lados). Los casos en que alguno agota el tiempo no cuentan.
 Uso:
     python3 tools/recomp/check.py data/exe/ace_eu.bin data/recomp [casos] [procesos] [funcion...]
     python3 tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay 1 data/exe/ovl/overlay1.exe [casos]
+Interprete en C (etapa 7): --interp psx/build/libmipsi.so ejecuta en B el interprete
+psx/recomp/mipsi.c (biblioteca sin codigo traducido: make mipsi) sobre las mismas entradas;
+escribe <binario>_check_interp.json.
 Otra version (US): --region data/recomp_us/region.json (tools/recomp/region.py) pone sus
 direcciones (libreria, codigo propio, overlays, $gp, estado del juego).
 Escribe data/recomp/<binario>_check.json y actualiza docs/progreso.json (recompiladas; solo la
@@ -43,6 +46,7 @@ ARENA_SIZE = 0x40000
 G_STATE_PTR, G_STATE = 0x800BACD0, 0x800BD158
 OWN_LO, OWN_HI, LIB_MAIN, OVL_LO, OVL_HI, GP = 0x800252CC, 0x80099DE0, 0x80025214, 0x800C9DC0, 0x800F9E18, GP_EU
 REGION = None
+INTERP = None   # --interp: biblioteca del interprete en C en vez de librecomp.so
 
 
 def apply_region(path):
@@ -77,13 +81,17 @@ class World:
         if region:
             apply_region(region)
         stem = os.path.splitext(os.path.basename(acebin))[0]
-        self.lib = lib = ctypes.CDLL(os.path.join(out_dir, 'librecomp.so'))
+        self.lib = lib = ctypes.CDLL(INTERP or os.path.join(out_dir, 'librecomp.so'))
         self.ram = (ctypes.c_uint8 * 0x200000).in_dll(lib, 'psx_ram')
         self.scr = (ctypes.c_uint8 * 0x400).in_dll(lib, 'psx_scratch')
-        funcs = (ctypes.c_uint8 * 8).in_dll(lib, 'rc_funcs_' + stem)
-        n = ctypes.c_uint.in_dll(lib, 'rc_nfuncs_' + stem).value
-        lib.rc_register.argtypes = [ctypes.c_void_p, ctypes.c_uint]
-        lib.rc_register(ctypes.addressof(funcs), n)
+        if INTERP:   # sin funciones traducidas: todo lo ejecuta el interprete en C
+            lib.rc_set_interpreter.argtypes = [ctypes.c_void_p]
+            lib.rc_set_interpreter(ctypes.cast(lib.mipsi_call, ctypes.c_void_p))
+        else:
+            funcs = (ctypes.c_uint8 * 8).in_dll(lib, 'rc_funcs_' + stem)
+            n = ctypes.c_uint.in_dll(lib, 'rc_nfuncs_' + stem).value
+            lib.rc_register.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+            lib.rc_register(ctypes.addressof(funcs), n)
         self.log = []
         self.cb = LIBCALL(self.libcall_c)
         lib.rc_set_libcall(self.cb)
@@ -100,11 +108,12 @@ class World:
             addr, size = struct.unpack_from('<II', d, 0x18)
             ctypes.memmove(ctypes.addressof(self.ram) + (addr & 0x1FFFFF), d[2048:2048 + size], size)
             ostem = os.path.splitext(os.path.basename(path))[0]
-            ot = (ctypes.c_uint8 * 8).in_dll(lib, 'rc_funcs_' + ostem)
-            on = ctypes.c_uint.in_dll(lib, 'rc_nfuncs_' + ostem).value
-            lib.rc_register_overlay.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint]
-            lib.rc_register_overlay(n, ctypes.addressof(ot), on)
-            lib.rc_set_overlay(n)
+            if not INTERP:
+                ot = (ctypes.c_uint8 * 8).in_dll(lib, 'rc_funcs_' + ostem)
+                on = ctypes.c_uint.in_dll(lib, 'rc_nfuncs_' + ostem).value
+                lib.rc_register_overlay.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint]
+                lib.rc_register_overlay(n, ctypes.addressof(ot), on)
+                lib.rc_set_overlay(n)
         self.base = bytes(self.ram)
         # libreria: todas las funciones de la zona de librerias a las que puede saltar el juego
         meta = json.load(open(os.path.join(out_dir, stem + '.json')))
@@ -211,8 +220,9 @@ class World:
 WORLD = None
 
 
-def init(acebin, out_dir, ovl=None, region=None):
-    global WORLD
+def init(acebin, out_dir, ovl=None, region=None, interp=None):
+    global WORLD, INTERP
+    INTERP = interp
     WORLD = World(acebin, out_dir, ovl, region)
 
 
@@ -243,6 +253,11 @@ def main():
         region = args[i + 1]
         args = args[:i] + args[i + 2:]
         apply_region(region)
+    global INTERP
+    if '--interp' in args:
+        i = args.index('--interp')
+        INTERP = os.path.abspath(args[i + 1])
+        args = args[:i] + args[i + 2:]
     if '--overlay' in args:   # --overlay N data/exe/ovl/overlayN.exe
         i = args.index('--overlay')
         ovl = (int(args[i + 1]), args[i + 2])
@@ -259,7 +274,7 @@ def main():
     results = {}
     pending = list(todo)
     while pending:   # si un proceso muere (fallo de C), se marca la funcion y se sigue
-        with cf.ProcessPoolExecutor(procs, initializer=init, initargs=(acebin, out_dir, ovl, region)) as ex:
+        with cf.ProcessPoolExecutor(procs, initializer=init, initargs=(acebin, out_dir, ovl, region, INTERP)) as ex:
             futs = {ex.submit(check_func, t): t for t in pending}
             pending = []
             try:
@@ -281,10 +296,10 @@ def main():
     print('%d funciones: %d validadas, %d distintas, %d sin caso' % (len(results), tot['VALIDADA'], tot['DISTINTA'],
                                                                   tot['SIN CASO']))
     json.dump({'%08x' % a: {'nombre': names[a], 'veredicto': v[0], 'casos': v[1], 'primera_diferencia': v[2]}
-               for a, v in sorted(results.items())}, open(os.path.join(out_dir, stem + '_check.json'), 'w'), indent=1)
+               for a, v in sorted(results.items())}, open(os.path.join(out_dir, stem + ('_check_interp.json' if INTERP else '_check.json')), 'w'), indent=1)
     nval = sum(1 for a, r in results.items() if r[0] == 'VALIDADA' and a in ghidra)
     print('funciones de la lista de Ghidra validadas: %d de %d' % (nval, len(ghidra)))
-    if not only and not region:   # progreso: funciones de Ghidra (las que cuenta tools/progress.py) validadas
+    if not only and not region and not INTERP:   # progreso: funciones de Ghidra (las que cuenta tools/progress.py) validadas
         p = os.path.join(ROOT, 'docs', 'progreso.json')
         if os.path.exists(p):
             d = json.load(open(p))

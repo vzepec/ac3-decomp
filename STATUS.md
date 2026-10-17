@@ -70,7 +70,20 @@ americana va más estable y con muchos menos artefactos que la europea.
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
-## Siguiente tarea concreta
+## Etapa 7 (rama `etapa-7`): APK libre
+
+`docs/12-etapa7.md`. Un APK sin nada de Namco: intérprete MIPS en C + capa
+`psx/`, que lee `ACE.BIN` del disco del usuario. Generado
+(`REGION=libre android_game/build.sh`, 140 KB), con 0 bytes del juego según
+`tools/apk_audit.py`, y en el PC idéntico al código traducido (40/40 EU,
+36/36 US).
+
+**Siguiente:** probar `data/android/ac3game-<versión>-libre.apk` en la
+Retroid, mirando `VEL` y `FPS`. Si no llega a tiempo real, toca el paso 5
+(rendimiento del intérprete). Después, la release alfa en GitHub con el APK
+libre, si el dueño la aprueba.
+
+## Siguiente tarea concreta (etapa 6)
 
 **Afinar la interpolación en la europea** con lo que se vea en la Retroid. En
 la americana va bastante mejor. Hipótesis **SIN RESOLVER**: la americana

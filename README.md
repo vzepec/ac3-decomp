@@ -21,6 +21,10 @@ hasta la primera misión y van en un APK personal universal para Android, con im
 intermedias a 60 fps en la misión. El código recompilado y los APK se generan
 desde el disco del usuario y **no se distribuyen** (llevan código de Namco).
 
+**Etapa 7 (rama `etapa-7`):** un **APK libre** que solo lleva código de este
+repositorio. Interpreta el juego desde el disco del usuario, como un emulador,
+así que sí se puede distribuir (`docs/12-etapa7.md`, `tools/apk_audit.py`).
+
 ### Generar los APK desde tu propio disco
 
 Requisitos: los `.bin`/`.cue` en `Rom/`, Ghidra 12.1.4, el SDK y el NDK de

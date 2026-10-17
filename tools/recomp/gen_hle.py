@@ -11,6 +11,13 @@ memset/memchr/strlen/strcpy/strcat, __divdi3/__udivdi3, __main. Ademas escribe l
 (primeros 64 bytes) de cada overlay, para saber cual hay cargado.
 El resultado contiene direcciones y bytes del ejecutable del juego: va a data/recomp/.
 
+Etapa 7 (--libre SUFIJO): la misma tabla SIN las firmas de los overlays (los unicos bytes del
+juego): solo direcciones, nombres de funciones de libreria y envoltorios generados de nuestras
+cabeceras. Es dato de analisis, sin codigo de Namco, y se versiona en psx/recomp/hle_<sufijo>.c
+(tablas hle_table_<sufijo> y hle_count_<sufijo>) para el APK distribuible:
+    python3 tools/recomp/gen_hle.py psx/recomp/hle_eu.c --libre eu
+    python3 tools/recomp/gen_hle.py psx/recomp/hle_us.c --libre us --region data/recomp_us/region.json ...
+
 Uso:
     python3 tools/recomp/gen_hle.py data/recomp/hle_gen.c
     python3 tools/recomp/gen_hle.py data/recomp_us/hle_gen.c --region data/recomp_us/region.json \
@@ -71,6 +78,9 @@ def main():
     acebin = os.path.join(ROOT, 'data', 'exe', 'ace_eu.bin')
     ovl_dir = os.path.join(ROOT, 'data', 'exe', 'ovl')
     region, ghidra_c = None, None
+    libre = None
+    if '--libre' in sys.argv:
+        libre = sys.argv[sys.argv.index('--libre') + 1]
     if '--region' in sys.argv:
         i = sys.argv.index('--region')
         region = json.load(open(sys.argv[i + 1]))
@@ -78,8 +88,13 @@ def main():
     ovls = sorted(glob.glob(os.path.join(ovl_dir, 'overlay*.exe')))
     targets = lib_targets(acebin, ovls, region, ghidra_c)
     protos = parse_protos()
-    lines = ['/* GENERADO por tools/recomp/gen_hle.py: enlace nativo codigo recompilado -> psx/.',
-             ' * Contiene direcciones y bytes del ejecutable del juego: no entra en git. */',
+    head = (['/* GENERADO por tools/recomp/gen_hle.py --libre: enlace del codigo del juego con psx/ (version %s).' % libre.upper(),
+             ' * Solo direcciones y nombres de funciones de libreria (dato de analisis) y envoltorios generados de',
+             ' * psx/include: sin bytes del juego, se versiona (etapa 7, docs/12-etapa7.md). */']
+            if libre else
+            ['/* GENERADO por tools/recomp/gen_hle.py: enlace nativo codigo recompilado -> psx/.',
+             ' * Contiene direcciones y bytes del ejecutable del juego: no entra en git. */'])
+    lines = head + [
              '#include <stdint.h>', '#include "recomp_rt.h"']
     for h in sorted(glob.glob(os.path.join(ROOT, 'psx', 'include', 'psx_lib*.h'))) + \
             [os.path.join(ROOT, 'psx', 'include', 'psx_libc.h')]:
@@ -112,11 +127,16 @@ def main():
         lines.append('static void %s(RCpu *c) { %s }   /* %s */' % (fn, body, name))
         table.append((addr, fn))
     lines.append('')
-    lines.append('const RcFunc hle_table[] = {')
+    sfx = '_' + libre if libre else ''
+    lines.append('const RcFunc hle_table%s[] = {' % sfx)
     lines += ['    {0x%08xu, %s},' % (a, f) for a, f in table]
     lines.append('};')
-    lines.append('const unsigned hle_count = %d;' % len(table))
+    lines.append('const unsigned hle_count%s = %d;' % (sfx, len(table)))
     lines.append('')
+    if libre:
+        open(sys.argv[1], 'w').write('\n'.join(lines) + '\n')
+        print('%d funciones de libreria enlazadas (sin bytes del juego) -> %s' % (len(table), sys.argv[1]))
+        return 0
     lines.append('/* firmas de los overlays (primeros 64 bytes cargados en 0x800C9DC0) */')
     lines.append('const uint8_t ovl_sig[5][64] = {')
     for p in ovls:

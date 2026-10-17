@@ -43,8 +43,11 @@ que **no** hay que repetir.
    distribuido.** La rebanada de `android/` sigue sin datos del juego.
    Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
    **Dentro de la etapa 6, una rama por paso** (`etapa-6-paso-N`), que se fusiona
-   en la rama común `etapa-6`. Al cerrar un paso, `make progress` actualiza la
-   infografía del README.
+   en la rama común `etapa-6`.
+   **Etapa 7** (rama `etapa-7`, `docs/12-etapa7.md`): el APK libre, que solo
+   lleva código nuestro (intérprete + capa) y lee el juego del disco del usuario.
+   Ese sí se puede publicar, siempre que `tools/apk_audit.py` dé 0 coincidencias.
+   Al cerrar un paso, `make progress` actualiza la infografía del README.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.
 

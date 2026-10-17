@@ -198,6 +198,28 @@ recomp:
 	@cc -O1 -fPIC -shared -w -Ipsx/include -Ipsx/recomp data/recomp/ace_eu.c data/recomp/overlay[1-5].c psx/recomp/recomp_rt.c psx/src/*.c -lm -o data/recomp/librecomp.so
 	@echo "data/recomp/librecomp.so"
 
+# etapa 7: biblioteca con el interprete MIPS en C y sin codigo traducido (solo codigo nuestro)
+mipsi:
+	@mkdir -p psx/build
+	@cc -O2 -fPIC -shared -w -Ipsx/include -Ipsx/recomp psx/recomp/mipsi.c psx/recomp/recomp_rt.c psx/src/*.c -lm -lpthread -o psx/build/libmipsi.so
+	@echo "psx/build/libmipsi.so"
+
+# etapa 7: el juego en el PC SOLO con codigo del repositorio (interprete, ACE.BIN del disco,
+# version detectada): lo mismo que hara el APK distribuible. DISCO=$(EU) o $(US)
+DISCO ?= $(EU)
+LIBRE_GUION ?= $(GUION)
+libre:
+	@mkdir -p psx/build/libre
+	@cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp psx/recomp/native_main.c psx/recomp/mipsi.c \
+		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/hle_eu.c psx/recomp/hle_us.c psx/src/*.c -lm -lpthread \
+		-o psx/build/ac3_libre
+	@psx/build/ac3_libre "$(DISCO)" - 3600 psx/build/libre 100 "$(LIBRE_GUION)"
+
+# el interprete en C frente al de referencia, en las mismas entradas que el codigo traducido
+mipsi-check: mipsi
+	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24 --interp psx/build/libmipsi.so
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay $$k data/exe/ovl/overlay$$k.exe 24 --interp psx/build/libmipsi.so; done
+
 recomp-check:
 	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24
 	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay $$k data/exe/ovl/overlay$$k.exe 24; done

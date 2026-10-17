@@ -54,8 +54,18 @@
 
 /* la version del juego (europea o americana): la elige el disco (disc_region); el APK
  * universal lleva las dos (ac3_regions.h, regions.c) */
+#ifdef AC3_LIBRE
+/* etapa 7, APK libre (sin nada de Namco): la version se detecta en el disco, ACE.BIN se lee y
+ * descomprime de el y todo el codigo del juego lo ejecuta el interprete (psx/recomp/mipsi.c) */
+#include "ac3_versions.h"
+#include "psx_acebin.h"
+static const Ac3Version *R;
+static uint8_t g_ace[0x200000];
+static PsxAceBin g_ab;
+#else
 #include "ac3_regions.h"
 static const Ac3Region *R;
+#endif
 static int g_refresh = 50, g_spf = 882;   /* VBlank por segundo; muestras de audio por VBlank */
 void rc_register(const RcFunc *funcs, unsigned n);
 void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
@@ -232,9 +242,15 @@ static void pin_fast_cores(void) {
 
 static void *game_thread(void *arg) {
     (void)arg;
+#ifdef AC3_LIBRE
+    LOG("version %s (%d Hz), APK libre: ACE.BIN del disco (%u bytes), interprete", R->name, R->refresh, g_ab.size);
+    memcpy(psx_ram + (g_ab.load & 0x1FFFFFu), g_ace, g_ab.size);
+    psx_gte_tables_init(g_ace, g_ab.size);
+#else
     LOG("version %s (%d Hz)", R->name, R->refresh);
     memcpy(psx_ram + 0x10000, R->image, *R->image_len);
     psx_gte_tables_init(R->image, *R->image_len);
+#endif
     psx_pad_connect(0, 0x73);   /* analogico: los sticks de la Retroid */
     psx_pad_connect(1, 0);
     psx_card_attach(0, G.card_path);
@@ -242,9 +258,13 @@ static void *game_thread(void *arg) {
     psx_set_refresh(R->refresh);
     psx_audio_connect();        /* audio XA del CD -> entrada de CD de la SPU */
     rc_set_region(R->ovl_base, R->lib_lo, R->lib_hi, R->lib_main, R->gp);
+#ifdef AC3_LIBRE
+    rc_set_interpreter(mipsi_call);
+#else
     rc_register(R->funcs, *R->nfuncs);
     for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
     rc_set_overlay_sigs(R->sig, 5);
+#endif
     rc_set_hle(R->hle, *R->nhle);
     rc_gte = (PsxGte *)psx_gte_get_context();
     psx_set_call(rc_host_callback);
@@ -466,6 +486,15 @@ static uint32_t frame_hash(const uint32_t *img, int w, int h) {
 
 /* la version del disco elegido, por su ejecutable de arranque (SYSTEM.CNF), entre las que lleva
  * el APK; NULL si no es ninguna */
+#ifdef AC3_LIBRE
+static const Ac3Version *disc_region(void) {
+    const Ac3Version *v = ac3_version_detect();
+    if (!v) return NULL;
+    int r = psx_acebin_from_disc(g_ace, sizeof g_ace, &g_ab);
+    if (r) { LOG("ACE.BIN del disco: fallo %d", r); return NULL; }
+    return v;
+}
+#else
 static const Ac3Region *disc_region(void) {
     const Ac3Region *all[2] = {&ac3_region_eu, &ac3_region_us};
     for (int i = 0; i < 2; i++) {
@@ -474,6 +503,7 @@ static const Ac3Region *disc_region(void) {
     }
     return NULL;
 }
+#endif
 
 /* MainActivity.pickDisc() desde el hilo principal */
 static void ask_disc(void) {
@@ -510,8 +540,7 @@ void android_main(struct android_app *app) {
             if (ok && !R) {
                 /* ningun ejecutable de las versiones que lleva el APK: se pide otro disco */
                 psx_cd_close();
-                LOG("el disco no es de ninguna version de este APK (%s%s): se pide otro", &ac3_region_eu ? "EU " : "",
-                    &ac3_region_us ? "US" : "");
+                LOG("el disco no es de ninguna version de este APK: se pide otro");
                 ask_disc();
             } else if (ok) {
                 g_refresh = R->refresh;

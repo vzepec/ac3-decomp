@@ -27,6 +27,23 @@
 #include "psx_mem.h"
 #include "recomp_rt.h"
 
+#ifdef AC3_LIBRE
+/* etapa 7, modo libre: solo codigo del repositorio. La version se detecta en el disco, ACE.BIN
+ * se lee de el y todo lo ejecuta el interprete (make libre) */
+#include "ac3_versions.h"
+#include "psx_acebin.h"
+static const Ac3Version *V;
+#define AC3_MAIN (V->main)
+#define AC3_GP (V->gp)
+#define AC3_BSS_START (V->bss_start)
+#define AC3_BSS_END (V->bss_end)
+#define AC3_OVL_BASE (V->ovl_base)
+#define AC3_LIB_LO (V->lib_lo)
+#define AC3_LIB_HI (V->lib_hi)
+#define AC3_LIB_MAIN (V->lib_main)
+#define AC3_REFRESH (V->refresh)
+#define AC3_PAD_BUF (V->pad_buf)
+#else
 /* direcciones de la version: por defecto las del ACE.BIN europeo; otra version las trae en una
  * cabecera generada por tools/recomp/region.py (-include data/recomp_us/ac3_region.h) */
 #ifndef AC3_MAIN
@@ -51,6 +68,7 @@ extern const unsigned AC3_RC_NFUNCS, rc_nfuncs_overlay1, rc_nfuncs_overlay2, rc_
 extern const RcFunc hle_table[];
 extern const unsigned hle_count;
 extern const uint8_t ovl_sig[5][64];
+#endif
 void rc_register(const RcFunc *funcs, unsigned n);
 void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
 
@@ -264,14 +282,28 @@ int main(int argc, char **argv) {
     every = argc > 5 ? atoi(argv[5]) : 100;
     if (argc > 6) parse_script(argv[6]);
     /* ACE.BIN en la RAM (0x80010000) y tablas de la GTE */
+    static uint8_t ace[0x200000];
+#ifdef AC3_LIBRE
+    (void)argv[2];   /* modo libre: ACE.BIN sale del disco */
+    if (psx_cd_open(argv[1])) { puts("no se abre la imagen"); return 1; }
+    V = ac3_version_detect();
+    if (!V) { puts("el disco no es de ninguna version conocida"); return 1; }
+    PsxAceBin ab;
+    int ar = psx_acebin_from_disc(ace, sizeof ace, &ab);
+    if (ar) { printf("ACE.BIN del disco: fallo %d\n", ar); return 1; }
+    size_t n = ab.size;
+    memcpy(psx_ram + (ab.load & 0x1FFFFFu), ace, n);
+    psx_gte_tables_init(ace, n);
+    printf("modo libre: version %s, ACE.BIN del disco (%zu bytes)\n", V->name, n);
+#else
     FILE *f = fopen(argv[2], "rb");
     if (!f) { puts("no se abre ACE.BIN"); return 1; }
-    static uint8_t ace[0x200000];
     size_t n = fread(ace, 1, sizeof ace, f);
     fclose(f);
     memcpy(psx_ram + 0x10000, ace, n);
     psx_gte_tables_init(ace, n);
     if (psx_cd_open(argv[1])) { puts("no se abre la imagen"); return 1; }
+#endif
     psx_pad_connect(0, getenv("AC3_PAD_ID") ? (int)strtol(getenv("AC3_PAD_ID"), NULL, 16) : 0x41);   /* 73 = analogico */
     psx_pad_connect(1, 0);
     psx_card_attach(0, "/tmp/ac3_native_tarjeta1.mcd");
@@ -279,14 +311,25 @@ int main(int argc, char **argv) {
     psx_set_refresh(AC3_REFRESH);
     /* codigo recompilado: residente, overlays (deteccion por firma) y enlace con psx/ */
     rc_set_region(AC3_OVL_BASE, AC3_LIB_LO, AC3_LIB_HI, AC3_LIB_MAIN, AC3_GP);
-    rc_register(AC3_RC_FUNCS, AC3_RC_NFUNCS);
-    rc_register_overlay(1, rc_funcs_overlay1, rc_nfuncs_overlay1);
-    rc_register_overlay(2, rc_funcs_overlay2, rc_nfuncs_overlay2);
-    rc_register_overlay(3, rc_funcs_overlay3, rc_nfuncs_overlay3);
-    rc_register_overlay(4, rc_funcs_overlay4, rc_nfuncs_overlay4);
-    rc_register_overlay(5, rc_funcs_overlay5, rc_nfuncs_overlay5);
-    rc_set_overlay_sigs(ovl_sig, 5);
+#ifdef AC3_LIBRE
+    rc_set_interpreter(mipsi_call);
+    rc_set_hle(V->hle, *V->nhle);
+#else
+    if (getenv("AC3_MIPSI")) {
+        /* etapa 7: sin codigo traducido, todo lo ejecuta el interprete (psx/recomp/mipsi.c) */
+        rc_set_interpreter(mipsi_call);
+        puts("interprete MIPS: sin codigo traducido");
+    } else {
+        rc_register(AC3_RC_FUNCS, AC3_RC_NFUNCS);
+        rc_register_overlay(1, rc_funcs_overlay1, rc_nfuncs_overlay1);
+        rc_register_overlay(2, rc_funcs_overlay2, rc_nfuncs_overlay2);
+        rc_register_overlay(3, rc_funcs_overlay3, rc_nfuncs_overlay3);
+        rc_register_overlay(4, rc_funcs_overlay4, rc_nfuncs_overlay4);
+        rc_register_overlay(5, rc_funcs_overlay5, rc_nfuncs_overlay5);
+        rc_set_overlay_sigs(ovl_sig, 5);
+    }
     rc_set_hle(hle_table, hle_count);
+#endif
     rc_gte = psx_gte_get_context();
     psx_set_call(rc_host_callback);
     rc_set_tick(tick, BUDGET_PER_FRAME);
@@ -322,6 +365,8 @@ int main(int argc, char **argv) {
     if (t_n) printf("oscuro sobre claro por imagen: %.1f\n", (double)t_dark / t_n);
     if (t_n) printf("agujeros negros por imagen: interpolada %.1f, real del medio %.1f (ruido de la medida); peor exceso %ld (fotograma %ld)\n",
                     (double)t_holes_int / t_n, (double)t_holes_mid / t_n, t_holes_max, t_holes_max_f);
+    if (mipsi_steps) printf("interprete: %llu instrucciones (%.1f millones por segundo de CPU)\n", (unsigned long long)mipsi_steps,
+                            mipsi_steps / 1e6 / (dt > 0 ? dt : 1));
     printf("%d fotogramas en %.2f s de CPU (%.0f fotogramas/s; tiempo real del juego: %.1f s a %d Hz)\n", last_vcount, dt,
            last_vcount / (dt > 0 ? dt : 1), last_vcount / (double)AC3_REFRESH, AC3_REFRESH);
     return 0;

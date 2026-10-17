@@ -5,6 +5,39 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Etapa 7: APK libre (intérprete MIPS, ACE.BIN del disco), 0 bytes del juego
+
+**Decisión del dueño:** camino B. Un APK sin nada de Namco, como un
+emulador, en la rama `etapa-7` (docs/12-etapa7.md).
+
+**Hecho:**
+- intérprete MIPS en C (`psx/recomp/mipsi.c`) con la semántica del código
+  traducido;
+- enlace con la librería versionable, sin las firmas de los overlays
+  (`gen_hle.py --libre` → `psx/recomp/hle_eu.c`, `hle_us.c`);
+- `ACE.BIN` del disco (`psx/src/acebin.c`);
+- versión detectada por el ejecutable de arranque (`ac3_versions.c`);
+- `make libre` (PC) y `REGION=libre android_game/build.sh` (APK de 140 KB);
+- auditoría `tools/apk_audit.py`.
+
+**Validación:**
+- Comparador frente a `tools/mipsemu.py`, 8 casos: 1.252 validadas y 0
+  distintas en el residente europeo.
+- Arranque solo con el intérprete: 40/40 capturas idénticas al código
+  traducido en la europea (también con el binario compilado solo con el
+  repositorio) y 36/36 en la americana.
+- `ACE.BIN` del disco idéntico al de la etapa 2 en las dos versiones.
+- Auditoría del APK libre: 0 coincidencias de 32 bytes con el juego. El caso
+  positivo, el APK universal, da 334.355.
+
+**SIN RESOLVER:** el rendimiento en la Retroid.
+
+**Reproducir:**
+- `make mipsi-check`
+- `make libre` (`DISCO="$(US)"` y `LIBRE_GUION` para la americana)
+- `REGION=libre sh android_game/build.sh`
+- `python3 tools/apk_audit.py <apk> data/exe/ace_*.bin ...`
+
 ## 2026-10-17 — APK universal EU + US (1.6-alfa)
 
 **Fusión:** `etapa-6-rom-us` (subagente) entra en `etapa-6`.

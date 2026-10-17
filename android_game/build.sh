@@ -8,6 +8,10 @@
 #        Salida: data/android/ac3game-<version>.apk (paquete com.vzepec.ac3game)
 #   eu / us: una sola version, ac3game-<version>-eu.apk / -us.apk, con paquete propio
 #        (com.vzepec.ac3game.eu / .us) para que convivan en el aparato.
+#   libre (etapa 7): APK DISTRIBUIBLE, solo con codigo del repositorio: sin codigo traducido ni
+#        ACE.BIN. Lee ACE.BIN del disco del usuario y ejecuta el juego con el interprete
+#        (psx/recomp/mipsi.c). No necesita data/ (salvo la clave de firma).
+#        Salida: data/android/ac3game-<version>-libre.apk (paquete com.vzepec.ac3game.libre)
 # Los simbolos del codigo traducido americano llevan el sufijo _us (llvm-objcopy) para no chocar
 # con los europeos (las funciones se llaman por su direccion: f_80025458...).
 set -e
@@ -20,7 +24,8 @@ case "$REGION" in
     all) REGIONS="eu us"; APK="ac3game-$VERSION.apk"; PKG=; LABEL= ;;
     eu) REGIONS=eu; APK="ac3game-$VERSION-eu.apk"; PKG=com.vzepec.ac3game.eu; LABEL="AC3 Recomp (EU)" ;;
     us) REGIONS=us; APK="ac3game-$VERSION-us.apk"; PKG=com.vzepec.ac3game.us; LABEL="AC3 Recomp (US)" ;;
-    *) echo "REGION debe ser all, eu o us"; exit 1 ;;
+    libre) REGIONS=; APK="ac3game-$VERSION-libre.apk"; PKG=com.vzepec.ac3game.libre; LABEL="AC3 Recomp (libre)" ;;
+    *) echo "REGION debe ser all, eu, us o libre"; exit 1 ;;
 esac
 SDK=${ANDROID_HOME:-$HOME/tools/android-sdk}
 NDK=${NDK:-$SDK/ndk/30.0.16248370}
@@ -79,11 +84,18 @@ done
 for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_present.c"; do
     $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
 done
-$CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+if [ "$REGION" = libre ]; then
+    for f in "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c"; do
+        $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
+    done
+    $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+else
+    $CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+fi
 $CC -O2 -fPIC -I"$GLUE" -w -c "$GLUE/android_native_app_glue.c" -o "$B/obj/glue.o"
-$CC -c "$B/ace_image.S" -o "$B/obj/ace_image.o"
+[ -s "$B/ace_image.S" ] && $CC -c "$B/ace_image.S" -o "$B/obj/ace_image.o"
 # 16 KB: segmentos alineados a 16384 (exigido por Android reciente)
-$CC -shared "$B"/obj/*.o "$B"/obj_*/*.o -landroid -llog -lEGL -lGLESv3 -laaudio -lm \
+$CC -shared "$B"/obj/*.o $(ls "$B"/obj_*/*.o 2>/dev/null) -landroid -llog -lEGL -lGLESv3 -laaudio -lm \
     -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 \
     -u ANativeActivity_onCreate -o "$B/apk/lib/arm64-v8a/libac3game.so"
 
@@ -111,4 +123,8 @@ fi
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/apksigner" sign --ks "$KS" --ks-pass pass:android \
     --key-pass pass:android --out "$OUT/$APK" "$B/aligned.apk"
 "$BT/zipalign" -c -P 16 4 "$OUT/$APK"
-echo "APK PERSONAL (no distribuir): $OUT/$APK ($(du -h "$OUT/$APK" | cut -f1))"
+if [ "$REGION" = libre ]; then
+    echo "APK LIBRE (sin codigo ni datos del juego; comprobar con tools/apk_audit.py): $OUT/$APK ($(du -h "$OUT/$APK" | cut -f1))"
+else
+    echo "APK PERSONAL (no distribuir): $OUT/$APK ($(du -h "$OUT/$APK" | cut -f1))"
+fi
