@@ -6,6 +6,7 @@
  * El mismo arranque, ejecutado por el interprete con el codigo original, es la referencia
  * (tools/recomp/boot.py). */
 #include <execinfo.h>
+#include <math.h>
 #include <setjmp.h>
 #include <signal.h>
 #include <unistd.h>
@@ -20,6 +21,7 @@
 #include "psx_libcd.h"
 #include "psx_libetc.h"
 #include "psx_libgte.h"
+#include "psx_interp.h"
 #include "psx_libpad.h"
 #include "psx_mem.h"
 #include "recomp_rt.h"
@@ -74,6 +76,79 @@ static void frame_check(void) {
         }
         if (shots && every && last_vcount % every == 0) save_screen(last_vcount);
         if (last_vcount >= max_frames) longjmp(stop, 1);
+    }
+}
+
+/* prueba de la interpolacion (AC3_INTERP=n): cada 100 fotogramas, estadisticas; entre
+ * AC3_INTERP_FROM y +8 fotogramas, todas las imagenes (intermedias y reales) a las capturas */
+static int interp_from, interp_seq;
+/* prueba con verdad conocida (AC3_INTERP_TEST=1): PSNR de la intermedia de k y k+2 frente al
+ * k+1 real, y de los vecinos reales frente al k+1 (lo que se veria sin interpolar) */
+static uint32_t t_prev[640 * 512], t_mid[640 * 512], t_int[640 * 512];
+static int t_have_prev, t_have_mid, t_n, t_fresh;
+static double t_sum_int, t_sum_prev, t_sum_next, t_min_gain = 1e9;
+static double psnr(const uint32_t *a, const uint32_t *b, int n) {
+    double e = 0;
+    for (int i = 0; i < n; i++)
+        for (int k = 0; k < 24; k += 8) { int d = (int)((a[i] >> k) & 255) - (int)((b[i] >> k) & 255); e += d * d; }
+    e /= 3.0 * n;
+    return e < 1e-9 ? 99 : 10 * log10(255.0 * 255.0 / e);
+}
+static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
+    int n = w * h;
+    if (n > 640 * 512) return;
+    if (den == 0) { memcpy(t_mid, rgba, n * 4); t_have_mid = 1; return; }
+    if (num < den) { memcpy(t_int, rgba, n * 4); t_fresh = 1; return; }
+    if (t_have_prev && t_have_mid && den == 2 && t_fresh) {
+        double pi = psnr(t_int, t_mid, n), pp = psnr(t_prev, t_mid, n), pn = psnr(rgba, t_mid, n);
+        t_sum_int += pi; t_sum_prev += pp; t_sum_next += pn; t_n++;
+        double gain = pi - (pp > pn ? pp : pn);
+        if (gain < t_min_gain) t_min_gain = gain;
+        if (getenv("AC3_INTERP_TEST_DUMP") && shots && abs(last_vcount - atoi(getenv("AC3_INTERP_TEST_DUMP"))) <= 1) {
+            const uint32_t *im[4] = {t_prev, t_mid, t_int, rgba};
+            const char *nm[4] = {"0anterior", "1real_intermedio", "2interpolada", "3siguiente"};
+            for (int q = 0; q < 4; q++) {
+                char path[512];
+                snprintf(path, sizeof path, "%s/caso%05d_%s.ppm", shots, last_vcount, nm[q]);
+                FILE *f = fopen(path, "wb");
+                if (!f) continue;
+                fprintf(f, "P6\n%d %d\n255\n", w, h);
+                for (int i = 0; i < n; i++) fwrite(&im[q][i], 1, 3, f);
+                fclose(f);
+            }
+        }
+        if (getenv("AC3_INTERP_TEST_LOG")) {
+            int a, b, c, d, e;
+            psx_interp_stats(&a, &b, &c, &d, &e);
+            printf("caso f%d: interpolada %.2f anterior %.2f siguiente %.2f (gte %d, de la lista %d, emparejadas %d, media %d)\n",
+                   last_vcount, pi, pp, pn, a, b, c, d);
+        }
+    }
+    memcpy(t_prev, rgba, n * 4);
+    t_fresh = 0;
+    t_have_prev = 1;
+    t_have_mid = 0;
+}
+
+static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb) {
+    if (psx_interp_skip_test && last_vcount > 3500) interp_test(rgba, w, h, num, den);
+    if (den == 0) return;
+    static int last_stat;
+    if (num == den && last_vcount - last_stat >= 100) {
+        last_stat = last_vcount;
+        int a, b, c, d, e;
+        psx_interp_stats(&a, &b, &c, &d, &e);
+        printf("interp f%d: GTE %d, lista %d coordenadas: %d de la GTE, %d emparejadas, %d por la media (paso %d VBlank)\n",
+               last_vcount, a, e, b, c, d, vb);
+    }
+    if (shots && interp_from && last_vcount >= interp_from && last_vcount < interp_from + 8) {
+        char path[512];
+        snprintf(path, sizeof path, "%s/i%05d_%02d_%d-%d.ppm", shots, last_vcount, interp_seq++, num, den);
+        FILE *f = fopen(path, "wb");
+        if (!f) return;
+        fprintf(f, "P6\n%d %d\n255\n", w, h);
+        for (int i = 0; i < w * h; i++) fwrite(&rgba[i], 1, 3, f);
+        fclose(f);
     }
 }
 
@@ -150,6 +225,11 @@ int main(int argc, char **argv) {
     psx_set_call(rc_host_callback);
     rc_set_tick(tick, BUDGET_PER_FRAME);
     rc_set_frame_hook(on_vsync_frame);
+    if (getenv("AC3_INTERP")) {
+        interp_from = getenv("AC3_INTERP_FROM") ? atoi(getenv("AC3_INTERP_FROM")) : 0;
+        psx_interp_skip_test = getenv("AC3_INTERP_TEST") != NULL;
+        psx_interp_config(atoi(getenv("AC3_INTERP")), psx_interp_skip_test ? 1 : 2, interp_sink);
+    }
     /* como ac3_start: BSS a cero y ac3_main */
     memset(psx_ram + 0xBACB0, 0, 0xC9DC0 - 0xBACB0);
     RCpu c;
@@ -162,6 +242,9 @@ int main(int argc, char **argv) {
     clock_t t0 = clock();
     if (!setjmp(stop)) rc_call(&c, AC3_MAIN);
     double dt = (double)(clock() - t0) / CLOCKS_PER_SEC;
+    if (t_n) printf("prueba de interpolacion (%d casos): PSNR frente al paso intermedio real: interpolada %.2f dB, "
+                    "anterior real %.2f dB, siguiente real %.2f dB; peor ganancia %.2f dB\n", t_n, t_sum_int / t_n,
+                    t_sum_prev / t_n, t_sum_next / t_n, t_min_gain);
     printf("%d fotogramas en %.2f s de CPU (%.0f fotogramas/s; tiempo real del juego: %.1f s a 50 Hz)\n", last_vcount, dt,
            last_vcount / (dt > 0 ? dt : 1), last_vcount / 50.0);
     return 0;

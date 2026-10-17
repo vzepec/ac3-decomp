@@ -67,18 +67,19 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-**Probar `data/android/ac3game-1.0-alfa.apk` en la Retroid** (uso personal):
-- rendimiento;
-- sonido;
-- mando en la primera misión;
-- tarjeta de memoria.
+**Probar `data/android/ac3game-1.1-alfa.apk` en la Retroid** (uso personal):
+- fluidez de la misión con las imágenes intermedias (L3+R3 las activa o
+  desactiva, para comparar);
+- defectos visibles;
+- en `adb logcat -s AC3Game`, cuántas intermedias por paso mantiene ("imagenes
+  intermedias por paso").
 
 Después, según lo que se vea:
-1. calibrar `BUDGET_PER_FRAME` contra el intérprete (450.000 instrucciones por
-   fotograma);
-2. medir dónde se va el tiempo en las cargas y las películas;
-3. empezar a sustituir funciones traducidas por C legible (el port 1:1),
-   pantalla por pantalla.
+1. dibujar las intermedias en hilos aparte (la Retroid tiene 4 núcleos
+   grandes);
+2. sprites colocados por la CPU (explosiones, humo);
+3. GPU por GLES (alta resolución y pantalla ancha);
+4. calibrar `BUDGET_PER_FRAME`.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);

@@ -10,9 +10,12 @@ void *psx_gpu(void);   /* libgpu.c */
 static uint32_t rgba(int r, int g, int b) { return (uint32_t)r | (uint32_t)g << 8 | (uint32_t)b << 16 | 0xFF000000u; }
 static int x5(int c) { return (c << 3) | (c >> 2); }
 
-int psx_display_frame(uint32_t *out, int max_pixels, int *w, int *h) {
+int psx_display_frame(uint32_t *out, int max_pixels, int *w, int *h) { return psx_display_frame_at(-1, -1, out, max_pixels, w, h); }
+
+int psx_display_frame_at(int ox, int oy, uint32_t *out, int max_pixels, int *w, int *h) {
     int x0, y0, dw, dh, on, rgb24, inter;
     psx_gpu_display(&x0, &y0, &dw, &dh, &on);
+    if (ox >= 0) { x0 = ox; y0 = oy; }
     psx_gpu_display_mode(&rgb24, &inter);
     if (dw <= 0 || dh <= 0 || dw * dh > max_pixels) { *w = *h = 0; return 0; }
     *w = dw;

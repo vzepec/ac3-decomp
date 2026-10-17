@@ -16,6 +16,7 @@ static int sx11(uint32_t v) { return (int)((int32_t)(v << 21) >> 21); }   /* 11 
 
 /* ---- pixeles ---- */
 
+static int g_tri_cx, g_tri_by;   /* CLUT x y base y de la pagina del triangulo en curso */
 static const int DITHER[4][4] = {{-4, 0, -3, 1}, {2, -2, 3, -1}, {-3, 1, -4, 0}, {3, -1, 2, -2}};
 
 static int in_area(PsxGpu *g, int x, int y) {
@@ -97,6 +98,110 @@ static void shade_plot(PsxGpu *g, int x, int y, int r, int gg, int b, int textur
     plot(g, x, y, out, st);
 }
 
+/* ---- tramo de triangulo optimizado: mismo resultado que shade_plot + plot, sin las
+ * comprobaciones que el recorte del triangulo ya garantiza ---- */
+#define AINLINE static inline __attribute__((always_inline))
+
+typedef struct { const uint16_t *page; const uint16_t *clut; int umask, uor, vmask, vor, depth, bx; } TexCtx;
+
+static void tex_ctx(PsxGpu *g, TexCtx *t, int cx, int cy) {
+    t->umask = ~(g->tw_mask_x * 8); t->uor = (g->tw_off_x & g->tw_mask_x) * 8;
+    t->vmask = ~(g->tw_mask_y * 8); t->vor = (g->tw_off_y & g->tw_mask_y) * 8;
+    t->depth = g->tp_depth;
+    t->bx = g->tp_x * 64;
+    t->page = g->vram + (g->tp_y * 256) * PSX_VRAM_W;
+    t->clut = g->vram + cy * PSX_VRAM_W;
+    t->bx |= 0;
+    (void)cx;
+}
+
+AINLINE uint16_t texel_fast(PsxGpu *g, const TexCtx *t, int u, int v, int cx, int by) {
+    u = ((u & 255) & t->umask) | t->uor;
+    v = ((v & 255) & t->vmask) | t->vor;
+    const uint16_t *row = g->vram + ((by + v) & 511) * PSX_VRAM_W;
+    if (t->depth == 0) {
+        uint16_t w = row[(t->bx + u / 4) & 1023];
+        return t->clut[(cx + ((w >> ((u & 3) * 4)) & 15)) & 1023];
+    }
+    if (t->depth == 1) {
+        uint16_t w = row[(t->bx + u / 2) & 1023];
+        return t->clut[(cx + ((w >> ((u & 1) * 8)) & 255)) & 1023];
+    }
+    return row[(t->bx + u) & 1023];
+}
+
+AINLINE int put_px(uint16_t *d, uint16_t c, int semi, int mask_check, uint16_t mask_set, int abr) {
+    if (mask_check && (*d & 0x8000)) return 0;
+    if (semi) {
+        int br = *d & 31, bg = (*d >> 5) & 31, bb = (*d >> 10) & 31;
+        int fr = c & 31, fg = (c >> 5) & 31, fb = (c >> 10) & 31;
+        int r, gg, b;
+        switch (abr) {
+        case 0: r = (br + fr) >> 1; gg = (bg + fg) >> 1; b = (bb + fb) >> 1; break;
+        case 1: r = br + fr; gg = bg + fg; b = bb + fb; break;
+        case 2: r = br - fr; gg = bg - fg; b = bb - fb; break;
+        default: r = br + (fr >> 2); gg = bg + (fg >> 2); b = bb + (fb >> 2); break;
+        }
+        r = r < 0 ? 0 : r > 31 ? 31 : r;
+        gg = gg < 0 ? 0 : gg > 31 ? 31 : gg;
+        b = b < 0 ? 0 : b > 31 ? 31 : b;
+        c = (uint16_t)((c & 0x8000) | r | gg << 5 | b << 10);
+    }
+    *d = (uint16_t)(c | mask_set);
+    return 1;
+}
+
+AINLINE void tri_span(PsxGpu *g, const TexCtx *tc, int y, int xl, int xr, const int32_t *q0, const int32_t *r0,
+                      const int32_t *dq, const int32_t *dr, int32_t area, const int gouraud, const int textured, int raw,
+                      int semi, int dither, int fr, int fg, int fb) {
+    const int na = (gouraud ? 3 : 0) + (textured ? 2 : 0), t0 = gouraud ? 3 : 0;
+    int32_t q[5], r[5];
+    for (int k = 0; k < 5; k++) { q[k] = q0[k]; r[k] = r0[k]; }
+    const int mask_check = g->mask_check, abr = g->abr, ccx = g_tri_cx, cby = g_tri_by;
+    const uint16_t mask_set = g->mask_set ? 0x8000 : 0;
+    uint32_t drawn = 0;
+    uint16_t *d = g->vram + y * PSX_VRAM_W + xl;
+    const int *dith = DITHER[y & 3];
+    for (int x = xl; x <= xr; x++, d++) {
+        int rr = gouraud ? q[0] : fr, gg = gouraud ? q[1] : fg, bb = gouraud ? q[2] : fb;
+        uint16_t out;
+        int st = semi;
+        int skip = 0;
+        if (textured) {
+            uint16_t t = texel_fast(g, tc, q[t0], q[t0 + 1], ccx, cby);
+            if (t == 0) skip = 1;
+            else {
+                st = semi && (t & 0x8000);
+                if (raw) out = t;
+                else {
+                    int tr = t & 31, tg = (t >> 5) & 31, tb = (t >> 10) & 31;
+                    int R = (tr << 3) * rr >> 7, G = (tg << 3) * gg >> 7, B = (tb << 3) * bb >> 7;
+                    if (dither) { int dd = dith[x & 3]; R += dd; G += dd; B += dd; }
+                    R = R < 0 ? 0 : R > 255 ? 255 : R;
+                    G = G < 0 ? 0 : G > 255 ? 255 : G;
+                    B = B < 0 ? 0 : B > 255 ? 255 : B;
+                    out = (uint16_t)((t & 0x8000) | (R >> 3) | (G >> 3) << 5 | (B >> 3) << 10);
+                }
+            }
+        } else {
+            if (dither) { int dd = dith[x & 3]; rr += dd; gg += dd; bb += dd; }
+            rr = rr < 0 ? 0 : rr > 255 ? 255 : rr;
+            gg = gg < 0 ? 0 : gg > 255 ? 255 : gg;
+            bb = bb < 0 ? 0 : bb > 255 ? 255 : bb;
+            out = (uint16_t)((rr >> 3) | (gg >> 3) << 5 | (bb >> 3) << 10);
+        }
+        if (!skip) drawn += (uint32_t)put_px(d, out, st, mask_check, mask_set, abr);
+        for (int k = 0; k < na; k++) {
+            q[k] += dq[k];
+            r[k] += dr[k];
+            int c = r[k] >= area;
+            q[k] += c;
+            r[k] -= c ? area : 0;
+        }
+    }
+    g->pixels_drawn += drawn;
+}
+
 /* ---- triangulos ---- */
 
 typedef struct { int x, y, r, g, b, u, v; } Vert;
@@ -131,23 +236,93 @@ static void triangle(PsxGpu *g, Vert v0, Vert v1, Vert v2, int gouraud, int text
     /* regla de relleno de la PS1: se dibujan los bordes superior e izquierdo, no los derecho
      * e inferior (con y hacia abajo, la orientacion "positiva" es la horaria) */
     int b0 = top_left(&v1, &v2) ? -1 : 0, b1 = top_left(&v2, &v0) ? -1 : 0, b2 = top_left(&v0, &v1) ? -1 : 0;
+    /* lo que in_area rechazaria pixel a pixel: fuera de la VRAM */
+    if (minx < 0) minx = 0;
+    if (miny < 0) miny = 0;
+    if (maxx > PSX_VRAM_W - 1) maxx = PSX_VRAM_W - 1;
+    if (maxy > PSX_VRAM_H - 1) maxy = PSX_VRAM_H - 1;
     int dither = g->dither && (gouraud || (textured && !raw));
-    for (int y = miny; y <= maxy; y++)
-        for (int x = minx; x <= maxx; x++) {
-            int64_t w0 = edge(&v1, &v2, x, y), w1 = edge(&v2, &v0, x, y), w2 = edge(&v0, &v1, x, y);
-            if (w0 + b0 < 0 || w1 + b1 < 0 || w2 + b2 < 0) continue;
-            int r = v0.r, gg = v0.g, b = v0.b, u = 0, v = 0;
-            if (gouraud) {
-                r = (int)((w0 * v0.r + w1 * v1.r + w2 * v2.r) / area);
-                gg = (int)((w0 * v0.g + w1 * v1.g + w2 * v2.g) / area);
-                b = (int)((w0 * v0.b + w1 * v1.b + w2 * v2.b) / area);
-            }
-            if (textured) {
-                u = (int)((w0 * v0.u + w1 * v1.u + w2 * v2.u) / area);
-                v = (int)((w0 * v0.v + w1 * v1.v + w2 * v2.v) / area);
-            }
-            shade_plot(g, x, y, r, gg, b, textured, raw, u, v, cx, cy, semi, dither);
+    /* recorrido incremental: las aristas y los numeradores de los atributos son lineales en x;
+     * cada atributo se lleva como cociente + resto de su division por el area, asi que el valor
+     * es exactamente (w0*a0 + w1*a1 + w2*a2) / area, como la formula directa */
+    int64_t d0 = -(int64_t)(v2.y - v1.y), d1 = -(int64_t)(v0.y - v2.y), d2 = -(int64_t)(v1.y - v0.y);
+    int na = 0;
+    int64_t at[5][3];
+    if (gouraud) {
+        at[na][0] = v0.r; at[na][1] = v1.r; at[na][2] = v2.r; na++;
+        at[na][0] = v0.g; at[na][1] = v1.g; at[na][2] = v2.g; na++;
+        at[na][0] = v0.b; at[na][1] = v1.b; at[na][2] = v2.b; na++;
+    }
+    if (textured) {
+        at[na][0] = v0.u; at[na][1] = v1.u; at[na][2] = v2.u; na++;
+        at[na][0] = v0.v; at[na][1] = v1.v; at[na][2] = v2.v; na++;
+    }
+    int32_t dq[5] = {0}, dr[5] = {0};
+    for (int k = 0; k < na; k++) {
+        int64_t dn = d0 * at[k][0] + d1 * at[k][1] + d2 * at[k][2];
+        int64_t q = dn / area;
+        if (dn % area < 0) q--;   /* division por abajo */
+        dq[k] = (int32_t)q;
+        dr[k] = (int32_t)(dn - q * area);
+    }
+    TexCtx tc = {0};
+    if (textured) { tex_ctx(g, &tc, cx, cy); g_tri_cx = cx; g_tri_by = g->tp_y * 256; }
+    /* todo incremental tambien en y: aristas en x = minx y cociente + resto de cada atributo en
+     * x = minx; al principio de cada tramo se avanza (xl - minx) pasos con una division */
+    int64_t ey[3] = {v2.x - v1.x, v0.x - v2.x, v1.x - v0.x};
+    int64_t e[3] = {edge(&v1, &v2, minx, miny) + b0, edge(&v2, &v0, minx, miny) + b1, edge(&v0, &v1, minx, miny) + b2};
+    int64_t dd[3] = {d0, d1, d2};
+    int32_t qm[5] = {0}, rm[5] = {0}, dqy[5] = {0}, dry[5] = {0};
+    {
+        int64_t w0 = edge(&v1, &v2, minx, miny), w1 = edge(&v2, &v0, minx, miny), w2 = edge(&v0, &v1, minx, miny);
+        for (int k = 0; k < na; k++) {
+            int64_t n = w0 * at[k][0] + w1 * at[k][1] + w2 * at[k][2];
+            int64_t qq = n / area;
+            if (n % area < 0) qq--;
+            qm[k] = (int32_t)qq;
+            rm[k] = (int32_t)(n - qq * area);
+            int64_t dn = ey[0] * at[k][0] + ey[1] * at[k][1] + ey[2] * at[k][2];
+            qq = dn / area;
+            if (dn % area < 0) qq--;
+            dqy[k] = (int32_t)qq;
+            dry[k] = (int32_t)(dn - qq * area);
         }
+    }
+    int32_t a32 = (int32_t)area;
+    for (int y = miny; y <= maxy; y++) {
+        /* tramo de la fila: x tal que e_i + d_i * (x - minx) >= 0 para las tres aristas */
+        int xl = minx, xr = maxx;
+        for (int k = 0; k < 3 && xl <= xr; k++) {
+            if (dd[k] == 0) { if (e[k] < 0) xl = xr + 1; continue; }
+            if (dd[k] > 0) {
+                if (e[k] < 0) { int64_t t = (-e[k] + dd[k] - 1) / dd[k]; if (minx + t > xl) xl = (int)(minx + t > maxx + 1 ? maxx + 1 : minx + t); }
+            } else {
+                if (e[k] < 0) { xl = xr + 1; continue; }
+                int64_t t = e[k] / -dd[k];
+                if (minx + t < xr) xr = (int)(minx + t);
+            }
+        }
+        if (xl <= xr) {
+            int32_t q[5] = {0}, r[5] = {0};
+            int64_t kx = xl - minx;
+            for (int k = 0; k < na; k++) {
+                int64_t t = rm[k] + kx * dr[k];   /* >= 0 */
+                q[k] = (int32_t)(qm[k] + kx * dq[k] + t / area);
+                r[k] = (int32_t)(t % area);
+            }
+            /* versiones especializadas del tramo (las banderas son constantes en cada llamada) */
+            if (gouraud && textured) tri_span(g, &tc, y, xl, xr, q, r, dq, dr, a32, 1, 1, raw, semi, dither, v0.r, v0.g, v0.b);
+            else if (gouraud) tri_span(g, &tc, y, xl, xr, q, r, dq, dr, a32, 1, 0, raw, semi, dither, v0.r, v0.g, v0.b);
+            else if (textured) tri_span(g, &tc, y, xl, xr, q, r, dq, dr, a32, 0, 1, raw, semi, dither, v0.r, v0.g, v0.b);
+            else tri_span(g, &tc, y, xl, xr, q, r, dq, dr, a32, 0, 0, raw, semi, dither, v0.r, v0.g, v0.b);
+        }
+        for (int k = 0; k < 3; k++) e[k] += ey[k];
+        for (int k = 0; k < na; k++) {
+            qm[k] += dqy[k];
+            rm[k] += dry[k];
+            if (rm[k] >= a32) { rm[k] -= a32; qm[k]++; }
+        }
+    }
     g->prims_drawn++;
 }
 

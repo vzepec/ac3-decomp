@@ -5,6 +5,33 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Imágenes intermedias por vértices y GPU por software exacta 2× más rápida
+
+**Interpolación** (`psx/src/interp.c`):
+- La GTE anota modelo → pantalla y `DrawOTag` reconoce esas coordenadas en la
+  lista de dibujo.
+- Se dibujan imágenes intermedias con las posiciones mezcladas con el paso
+  anterior.
+- **Primer intento fallido:** emparejar por "n-ésima aparición" de las
+  coordenadas de modelo. Más de la mitad se repiten (casillas del terreno) y
+  salían astillas en el horizonte.
+- **Arreglo:** un modelo afín del movimiento global, ajustado con las claves
+  únicas, que decide entre los candidatos.
+
+**Validación** (`AC3_INTERP_TEST=1 AC3_INTERP=1 PSX_VSYNC_MAX=1`, binario de
+`make native`): la intermedia de *k* y *k+2* frente al *k+1* real da 28,7 dB,
+frente a 27,5 y 27,8 dB de los vecinos, en 390 casos.
+
+**Medición que cambió el plan:**
+- Una imagen de la misión costaba ~8 ms: 138.000 píxeles a 58 ns.
+- El rasterizador recalculaba las aristas y hacía divisiones de 64 bits por
+  cada píxel del rectángulo envolvente.
+- Reescrito (tramos exactos, cociente + resto incremental): 3,3 ms y el
+  arranque completo al doble de velocidad.
+- Idéntico byte a byte: 84 capturas, resumen de VRAM, `test_gpu`.
+- Banco de pruebas: `psx/test/bench_gpu.c` sobre `data/bench/mision.gpu`
+  (`PSX_GPU_DUMP`).
+
 ## 2026-10-17 — Los 25 fps son del juego, y su lógica va atada a las imágenes
 
 En la misión, el bucle principal (`ac3_main`) llama a `VSync(n)` con `n`

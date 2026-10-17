@@ -138,6 +138,7 @@ psx-check:
 	@cc -O2 -Wall -Wextra -Ipsx/include psx/test/test_gpu.c psx/src/gpu.c psx/src/mem.c -o psx/build/test_gpu
 	@$(PY) tools/timdump.py data/psx_tims >/dev/null
 	@psx/build/test_gpu data/psx_tims/*.tim | tail -1
+	@if [ -f data/bench/mision.gpu ]; then cc -O2 -Ipsx/include psx/test/bench_gpu.c psx/src/gpu.c psx/src/mem.c -o psx/build/bench_gpu && psx/build/bench_gpu data/bench/mision.gpu 50; fi
 	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include psx/test/test_etc.c psx/src/libetc.c psx/src/libcd.c psx/src/libpad.c psx/src/libapi.c psx/src/mem.c -o psx/build/test_etc
 	@psx/build/test_etc
 	@$(PY) tools/psxcheck_io.py "$(EU)" data/exe/ace_eu.bin

@@ -173,6 +173,7 @@ static int64_t row_dot(PsxGte *g, int i, int64_t base, int16_t m0, int16_t m1, i
 }
 
 /* ---- RTPS / RTPT ---- */
+void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy);
 static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t x = vx(g, n), y = vy(g, n), z = vz(g, n);
     int64_t s3 = 0;
@@ -199,6 +200,7 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t sx = lm_g(g, tx < -0x8000 ? -0x8000 : tx > 0x7FFF ? 0x7FFF : (int32_t)tx, F_SX2);
     int32_t sy = lm_g(g, ty < -0x8000 ? -0x8000 : ty > 0x7FFF ? 0x7FFF : (int32_t)ty, F_SY2);
     push_sxy(g, sx, sy);
+    if (psx_gte_vertex_hook) psx_gte_vertex_hook(x, y, z, sx, sy);   /* interpolacion de imagenes */
     if (last) {
         int16_t dqa = lo16(g->c[27]);
         g->d[24] = F(g, (int64_t)g->c[28] + (int64_t)dqa * q);

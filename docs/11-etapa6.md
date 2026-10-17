@@ -345,3 +345,72 @@ el código generado no mejora sobre -O1.
 
 **SIN RESOLVER:** el rendimiento real en la Retroid, y si el presupuesto sin
 calibrar provoca tirones.
+
+**Paso 5: imágenes intermedias (60 fps) y GPU por software 2× más rápida
+(2026-10-17).** Rama `etapa-6-paso-5`.
+
+*Punto de partida (medido):*
+- La misión dibuja una imagen cada 2 VBlank (25 por segundo en PAL).
+- La lógica avanza un paso por imagen: con `PSX_VSYNC_MAX=1` el juego entero
+  va al doble.
+- Para ver más imágenes sin acelerarlo hay que interpolar.
+
+*Interpolación por vértices* (`psx/src/interp.c`, `psx/include/psx_interp.h`).
+Es genérica, no depende del juego y no toca su código:
+- La GTE anota cada vértice proyectado (RTPS/RTPT): coordenadas del modelo →
+  posición de pantalla.
+- En `DrawOTag` se reconocen, por su valor exacto, las coordenadas de la lista
+  de dibujo que salieron de la GTE en ese paso (~90 % de las de la misión).
+- **Emparejamiento con el paso anterior:**
+  - Más de la mitad de los vértices repiten coordenadas de modelo, porque el
+    terreno va por casillas con coordenadas locales.
+  - Con los vértices de clave única se ajusta un movimiento global afín de la
+    imagen.
+  - Cada vértice repetido se empareja con el candidato más cercano a la
+    predicción de ese modelo.
+  - Los vértices de la GTE sin pareja siguen la media de su primitiva o el
+    modelo global.
+  - Lo que no viene de la GTE (HUD, textos) no se mueve.
+- **Dibujo:** la lista se dibuja con las posiciones mezcladas sobre una copia
+  del estado de la GPU, y se entregan al anfitrión las imágenes t = ¼, ½, ¾ y
+  la real.
+- Cobertura en la misión: 55-90 % de las coordenadas emparejadas.
+- **Defecto corregido:** contando apariciones, las parejas se desplazaban y
+  salían astillas en el horizonte. Con el modelo afín desaparecen (comprobado
+  con capturas).
+
+*Validación con verdad conocida* (`AC3_INTERP_TEST=1` en `native_main`,
+juego a un paso por VBlank):
+- Se interpola entre los pasos *k* y *k+2* y se compara con el *k+1* real.
+- Resultado en 390 casos: PSNR medio de 28,7 dB, frente a 27,5 y 27,8 dB de
+  los vecinos reales (lo que se vería sin interpolar).
+- Los peores casos son cambios del HUD en 2D (el texto "ENGAGE"), que no se
+  pueden interpolar.
+
+*Rasterizador de la GPU* (`psx/src/gpu.c`). Antes iban 58 ns por píxel: cada
+píxel del rectángulo envolvente recalculaba las aristas con hasta cinco
+divisiones de 64 bits. Ahora:
+- tramo exacto por fila;
+- atributos incrementales (cociente + resto, el mismo valor que la división);
+- tramos especializados.
+
+Resultados:
+- Imagen de misión de 4,9 a 3,3 ms (`psx/test/bench_gpu.c` sobre un fotograma
+  real guardado con `PSX_GPU_DUMP`).
+- Arranque completo de 4.200 fotogramas de 33 a 17 s de CPU.
+- **Resultado idéntico byte a byte:** 84 capturas del arranque iguales al
+  rasterizador anterior, el mismo resumen de VRAM y `test_gpu` sin fallos.
+
+*APK 1.1-alfa:*
+- El hilo del juego entrega 3 intermedias + la real por paso, cada una con su
+  hora de salida.
+- La pantalla muestra en cada refresco la última que ya tocaba.
+- Un paso de retraso (40 ms).
+- El número de intermedias se adapta (de 1 a 3) según le sobre tiempo al hilo
+  del juego.
+- L3+R3 activa o desactiva la interpolación.
+
+**SIN RESOLVER:**
+- el rendimiento en la Retroid;
+- objetos que el juego coloca con la CPU tras la GTE (sprites de explosiones);
+  quedan en la posición del paso real.

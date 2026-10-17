@@ -6,6 +6,7 @@
 #include "psx_libetc.h"
 #include "psx_gpu.h"
 #include "psx_mem.h"
+#include "psx_interp.h"
 
 static int g_video_mode;            /* 0x800B4034 en ACE.BIN EU */
 static int16_t g_vram_w = 1024, g_vram_h = 512;   /* 0x800B97E8 / 0x800B97EA */
@@ -131,6 +132,7 @@ void DrawOTag(uint32_t *ot) {
         n++;
         if (v - v0 >= 100) { fprintf(stderr, "fps: VBlank %d: %d DrawOTag en %d VBlank\n", v, n, v - v0); n = 0; v0 = v; }
     }
+    if (psx_interp_on && psx_interp_draw(&g_gpu, psx_addr(ot))) return;   /* con imagenes intermedias */
     psx_gpu_draw_list(&g_gpu, psx_addr(ot));
 }
 

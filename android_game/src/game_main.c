@@ -7,6 +7,10 @@
  *    codigo traducido (como en psx/recomp/native_main.c); cada VBlank espera al tiempo real
  *    (50 Hz, PAL) y deja la imagen visible en un bufer compartido;
  *  - principal: EGL, presentacion a 4:3 (psx/gl/psx_present.c), entrada y ciclo de vida;
+ *  - imagenes intermedias (psx/src/interp.c, paso 5): en la mision el juego dibuja 25 imagenes
+ *    por segundo (una por paso de logica); la capa entrega 3 intermedias + la real por paso, cada
+ *    una con su hora de salida repartida en la duracion del paso (con un paso de retraso), y la
+ *    pantalla muestra en cada refresco la ultima cuya hora ya paso. L3+R3 lo activa o desactiva;
  *  - AAudio: lee un anillo de muestras. La SPU de la capa no tiene cerrojos, asi que las
  *    muestras se generan en el hilo del juego (882 por fotograma: 44100 Hz / 50). */
 #include <EGL/egl.h>
@@ -25,6 +29,7 @@
 #include <unistd.h>
 
 #include "psx_display.h"
+#include "psx_interp.h"
 #include "psx_libcard.h"
 #include "psx_libcd.h"
 #include "psx_libetc.h"
@@ -70,9 +75,13 @@ static struct {
     volatile uint16_t buttons, keys;
     volatile float lx, ly, rx, ry;
     AAudioStream *audio;
+    /* cola de imagenes con hora de salida (interpolacion) */
+    struct { uint32_t px[640 * 512]; int w, h; double due; int full; } q[8];
+    double interp_last;              /* ultima imagen entregada por la interpolacion */
+    volatile int interp_enabled;
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
-} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1};
+} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1};
 
 static double now(void) {
     struct timespec t;
@@ -96,13 +105,34 @@ static uint8_t to_axis(float v) {
 }
 
 /* antes de cada VBlank: ritmo real (50 Hz), mando e imagen para la pantalla */
+static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb);
+
 static void frame_wait(void) {
     static double next;
     double t = now();
     while (G.paused && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / 50;
-    if (next > t) usleep((useconds_t)((next - t) * 1e6));
+    double slack = next - t;
+    if (slack > 0) usleep((useconds_t)(slack * 1e6));
+    /* numero de imagenes intermedias adaptativo: cada 50 VBlank, si el hilo del juego apenas
+     * duerme (va justo) se baja, y si le sobra se sube (de 1 a 3) */
+    static double sleep_sum;
+    static int sleep_n, nfrac = 3;
+    sleep_sum += slack > 0 ? slack : 0;
+    if (++sleep_n == 50) {
+        double avg = sleep_sum / sleep_n * 1000;   /* ms dormidos por VBlank de 20 ms */
+        int want = nfrac;
+        if (avg < 3 && nfrac > 1) want = nfrac - 1;
+        else if (avg > 12 && nfrac < 3) want = nfrac + 1;
+        if (want != nfrac && G.interp_enabled) {
+            nfrac = want;
+            psx_interp_config(nfrac, 2, interp_sink);
+            LOG("imagenes intermedias por paso: %d (dormido %.1f ms por VBlank)", nfrac, avg);
+        }
+        sleep_sum = 0;
+        sleep_n = 0;
+    }
     /* audio de este fotograma; si AAudio va atrasado (anillo casi lleno) no se acumula */
     static int16_t pcm[882 * 2];
     psx_spu_render(psx_spu(), pcm, 882);
@@ -114,6 +144,12 @@ static void frame_wait(void) {
         }
         __atomic_store_n(&G.ring_w, wpos + 882, __ATOMIC_RELEASE);
     }
+    /* L3+R3 cambia G.interp_enabled en el hilo principal; aqui se aplica (hilo del juego) */
+    static int interp_applied = 1;
+    if (interp_applied != G.interp_enabled) {
+        interp_applied = G.interp_enabled;
+        psx_interp_config(interp_applied ? 2 : 0, 2, interp_sink);
+    }
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
     int w, h;
@@ -124,6 +160,25 @@ static void frame_wait(void) {
 }
 
 static void tick(void) { psx_vblank(); }
+
+/* sumidero de la interpolacion (hilo del juego): hora de salida = inicio del paso + fase */
+static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb) {
+    static double t0;
+    double t = now();
+    if (num == 1) t0 = t;
+    if (w * h > 640 * 512) return;
+    double due = t0 + (double)num / den * vb / 50.0;
+    pthread_mutex_lock(&G.lock);
+    int k = 0;   /* la ranura libre o la mas antigua */
+    for (int i = 0; i < 8; i++) {
+        if (!G.q[i].full) { k = i; break; }
+        if (G.q[i].due < G.q[k].due) k = i;
+    }
+    memcpy(G.q[k].px, rgba, (size_t)w * h * 4);
+    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1;
+    G.interp_last = t;
+    pthread_mutex_unlock(&G.lock);
+}
 
 static void *game_thread(void *arg) {
     (void)arg;
@@ -146,6 +201,7 @@ static void *game_thread(void *arg) {
     rc_gte = (PsxGte *)psx_gte_get_context();
     psx_set_call(rc_host_callback);
     psx_set_frame_wait(frame_wait);
+    psx_interp_config(3, 2, interp_sink);   /* luego se ajusta solo (frame_wait) */
     rc_set_tick(tick, BUDGET_PER_FRAME);
     memset(psx_ram + 0xBACB0, 0, 0xC9DC0 - 0xBACB0);   /* BSS, como ac3_start */
     RCpu c;
@@ -271,7 +327,14 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
     if (type == AINPUT_EVENT_TYPE_KEY) {
         uint16_t m = key_button(AKeyEvent_getKeyCode(e));
         if (!m) return 0;
-        if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) G.keys |= m;
+        if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) {
+            G.keys |= m;
+            /* L3+R3: imagenes intermedias si/no (para comparar con el original) */
+            if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
+                G.interp_enabled = !G.interp_enabled;
+                LOG("imagenes intermedias: %s", G.interp_enabled ? "si" : "no");
+            }
+        }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;
         return 1;
     }
@@ -327,7 +390,17 @@ void android_main(struct android_app *app) {
             close(fd);
         }
         pthread_mutex_lock(&G.lock);
-        if (G.fw && G.fh) psx_present_frame(G.frame, G.fw, G.fh, G.w, G.h, PSX_FIT_43, 0);
+        double t = now();
+        int best = -1;   /* interpolacion activa: la ultima imagen cuya hora ya llego */
+        if (G.interp_enabled && t - G.interp_last < 0.15) {
+            for (int i = 0; i < 8; i++)
+                if (G.q[i].full && G.q[i].due <= t && (best < 0 || G.q[i].due > G.q[best].due)) best = i;
+            if (best >= 0)
+                for (int i = 0; i < 8; i++)
+                    if (G.q[i].full && G.q[i].due < G.q[best].due) G.q[i].full = 0;
+        }
+        if (best >= 0) psx_present_frame(G.q[best].px, G.q[best].w, G.q[best].h, G.w, G.h, PSX_FIT_43, 0);
+        else if (G.fw && G.fh) psx_present_frame(G.frame, G.fw, G.fh, G.w, G.h, PSX_FIT_43, 0);
         else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         pthread_mutex_unlock(&G.lock);
         eglSwapBuffers(G.dpy, G.surf);
