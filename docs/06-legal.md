@@ -34,3 +34,30 @@ git status --porcelain | grep -iE '\.(bin|cue|iso|spb|bpb|sph|bph|exe)$|SCES_|SL
 ```
 
 Si eso imprime algo, el `.gitignore` no está haciendo su trabajo.
+
+## El APK libre (etapa 7)
+
+`REGION=libre android_game/build.sh` genera un APK **solo con código del
+repositorio**:
+- no lleva el código del juego traducido ni `ACE.BIN`;
+- lee `ACE.BIN` del disco del usuario e interpreta el código del juego en el
+  aparato, como un emulador (`docs/12-etapa7.md`).
+
+Es el caso "un APK que no contenga nada de Namco" de arriba.
+
+**Comprobación antes de publicarlo** (obligatoria en cada release):
+
+```bash
+python3 tools/apk_audit.py data/android/ac3game-<version>-libre.apk \
+    data/exe/ace_eu.bin data/exe/ace_us.bin data/exe/ovl/overlay*.exe data/exe/ovl_us/overlay*.exe
+```
+
+Debe dar **0 coincidencias**. El APK personal de la etapa 6 da cientos de
+miles, y es el caso positivo con el que se validó la herramienta.
+
+Las tablas versionadas del modo libre (`psx/recomp/hle_*.c`,
+`psx/recomp/ac3_versions.c`) contienen solo direcciones y nombres de funciones
+de librería, que son resultados del análisis, igual que los archivos de
+símbolos que publican los proyectos de decompilación. No contienen bytes del
+juego.
+

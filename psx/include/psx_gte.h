@@ -23,6 +23,10 @@ void psx_gte_command(PsxGte *g, uint32_t cmd);
 /* Division UNR de RTPS/RTPT, expuesta para las pruebas: (h << 16) / sz3 aproximada. */
 uint32_t psx_gte_unr_divide(uint32_t h, uint32_t sz3);
 
+/* gancho opcional tras cada vertice de RTPS/RTPT (modelo -> pantalla); lo instala la
+ * interpolacion de imagenes (psx_interp.h) */
+extern void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy);
+
 /* Codigos de orden (bits 0-5) */
 enum {
     GTE_RTPS = 0x01, GTE_NCLIP = 0x06, GTE_OP = 0x0C, GTE_DPCS = 0x10, GTE_INTPL = 0x11,

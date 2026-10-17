@@ -47,6 +47,14 @@ FUNCS = {
     'RotMatrix': (0x800A5958, 'SM', False),
     'RotMatrixYXZ': (0x800A5BE8, 'SM', False),
     'VectorNormalSS': (0x800A4928, 'SS', True),
+    # sin firma en el ACE.BIN (identificadas por su codigo; las llama el juego)
+    'SetGeomOffset': (0x800A55E8, 'ii', False),
+    'SetGeomScreen': (0x800A5608, 'i', False),
+    'ReadGeomScreen': (0x800A55B8, '', True),
+    'NormalClip': (0x800A58E8, 'iii', True),
+    'TransMatrix': (0x800A53A8, 'MV', False),
+    'CompMatrix': (0x800A4C18, 'MMM', False),
+    'RotMatrix_gte': (0x800A5E78, 'SM', False),
 }
 
 

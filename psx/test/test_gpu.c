@@ -69,6 +69,11 @@ static void test_transfer_and_list(void) {
     uint32_t a0[] = {0xA0000000u, (5u << 16) | 3u, (2u << 16) | 4u, 0x22221111u, 0x44443333u, 0x66665555u, 0x88887777u};
     send(a0, 7);
     CHECK(px(3, 5) == 0x1111 && px(6, 5) == 0x4444 && px(3, 6) == 0x5555 && px(6, 6) == 0x8888, "GP0 A0 a VRAM");
+    /* GP0 80: copia de VRAM a VRAM (MoveImage) del bloque 4x2 a (100, 50) */
+    uint32_t c80[] = {0x80000000u, (5u << 16) | 3u, (50u << 16) | 100u, (2u << 16) | 4u};
+    send(c80, 4);
+    CHECK(px(100, 50) == 0x1111 && px(103, 50) == 0x4444 && px(100, 51) == 0x5555 && px(103, 51) == 0x8888 &&
+          px(104, 50) == 0 && px(3, 5) == 0x1111, "GP0 80 VRAM a VRAM");
     /* lista de dibujo en la RAM de la PS1: dos paquetes encadenados */
     psx_gpu_reset(&G);
     uint32_t *p1 = (uint32_t *)psx_ptr(0x80100000u), *p2 = (uint32_t *)psx_ptr(0x80100100u);

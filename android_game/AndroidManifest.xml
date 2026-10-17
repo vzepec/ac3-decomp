@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- AC3 Recomp. Por defecto (build.sh, REGION=libre) es el APK publicable: solo codigo de este
+     repositorio; el juego se lee del disco del usuario y se interpreta (docs/12-etapa7.md).
+     Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.vzepec.ac3game"
+    android:versionCode="8"
+    android:versionName="1.7-alfa">
+
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+
+    <application
+        android:label="AC3 Recomp"
+        android:hasCode="true"
+        android:extractNativeLibs="true"
+        android:isGame="true"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <activity
+            android:name=".MainActivity"
+            android:exported="true"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="ac3game" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

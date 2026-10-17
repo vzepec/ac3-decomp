@@ -46,6 +46,23 @@ Todavía no hay texto en pantalla:
 | azul oscuro | esperando la imagen de disco, o cargando |
 | rojo | fallo al cargar una misión o un avión (ver `adb logcat -s AC3Slice`); se puede seguir cambiando de misión (Select) o de avión (Y/X) |
 
+## Demo de la capa PsyQ (0.9)
+
+**R3** (clic del stick derecho), o **L2 + R2 + A**, abre y cierra una demo en la que
+todo lo que se ve sale de la capa `psx/` de la etapa 5-6 (la reimplementacion de las
+librerias de Sony y su GPU por software), no del render de la rebanada:
+
+| Demo | Que usa de la capa |
+|---|---|
+| Pelicula de introduccion (entrada 0 del SPB) | libpress (`DecDCTvlc2`), MDEC, VRAM de 24 bits, salida de video y audio XA sincronizado |
+| Pelicula final (entrada 1) | lo mismo |
+| Terreno de la mision | libgte (`RTPT`, `NCLIP`...) y libgpu (`POLY_FT4/GT4`, tabla de ordenacion, `DrawOTag`) a 320x240, con la camara girando en el inicio de la mision |
+
+En la demo: **L1/R1** cambian de demo y **A** reinicia. La imagen se presenta a 4:3 con
+barras (`psx/gl/psx_present.c`). Es la primera vez que algo del juego se reproduce 1:1 en
+el dispositivo con la capa; lo que no es del juego son solo las tablas de la camara del
+terreno.
+
 ## Controles
 
 | Mando | Acción |
@@ -105,6 +122,8 @@ cc -O2 -Isrc test/test_desktop.c src/ace.c src/scene.c -lm -o build/test_desktop
 build/test_desktop <imagen.bin> 6 55
 cc -O2 -Isrc test/test_collide.c src/ace.c src/scene.c -lm -o build/test_collide
 build/test_collide <imagen.bin> 20     # huecos bajo puentes y estructuras
+cc -O2 -Isrc -I../psx/include test/test_psxdemo.c src/ace.c src/music.c src/psxdemo.c ../psx/src/*.c -lm -lpthread -o build/test_psxdemo
+build/test_psxdemo <imagen.bin> <dir>          # pelicula a ritmo real y terreno
 cc -O2 -Isrc -I../psx/include test/test_music.c src/ace.c src/music.c ../psx/src/xa.c -lpthread -o build/test_music
 build/test_music <imagen.bin> 6 20 musica.raw   # y luego, desde la raiz:
 python3 tools/psxcheck_music.py <imagen.bin> 6 android/musica.raw

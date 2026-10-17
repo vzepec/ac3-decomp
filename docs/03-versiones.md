@@ -58,7 +58,31 @@ Las herramientas de este repositorio ya van en esa dirección: `psxiso.py`
 detecta el tamaño de sector y el modo de forma automática, y `acepack.py`
 parsea el índice por su cabecera, no por constantes de una versión.
 
-## 4. ⚠️ Los repos de "AC3 recomp" que aparecen en buscadores son humo
+## 3 bis. La americana también se recompila (etapa 6, 2026-10-17)
+
+La recompilación de la etapa 6 (`docs/11-etapa6.md`, «ROM americana») ya
+acepta las dos versiones. Lo que distingue a la US (`SLUS_009.72`) en el
+código, medido con `tools/recomp/region.py`:
+
+| | EU (`SCES_020.66`) | US (`SLUS_009.72`) |
+|---|---|---|
+| `ACE.BIN` descomprimido | 700.416 B | 704.512 B |
+| entrada (`ac3_start`) | `0x8002521C` | `0x8002539C` |
+| `ac3_main` | `0x80025D08` | `0x80025E5C` |
+| `$gp` | `0x800BA9F4` | `0x800BB454` |
+| BSS | `0x800BACB0`-`0x800C9DC0` | `0x800BB808`-`0x800CA908` |
+| base de los overlays | `0x800C9DC0` | `0x800CA908` |
+| librería de Sony | `0x80099DE0`-`0x800AE09C` | `0x8009A1B4`-`0x800AE470` (todo +`0x3D4`) |
+| tabla de modos | `0x800AE544` | `0x800AE918` |
+| modo de vídeo (`SetVideoMode`) | 1, PAL, 50 Hz | 0, NTSC, 60 Hz |
+
+- El código propio **no** está simplemente desplazado: el desplazamiento
+  cambia por zonas (de `+0x154` a `+0x3D8`), porque hay funciones distintas
+  (la US no tiene menú de idioma). La librería sí va entera +`0x3D4`.
+- Los overlays miden distinto (overlay 3: 85.800 B en EU, 92.584 B en US).
+- La US arranca sin menú de idioma: carga → título → menú directamente.
+- En `make native-us` la US llega a la primera misión en vuelo.
+ de "AC3 recomp" que aparecen en buscadores son humo
 
 Al buscar "Ace Combat 3 decompilation" o "recompilation" salen varios repos
 que prometen un port funcionando. **No son evidencia de nada y no hay que

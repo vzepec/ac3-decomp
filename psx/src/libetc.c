@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include <stdlib.h>
 /* libetc y modelo de tiempo de la capa (ver psx_libetc.h). */
 #include "psx_libetc.h"
 
@@ -36,6 +38,10 @@ void psx_vblank(void) {
 int VSync(int mode) {
     if (mode < 0) return (int)g_vcount;
     uint32_t start = g_last;
+    /* medicion (PSX_VSYNC_MAX=1): VSync(n>1) espera solo 1 VBlank. Demuestra que la logica del
+     * juego avanza un paso por imagen: con esto la mision va al doble (bitacora 2026-10-17) */
+    if (mode > 1 && getenv("PSX_VSYNC_MAX")) mode = atoi(getenv("PSX_VSYNC_MAX"));
+    if (mode == 1 && getenv("PSX_VSYNC_MAX")) mode = 0;
     if (mode == 0) psx_vblank();
     else if (mode > 1) while (g_vcount - start < (uint32_t)mode) psx_vblank();
     int lines = (int)(g_vcount - start) * (g_hz == 50 ? 313 : 263);
