@@ -8,6 +8,7 @@
 #include <execinfo.h>
 #include <math.h>
 #include <setjmp.h>
+#include <pthread.h>
 #include <signal.h>
 #include <unistd.h>
 #include <stdio.h>
@@ -81,7 +82,7 @@ static void frame_check(void) {
 
 /* prueba de la interpolacion (AC3_INTERP=n): cada 100 fotogramas, estadisticas; entre
  * AC3_INTERP_FROM y +8 fotogramas, todas las imagenes (intermedias y reales) a las capturas */
-static int interp_from, interp_seq;
+static int interp_from;
 /* prueba con verdad conocida (AC3_INTERP_TEST=1): PSNR de la intermedia de k y k+2 frente al
  * k+1 real, y de los vecinos reales frente al k+1 (lo que se veria sin interpolar) */
 static uint32_t t_prev[640 * 512], t_mid[640 * 512], t_int[640 * 512];
@@ -130,7 +131,13 @@ static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
     t_have_mid = 0;
 }
 
-static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb) {
+/* cada paso se identifica por su hora (t_step): con hilos de dibujo (AC3_INTERP_THREADS) las
+ * intermedias llegan despues de la real y desde otros hilos; el numero de paso se asigna la
+ * primera vez que se ve (siempre desde el hilo del juego, en DrawOTag), asi los nombres de las
+ * capturas coinciden con y sin hilos */
+static pthread_mutex_t sink_mu = PTHREAD_MUTEX_INITIALIZER;
+
+static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step) {
     if (psx_interp_skip_test && last_vcount > 3500) interp_test(rgba, w, h, num, den);
     if (den == 0) return;
     static int last_stat;
@@ -141,15 +148,28 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         printf("interp f%d: GTE %d, lista %d coordenadas: %d de la GTE, %d emparejadas, %d por la media (paso %d VBlank)\n",
                last_vcount, a, e, b, c, d, vb);
     }
-    if (shots && interp_from && last_vcount >= interp_from && last_vcount < interp_from + 8) {
-        char path[512];
-        snprintf(path, sizeof path, "%s/i%05d_%02d_%d-%d.ppm", shots, last_vcount, interp_seq++, num, den);
-        FILE *f = fopen(path, "wb");
-        if (!f) return;
-        fprintf(f, "P6\n%d %d\n255\n", w, h);
-        for (int i = 0; i < w * h; i++) fwrite(&rgba[i], 1, 3, f);
-        fclose(f);
+    if (!shots || !interp_from) return;
+    static double seen_t[8];
+    static int seen_step[8], seen_save[8], nsteps;
+    pthread_mutex_lock(&sink_mu);
+    int k = -1;
+    for (int i = 0; i < 8; i++) if (seen_t[i] == t_step) k = i;
+    if (k < 0) {
+        k = nsteps & 7;
+        seen_t[k] = t_step;
+        seen_step[k] = nsteps++;
+        seen_save[k] = last_vcount >= interp_from && last_vcount < interp_from + 8;
     }
+    int step = seen_step[k], save = seen_save[k];
+    pthread_mutex_unlock(&sink_mu);
+    if (!save) return;
+    char path[512];
+    snprintf(path, sizeof path, "%s/i%05d_%d-%d.ppm", shots, step, num, den);
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (int i = 0; i < w * h; i++) fwrite(&rgba[i], 1, 3, f);
+    fclose(f);
 }
 
 static void tick(void) {
@@ -229,6 +249,7 @@ int main(int argc, char **argv) {
         interp_from = getenv("AC3_INTERP_FROM") ? atoi(getenv("AC3_INTERP_FROM")) : 0;
         psx_interp_skip_test = getenv("AC3_INTERP_TEST") != NULL;
         psx_interp_config(atoi(getenv("AC3_INTERP")), psx_interp_skip_test ? 1 : 2, interp_sink);
+        if (getenv("AC3_INTERP_THREADS")) psx_interp_threads(atoi(getenv("AC3_INTERP_THREADS")), NULL);
     }
     /* como ac3_start: BSS a cero y ac3_main */
     memset(psx_ram + 0xBACB0, 0, 0xC9DC0 - 0xBACB0);

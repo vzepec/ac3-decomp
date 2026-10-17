@@ -212,5 +212,5 @@ native: recomp
 	@for f in ace_eu overlay1 overlay2 overlay3 overlay4 overlay5 hle_gen; do cc -O1 -w -Ipsx/include -Ipsx/recomp -c data/recomp/$$f.c -o data/recomp/native/obj/$$f.o; done
 	@for f in psx/src/*.c psx/recomp/recomp_rt.c; do cc -O2 -w -Ipsx/include -Ipsx/recomp -c $$f -o data/recomp/native/obj/$$(basename $$f .c).o; done
 	@cc -O2 -w -D_GNU_SOURCE -Ipsx/include -Ipsx/recomp -c psx/recomp/native_main.c -o data/recomp/native/obj/native_main.o
-	@cc -rdynamic data/recomp/native/obj/*.o -lm -o data/recomp/native/ac3_native
+	@cc -rdynamic data/recomp/native/obj/*.o -lm -lpthread -o data/recomp/native/ac3_native
 	@data/recomp/native/ac3_native "$(EU)" data/exe/ace_eu.bin 3600 data/recomp/native/shots 100 "$(GUION)"

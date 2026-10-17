@@ -18,7 +18,10 @@
 
 #include <stdint.h>
 
-typedef void (*PsxInterpSink)(const uint32_t *rgba, int w, int h, int phase_num, int phase_den, int vblanks);
+/* t_step: hora (CLOCK_MONOTONIC, segundos) en que el juego entrego el paso. Con hilos de dibujo
+ * (psx_interp_threads) el sumidero se llama desde esos hilos y las intermedias llegan despues
+ * de la imagen real: el anfitrion las ordena por fase. */
+typedef void (*PsxInterpSink)(const uint32_t *rgba, int w, int h, int phase_num, int phase_den, int vblanks, double t_step);
 
 /* nfrac imagenes intermedias por paso (0 = desactivado); solo si el paso dura >= min_vblanks */
 void psx_interp_config(int nfrac, int min_vblanks, PsxInterpSink sink);
@@ -29,6 +32,19 @@ int psx_interp_draw(void *gpu, uint32_t ot_addr);
 /* estadisticas del ultimo paso: vertices de la GTE, coordenadas de la lista reconocidas,
  * emparejadas con el paso anterior, movidas por la media */
 void psx_interp_stats(int *gte, int *matched, int *paired, int *dragged, int *total);
+
+/* n hilos de dibujo para las intermedias (0 = en el hilo del juego, dentro de DrawOTag, como
+ * en la prueba de native_main). on_start: se llama al arrancar cada hilo (afinidad...) */
+void psx_interp_threads(int n, void (*on_start)(void));
+
+/* rendimiento acumulado desde el ultimo reset: pasos interpolados, trabajos entregados a los
+ * hilos, pasos sin intermedias porque los hilos no habian terminado; ms por paso en el hilo del
+ * juego (emparejar, instantanea, dibujo real) y ms por trabajo en cada hilo de dibujo */
+typedef struct {
+    int steps, jobs, skipped, nfrac, threads;
+    double pair_ms, snap_ms, real_ms, worker_ms, worker_max_ms;
+} PsxInterpPerf;
+void psx_interp_perf(PsxInterpPerf *p, int reset);
 
 extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST de native_main): un paso de cada dos se entrega con fase 0/0

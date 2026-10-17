@@ -5,6 +5,32 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Intermedias en hilos aparte y contador de FPS (APK 1.2-alfa)
+
+**Problema:** en la Retroid, la 1.1-alfa con intermedias bajaba a ~5-10
+imágenes por segundo a ojo (informe del dueño). Las intermedias se dibujaban
+en el hilo del juego, así que si no cabían en el paso frenaban también la
+lógica. La causa exacta en el aparato está **SIN RESOLVER** porque no hay
+mediciones.
+
+**Cambio:**
+- Las intermedias se dibujan ahora en hilos aparte: `psx_interp_threads` y
+  `psx_gpu_draw_list_mem`, sobre una instantánea de la RAM y de la GPU.
+- El juego nunca espera: si los hilos no llegan, ese paso va sin intermedias.
+- Afinidad a los núcleos rápidos.
+- Contador en pantalla (`FPS`, `VEL`, `INT`, `CPU`) y una línea por segundo
+  en logcat.
+
+**Validación:**
+- Las capturas de los pasos 225-228 salen idénticas byte a byte con y sin
+  hilos (13 de 13).
+- `make psx-check` sin fallos.
+
+**Reproducir** con el binario de `make native` y el guion de la misión
+(docs/11-etapa6.md, paso 6), una vez sin `AC3_INTERP_THREADS` y otra con
+`AC3_INTERP_THREADS=3`. Las variables son `AC3_INTERP=3
+AC3_INTERP_FROM=3900`; después se comparan los `i*.ppm` con `cmp`.
+
 ## 2026-10-17 — Imágenes intermedias por vértices y GPU por software exacta 2× más rápida
 
 **Interpolación** (`psx/src/interp.c`):

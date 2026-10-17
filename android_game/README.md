@@ -39,6 +39,15 @@ android_game/build.sh    # -> data/android/ac3game-<version>.apk
   por vértices (`psx/src/interp.c`).
   - Un paso de retraso.
   - L3+R3 las activa o desactiva.
-  - Su número se adapta al tiempo libre del hilo del juego.
+  - Su número se adapta: baja si los hilos de dibujo no llegan a tiempo o si
+    el hilo del juego va justo.
+  - Desde la 1.2-alfa se dibujan en 3 hilos aparte, fijados a los núcleos
+    rápidos. En la 1.1 frenaban el juego en la Retroid.
+- Contador (1.2-alfa), arriba a la izquierda:
+  - `FPS`: imágenes distintas por segundo;
+  - `VEL`: velocidad del juego frente a la consola;
+  - `INT`: intermedias por paso;
+  - `CPU`: uso del hilo del juego.
+  - Detalle cada segundo en `adb logcat -s AC3Game`.
 - Aún no hay pantalla ancha.
 - Solo se ha probado hasta la primera misión en el PC (`make native`).
