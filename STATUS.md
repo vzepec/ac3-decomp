@@ -67,20 +67,25 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-Etapa 6, paso 3 de `docs/11-etapa6.md` (rama `etapa-6-paso-3`): **el
-recompilador MIPS → C** (`tools/recomp/`).
-- Una función de C por función del juego (límites de Ghidra), con huecos de
-  retardo, saltos indirectos por un despachador de direcciones y las llamadas
-  a librería enlazadas con `psx/`.
-- Primero el residente; los 5 overlays, cada uno con su dirección de carga.
-- Validación función a función contra `tools/mipsemu.py` (mismas entradas,
-  misma RAM y registros a la salida).
-- El C generado va a `data/` y no entra en git; `make progress` cuenta las
-  funciones validadas.
+Etapa 6, paso 4 de `docs/11-etapa6.md` (rama `etapa-6-paso-4`): **arranque
+nativo en el PC**.
+- Enlazar `data/recomp/librecomp.so` con la capa de verdad: el enganche de
+  librería (`rc_set_libcall`) debe llamar a las funciones de `psx/` con los
+  argumentos de la ABI MIPS (punteros PS1 → `psx_ptr`), una por cada una de
+  las 152.
+- Cargar ACE.BIN como lo hace el ejecutable de arranque y arrancar
+  `ac3_main`; carga de overlays (`rc_set_overlay`).
+- Bucle de fotogramas con `psx_vblank`, imagen por `psx_display` y audio por
+  la SPU.
+- **Validación con estados reales:** el mismo arranque en el intérprete y en
+  el código traducido, con la RAM comparada fotograma a fotograma. Cubre las
+  149 funciones "sin caso" y las mutaciones que los casos aleatorios no ven.
+- Meta: la pantalla de título.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);
-- paso 2, salida de vídeo (VRAM a RGBA y GLES, idéntica píxel a píxel).
+- paso 2, salida de vídeo;
+- paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

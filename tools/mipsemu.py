@@ -189,6 +189,45 @@ class Machine:
             self.hi, self.lo = saved[1], saved[2]
         return v0
 
+    def run(self, addr, regs, hi=0, lo=0, max_steps=200000):
+        """Ejecuta desde `addr` con los 32 registros dados ($ra debe ser RETURN_MAGIC).
+        Devuelve (estado, pasos): 'ok', 'mem', 'align', 'break', 'timeout' u 'otro:<texto>'."""
+        r = self.r
+        r[:] = [v & 0xFFFFFFFF for v in regs]
+        r[0] = 0
+        self.hi, self.lo = hi & 0xFFFFFFFF, lo & 0xFFFFFFFF
+        pc, npc, steps, hooks = addr, addr + 4, 0, self.hooks
+        self.depth += 1
+        try:
+            while pc != RETURN_MAGIC:
+                steps += 1
+                if steps > max_steps:
+                    return 'timeout', steps
+                if pc in hooks:
+                    ra = r[31]
+                    v = hooks[pc](self)
+                    r = self.r
+                    if v is not None:
+                        r[2] = v & 0xFFFFFFFF
+                    pc, npc = ra, ra + 4
+                    continue
+                ins = self.lw(pc)
+                target = self._exec(ins, pc, npc)
+                pc, npc = npc, (target if target is not None else npc + 4)
+                r[0] = 0
+        except MipsError as e:
+            t = str(e)
+            if 'fuera de memoria' in t:
+                return 'mem', steps
+            if 'desalineado' in t:
+                return 'align', steps
+            if 'break' in t:
+                return 'break', steps
+            return 'otro:' + t, steps
+        finally:
+            self.depth -= 1
+        return 'ok', steps
+
     def _exec(self, ins, pc, npc):
         r = self.r
         op = ins >> 26

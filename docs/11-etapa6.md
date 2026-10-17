@@ -64,8 +64,8 @@ distribuido (`docs/06-legal.md`).
 |---|---|---|
 | 1 | Completar la capa: lo que el juego llama y `psx/` no tiene (tabla abajo) | ✅ 152/152 funciones de Sony que llama el juego (residente y overlays) |
 | 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
-| 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ⏳ siguiente |
-| 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ⏳ |
+| 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ✅ 1.672/1.821 funciones validadas con estados aleatorios, 0 distintas; el resto, con estados reales en el paso 4 |
+| 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ⏳ siguiente |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ⏳ |
 | 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | ⏳ |
@@ -210,3 +210,73 @@ Pendiente:
   arranque, paso 4, o antes si se pide);
 - el recorte y la posición en el televisor (`DISPENV.screen`) y el
   entrelazado.
+
+**Paso 3 (2026-10-17): recompilador MIPS → C.** Rama `etapa-6-paso-3`.
+
+`tools/recomp/recomp.py` traduce cada función propia del juego a una función
+de C sobre `psx/recomp/recomp_rt.h` (código nuestro: CPU, memoria con
+direcciones PS1, GTE de la capa, despachador por dirección, enganche de
+librería). El C generado deriva del código de Namco: va a `data/recomp/` y no
+entra en git (`make recomp`).
+
+Reglas, las mismas que `tools/mipsemu.py`:
+- **Huecos de retardo:** la condición y el registro de `jr`/`jalr` se leen
+  antes del hueco.
+- **Saltos internos y externos:** los internos son `goto`; los externos, salto
+  de cola.
+- **`jr $ra`:** retorno, comprobando que `$ra` es la dirección esperada (la
+  fija quien llama y la heredan los saltos de cola).
+- **Tablas de `switch`:** se leen enteras con el número de casos del `sltiu`.
+- **Saltos a un hueco de retardo:** soportados (el descompresor ULZ los usa).
+- **Overlays:** cada uno con su prefijo y su tabla; `rc_set_overlay` indica
+  el cargado.
+
+Entradas descubiertas, además de las funciones de Ghidra:
+- destinos de `jal`;
+- direcciones cargadas con `lui`/`addiu`;
+- etiquetas `LAB_`;
+- **finales de función compartidos** (saltos a mitad de otra función);
+- **punteros a código en los datos** (tablas de manejadores);
+- destinos que llegan desde los overlays.
+
+| Módulo | Entradas | Funciones de Ghidra validadas |
+|---|---|---|
+| residente | 2.065 | 1.130 / 1.237 |
+| overlay 1 | 320 | 142 / 144 |
+| overlay 2 | 843 | 362 / 401 |
+| overlay 3 | 49 | 20 / 21 |
+| overlay 4 | 109 | 10 / 10 |
+| overlay 5 | 10 | 8 / 8 |
+| **total** | | **1.672 / 1.821 (91,8 %)** |
+
+**Validación** (`tools/recomp/check.py`, `make recomp-check`):
+- Cada entrada se ejecuta con 24 estados iniciales en el intérprete (código
+  original) y traducida. Los estados son aleatorios pero plausibles: punteros
+  a una zona de datos que a su vez contiene punteros válidos, y estructuras
+  del juego.
+- Se comparan los 32 registros, HI/LO, los 2 MB de RAM, el scratchpad, la GTE
+  y la secuencia de llamadas a librerías. Las librerías van, en los dos lados,
+  a un stub determinista: se prueba el código del juego, no las librerías.
+- Resultado: **0 funciones distintas en los seis módulos**.
+- Las 149 restantes son "sin caso": con estados aleatorios siempre fallan o
+  agotan el tiempo en los dos lados. Necesitan estados reales (paso 4).
+
+Fallos encontrados en el camino, todos corregidos:
+- funciones a las que se llegaba a mitad (finales compartidos);
+- punteros a código en datos;
+- tablas de saltos con `add` y tablas cortadas por los límites de la
+  función;
+- el saltar a un hueco de retardo;
+- un rango de "código" que en realidad eran datos;
+- en el arnés, punteros de ctypes truncados a 32 bits.
+
+**Sensibilidad del comparador (medida, no supuesta).** Sobre 60 funciones
+validadas, una mutación de una constante en cada una:
+- con 24 casos se detectan 32 (53 %);
+- con 120 casos, 39 (65 %).
+
+"Validada" significa que no se encontró diferencia, no que esté demostrada.
+Un fallo de una regla de traducción afectaría a muchas funciones y saldría a
+la luz; los que se escapan son locales. La comprobación fuerte será la del
+paso 4: fotogramas reales del juego en el intérprete y en el código traducido
+desde el mismo estado, con la RAM comparada fotograma a fotograma.

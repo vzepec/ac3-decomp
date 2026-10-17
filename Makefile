@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -35,6 +35,8 @@ help:
 	@echo "make progress   - etapa 6: recalcula docs/progreso.json y la infografia del README"
 	@echo "make psx-display - etapa 6: salida de video (VRAM a RGBA y GLES) con pruebas"
 	@echo "make psx-android - etapa 6: compila la capa para Android (arm64) con el NDK"
+	@echo "make recomp     - etapa 6: recompila el juego a C (data/recomp, fuera de git)"
+	@echo "make recomp-check - etapa 6: valida cada funcion recompilada contra el interprete"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -181,3 +183,16 @@ psx-android:
 	@for f in psx/src/*.c psx/gl/psx_present.c; do $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang -O2 -fPIC -Wall -Wextra -Wno-unused-parameter -Ipsx/include -c $$f -o psx/build/android/$$(basename $$f .c).o || exit 1; done
 	@$(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs psx/build/android/libpsx.a psx/build/android/*.o
 	@echo "psx/build/android/libpsx.a (arm64) compilada"
+
+# etapa 6, paso 3: recompilacion del juego (el C generado va a data/recomp, fuera de git)
+OVLS = data/exe/ovl/overlay1.exe,data/exe/ovl/overlay2.exe,data/exe/ovl/overlay3.exe,data/exe/ovl/overlay4.exe,data/exe/ovl/overlay5.exe
+recomp:
+	@$(PY) tools/recomp/recomp.py data/exe/ace_eu.bin data/ghidra/all_ace_eu.c data/recomp --from $(OVLS)
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/recomp.py data/exe/ovl/overlay$$k.exe data/ghidra/all_overlay$$k.c data/recomp --overlay $$k --resident data/recomp/ace_eu.json; done
+	@cc -O1 -fPIC -shared -w -Ipsx/include -Ipsx/recomp data/recomp/ace_eu.c data/recomp/overlay[1-5].c psx/recomp/recomp_rt.c psx/src/*.c -lm -o data/recomp/librecomp.so
+	@echo "data/recomp/librecomp.so"
+
+recomp-check:
+	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay $$k data/exe/ovl/overlay$$k.exe 24; done
+	@$(PY) tools/progress.py svg
