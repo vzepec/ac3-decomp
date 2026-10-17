@@ -4,6 +4,7 @@
 #include <string.h>
 
 #include "recomp_rt.h"
+#include "psx_libgte.h"
 
 int64_t rc_budget = INT64_MAX;
 uint32_t rc_ret;
@@ -139,7 +140,7 @@ int rc_run(RCpu *c, uint32_t addr, int64_t budget, uint32_t *fault_pc, uint32_t 
     g_jmp = &jb;
     g_fault = 0;
     rc_budget = budget;
-    if (!rc_gte) rc_gte = psx_gte_get_context();
+    if (!rc_gte) rc_gte = (PsxGte *)psx_gte_get_context();
     int r = setjmp(jb);
     if (r == 0) { rc_ret = c->r[31]; rc_call(c, addr); }
     g_jmp = prev;

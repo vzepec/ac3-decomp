@@ -67,16 +67,18 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-Etapa 6, paso 4 (rama `etapa-6-paso-4`): **APK de prueba 1.0-alfa** con el
-juego recompilado, solo para uso personal (lleva código del juego traducido:
-no se distribuye).
-- Aplicación Android con el bucle del juego en un hilo, la imagen por
-  `psx_present` y el sonido de la SPU por AAudio.
-- Mando de la Retroid y ritmo real de 50 Hz.
-- Disco elegido con el selector y ACE.BIN incrustado en la compilación
-  personal.
+**Probar `data/android/ac3game-1.0-alfa.apk` en la Retroid** (uso personal):
+- rendimiento;
+- sonido;
+- mando en la primera misión;
+- tarjeta de memoria.
 
-Ya funciona en el PC: `make native` llega a la primera misión en vuelo.
+Después, según lo que se vea:
+1. calibrar `BUDGET_PER_FRAME` contra el intérprete (450.000 instrucciones por
+   fotograma);
+2. medir dónde se va el tiempo en las cargas y las películas;
+3. empezar a sustituir funciones traducidas por C legible (el port 1:1),
+   pantalla por pantalla.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);

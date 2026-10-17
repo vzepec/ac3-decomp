@@ -1,0 +1,39 @@
+# AC3 Recomp — el juego recompilado en Android (etapa 6, paso 4)
+
+**Compilación personal. No se distribuye.** El APK enlaza el código del juego
+traducido a C (`data/recomp/*.c`) e incrusta `ACE.BIN`; los dos se generan
+desde el disco del usuario. Por eso el APK se escribe en `data/android/`,
+fuera de git (ver `docs/06-legal.md`). Este directorio solo contiene código
+nuestro: el programa principal y el puente Java del selector de disco.
+
+```bash
+make native              # genera data/recomp/ (traduccion + enlace) y prueba en el PC
+android_game/build.sh    # -> data/android/ac3game-<version>.apk
+```
+
+## Cómo funciona
+
+- **Hilo del juego:** `ac3_main` recompilado sobre la capa `psx/`.
+  - El reloj es el presupuesto de saltos del código traducido, como en
+    `psx/recomp/native_main.c`.
+  - En cada VBlank espera al tiempo real (50 Hz, PAL), lee el mando, genera
+    882 muestras de la SPU y deja la imagen visible en un búfer compartido.
+- **Hilo principal:** EGL/GLES 3 y presentación a 4:3 (`psx/gl/psx_present.c`),
+  entrada y ciclo de vida.
+- **AAudio:** lee las muestras de un anillo. La SPU no tiene cerrojos, así que
+  solo la toca el hilo del juego.
+- **Disco:** se elige con el selector del sistema; no hace falta ningún
+  permiso.
+- **Tarjeta de memoria:** `tarjeta1.mcd`, en los datos privados de la app.
+- **Mando:** analógico (DualShock, 0x73).
+  - Sticks de la Retroid → sticks.
+  - A/B/X/Y → cruz/círculo/cuadrado/triángulo.
+  - L1/R1/L2/R2, Start/Select y la cruceta, a sus botones.
+
+## Limitaciones conocidas (1.0-alfa)
+
+- `BUDGET_PER_FRAME` no está calibrado. Si un fotograma del juego exige más
+  trabajo que el presupuesto, el reloj avanza a mitad de fotograma.
+- La imagen se presenta a 50 Hz tal cual: aún no hay 60 fps ni pantalla
+  ancha.
+- Solo se ha probado hasta la primera misión en el PC (`make native`).

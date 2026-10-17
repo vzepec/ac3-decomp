@@ -328,3 +328,20 @@ Fallos destapados al ejecutarlo:
   principio de la función, que ya se detecta desde el inicio de la función de
   Ghidra;
 - un límite de seguridad para listas de dibujo corruptas.
+
+**Paso 4: APK personal 1.0-alfa (2026-10-17).** Rama `etapa-6-paso-4`.
+
+- `android_game/` es una app aparte de la rebanada (`com.vzepec.ac3game`) con
+  el juego recompilado. Hilos, sonido y mando: ver `android_game/README.md`.
+- `android_game/build.sh` la compila con el NDK. Enlaza `data/recomp/*.c` y
+  ACE.BIN incrustado; deja el APK en `data/android/` porque **no se
+  distribuye**.
+- Probado en el PC con el mando analógico (`AC3_PAD_ID=73 make native`): llega
+  al vuelo de la primera misión.
+
+Rendimiento en el PC: los fotogramas de vuelo cuestan unos 2-4 ms de CPU
+(250-600 fotogramas/s); el coste está en las cargas y las películas. -O2 en
+el código generado no mejora sobre -O1.
+
+**SIN RESOLVER:** el rendimiento real en la Retroid, y si el presupuesto sin
+calibrar provoca tirones.

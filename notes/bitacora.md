@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — APK personal 1.0-alfa con el juego recompilado
+
+`android_game/build.sh` empaqueta el juego recompilado con la capa en una app
+Android (`data/android/ac3game-1.0-alfa.apk`, 3,5 MB; solo uso personal).
+Antes, en el PC (`AC3_PAD_ID=73 make native`), se comprobó que el arranque con
+mando analógico llega igual a la primera misión.
+
+Encontrado al compilar con el NDK: `recomp_rt.c` usaba `psx_gte_get_context`
+sin declararla. gcc lo dejaba pasar; clang no.
+
 ## 2026-10-17 — El juego recompilado llega a la primera misión, nativo en el PC
 
 Dos hitos:
