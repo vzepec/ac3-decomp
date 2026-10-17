@@ -708,3 +708,136 @@ paréntesis, el mejor vecino real):**
   - la cámara cambia de velocidad dentro del paso;
   - los saltos de más de 128 px no se interpolan: ese paso va sin
     intermedias, con un tirón a 25 fps.
+
+### ROM americana: la versión US de punta a punta (2026-10-17)
+
+Rama `etapa-6-rom-us`. Objetivo: que la recompilación, el arranque nativo y
+el APK acepten también el disco americano (`SLUS_009.72`), no solo el europeo.
+
+**Por qué no basta con cambiar el disco.** Las herramientas tenían escritas a
+mano direcciones del `ACE.BIN` europeo: límites del código propio y de la
+librería, base de los overlays, `$gp`, BSS, `ac3_main`, las funciones de
+librería sin firma de Ghidra… En la US todo eso está en otro sitio y el
+código propio no va desplazado en bloque: el desplazamiento cambia por zonas
+(de `+0x154` a `+0x3D8`) porque hay funciones distintas (no hay menú de
+idioma). La librería de Sony sí va entera `+0x3D4`.
+
+**`tools/recomp/region.py`** saca del binario cada dirección, sin escribir
+ninguna a mano, y escribe `data/recomp_us/region.json` (Python) y
+`data/recomp_us/ac3_region.h` (C):
+- **del arranque** (`crt0` en la entrada del PS-X EXE): BSS, `$gp`, base de los
+  overlays, `ac3_main` (el `jal` tras restaurar `$ra`), `__main`,
+  `stup1`/`stup0` e inicio del código propio;
+- **de la tabla de modos** (buscada: modos de los overlays 1 y 2 en la misma
+  base): el final de cada overlay;
+- **por firma** frente al `ACE.BIN` europeo (ventanas de instrucciones con los
+  inmediatos de `lui`/`addiu`/cargas y los destinos de `jal` enmascarados):
+  límites de la librería y de `ulz_decompress`, las 16 funciones de librería
+  sin firma de Ghidra y los 6 callbacks de `FixFunctionStarts`. Dos de estos
+  (discos de hélice de 3 y 5 palas) son casi iguales: la ambigüedad se
+  resuelve con el desplazamiento de las vecinas;
+- **por correspondencia de datos:** en las funciones emparejadas, las
+  direcciones que usan las mismas instrucciones (absolutas, propagadas por
+  `addiu`, o relativas a `$gp`) dan 876 parejas EU → US. De ahí salen el
+  puntero al estado del juego, el estado y el búfer del mando;
+- **el modo de vídeo:** el argumento de la llamada a `SetVideoMode` (EU 1 =
+  PAL; US 0 = NTSC, 60 Hz);
+- con `--disc`, el ejecutable de arranque de `SYSTEM.CNF` (`\SLUS_009.72;1`),
+  que el APK busca para aceptar el disco.
+
+**Validación del perfil:** aplicado al `ACE.BIN` europeo debe dar las 16
+constantes que ya usaban las herramientas, más las 16 funciones sin firma y
+los 6 callbacks; si no, el programa se detiene. Lo hace en cada ejecución.
+Para la US se comprueba además que `ac3_main` por el arranque (`0x80025E5C`) y
+por firma coinciden, y que la librería tiene un único desplazamiento.
+
+Comprobación independiente: el enlace con la capa (`gen_hle.py`) de la US
+resuelve las **mismas 155 funciones de librería con los mismos nombres** que
+la EU, sacados de un análisis de Ghidra hecho aparte sobre la US (firmas
+PsyQ): 154 a `+0x3D4` y `__main` a `+0x180`.
+
+| | EU | US |
+|---|---|---|
+| `ac3_main` | `0x80025D08` | `0x80025E5C` |
+| `$gp` | `0x800BA9F4` | `0x800BB454` |
+| BSS | `0x800BACB0`-`0x800C9DC0` | `0x800BB808`-`0x800CA908` |
+| base de los overlays | `0x800C9DC0` | `0x800CA908` |
+| librería | `0x80099DE0`-`0x800AE09C` | `0x8009A1B4`-`0x800AE470` |
+| tabla de modos | `0x800AE544` | `0x800AE918` |
+| estado del juego (puntero → estado) | `0x800BACD0` → `0x800BD158` | `0x800BB828` → `0x800BDCB0` |
+| vídeo | PAL, 50 Hz | NTSC, 60 Hz |
+
+**Cambios en las herramientas** (la EU sigue igual: sin perfil, las mismas
+constantes de antes):
+- `recomp.py`, `check.py`, `gen_hle.py` y `hle.lib_targets`: opción
+  `--region` (perfil) y, en `gen_hle`/`hle`, el volcado de Ghidra de la US;
+- `check.py` con `--region` no toca `docs/progreso.json` (la infografía cuenta
+  la EU);
+- `aceovl.py --table auto`: busca la tabla de modos;
+- `recomp_rt.c`: `rc_set_region()` (base de overlays, librería, `__main`,
+  `$gp`), con la EU por defecto;
+- `native_main.c` y `game_main.c`: las direcciones son macros con la EU por
+  defecto; la US las recibe con `-include data/recomp_us/ac3_region.h`. El
+  ritmo (50/60 Hz), las muestras de audio por VBlank (882/735) y la hora de las
+  intermedias salen de `AC3_REFRESH`.
+- Ghidra no admite un proyecto en una ruta con un elemento que empiece por
+  `.` (el árbol de trabajo estaba en `.claude/worktrees/`): `make ghidra-us`
+  acepta `GHIDRA_US_PROJ=<dir>` para ponerlo fuera.
+
+**Comprobación de que la EU no cambia:** con las herramientas nuevas,
+`ace_eu.c` y `overlay1-5.c` salen **idénticos byte a byte** a los de
+`data/recomp/` y `hle_gen.c` también. El arranque EU (`make native`, 3.600
+fotogramas) da **36 de 36 capturas idénticas** con `native_main.c` y
+`recomp_rt.c` de la rama y con los de la base (`d22a33c`).
+
+**Validación de la US:**
+
+```bash
+make us-prep ghidra-us   # ACE.BIN, BPB, overlays, perfil y Ghidra (~10 min)
+make recomp-check-us     # comparador contra el interprete, como recomp-check
+make native-us           # capturas en data/recomp_us/native/shots
+```
+
+*Comparador contra el intérprete* (`make recomp-check-us`, 24 estados por
+entrada, el mismo arnés que la EU con las direcciones del perfil):
+
+| Módulo | Entradas | Validadas | Distintas | Funciones de Ghidra validadas (US) | (EU, paso 3) |
+|---|---|---|---|---|---|
+| residente | 2.040 | 1.309 | 0 | 1.126 / 1.239 | 1.130 / 1.237 |
+| overlay 1 | 308 | 266 | 0 | 140 / 143 | 142 / 144 |
+| overlay 2 | 837 | 545 | 0 | 365 / 402 | 362 / 401 |
+| overlay 3 | 128 | 89 | 0 | 22 / 22 | 20 / 21 |
+| overlay 4 | 96 | 74 | 0 | 10 / 10 | 10 / 10 |
+| overlay 5 | 10 | 8 | 0 | 8 / 8 | 8 / 8 |
+| **total** | **3.419** | **2.291** | **0** | **1.671 / 1.824 (91,6 %)** | 1.672 / 1.821 |
+
+El resto son «sin caso», como en la EU (con estados aleatorios fallan o
+agotan el tiempo en los dos lados). El overlay 3 de la US es más grande
+(92.584 B frente a 85.800) y da 128 entradas frente a 49.
+
+*Arranque nativo* (`make native-us`, guion `GUION_US`): pantalla de carga,
+título («PRESS START BUTTON», f300), menú de modo, dificultad, presentación
+de la campaña, menú de misiones, briefing de la primera misión («Transport»),
+selección de avión (EF2000E Typhoon II) y armas, película de la UPEO, texto
+de prólogo (se salta con Start, f3100) y **la primera misión en vuelo con
+«ENGAGE»** (f3300), HUD y radar. La US no tiene menú de idioma: llega al
+título hacia el fotograma 250 (60 Hz); el guion de la EU pulsa Start en el
+título en el 1100 (50 Hz). Entre 130 y 290 fotogramas por segundo de CPU en el
+PC, según la ejecución.
+
+**APK:** `REGION=us android_game/build.sh` → `data/android/ac3game-<versión>-us.apk`
+(la EU sigue saliendo como `ac3game-<versión>.apk`, igual que antes). Otro
+paquete, `com.vzepec.ac3game.us` («AC3 Recomp (US)»), para que conviva con la
+EU en el aparato. Al elegir el disco, la US comprueba que contiene
+`SLUS_009.72`; si no, lo descarta y vuelve a abrir el selector.
+
+**SIN RESOLVER:**
+- La US **no se ha probado en la Retroid** (ni el APK ni el ritmo de 60 Hz con
+  intermedias: en la misión la US dibuja una imagen cada 2 VBlank, 30 por
+  segundo).
+- `BUDGET_PER_FRAME` (25.000) está calibrado para la EU; en NTSC el fotograma es
+  más corto (~564.000 ciclos frente a ~677.000). No se ha medido si hace falta
+  otro valor.
+- `tools/recomp/record.py` y `boot.py` (comparador con estados reales en el
+  intérprete) siguen siendo solo EU.
+- Los nombres propios de `tools/ghidra/names.tsv` (EU) no se aplican a la US.

@@ -11,6 +11,21 @@ make native              # genera data/recomp/ (traduccion + enlace) y prueba en
 android_game/build.sh    # -> data/android/ac3game-<version>.apk
 ```
 
+**Versión americana** (disco `SLUS_009.72`, ver `docs/11-etapa6.md`, «ROM
+americana»):
+
+```bash
+make us-prep ghidra-us   # ACE.BIN US, overlays, perfil de direcciones y Ghidra
+make native-us           # data/recomp_us/ y prueba en el PC hasta la mision
+REGION=us android_game/build.sh   # -> data/android/ac3game-<version>-us.apk
+```
+
+- Paquete `com.vzepec.ac3game.us` («AC3 Recomp (US)»): convive con la
+  europea en el aparato, con su propia tarjeta de memoria.
+- Ritmo NTSC: 60 VBlank/s, 735 muestras de audio por VBlank; `VEL` 100 % = 60.
+- Al elegir el disco se comprueba que lleva `SLUS_009.72`. Si no, se vuelve a
+  pedir (la europea no comprueba nada, como antes).
+
 ## Cómo funciona
 
 - **Hilo del juego:** `ac3_main` recompilado sobre la capa `psx/`.

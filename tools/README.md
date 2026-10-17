@@ -23,7 +23,8 @@ CLI. Los atajos están en el `Makefile` de la raíz.
 | `ghidra/SetPsyqVersion.java` | Script de Ghidra: fuerza la versión de PsyQ antes del análisis |
 | `ghidra/libsplit.py` | Desglose por librería PsyQ de las funciones reconocidas |
 | `ghidra/psyqver.py` | Qué versión de PsyQ casa mejor con un binario |
-| `aceovl.py` | Tabla de modos de `ACE.BIN` y sus overlays de código (entradas 1-5 del BPB): valida y extrae como PS-X EXE |
+| `aceovl.py` | Tabla de modos de `ACE.BIN` y sus overlays de código (entradas 1-5 del BPB): valida y extrae como PS-X EXE; `--table auto` la busca (US) |
+| `recomp/region.py` | Perfil de direcciones de una versión de `ACE.BIN` (EU/US) para la recompilación: arranque, tabla de modos, firmas frente a la EU y correspondencia de datos; se valida contra las constantes europeas |
 | `acedat.py` | Demuestra que `ACE.DAT` es relleno |
 
 ## Uso directo
