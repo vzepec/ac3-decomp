@@ -1,0 +1,33 @@
+{
+ "funciones": {
+  "residente": 1237,
+  "overlay 1": 144,
+  "overlay 2": 401,
+  "overlay 3": 21,
+  "overlay 4": 10,
+  "overlay 5": 8
+ },
+ "recompiladas": {
+  "residente": 1130,
+  "overlay 1": 142,
+  "overlay 2": 362,
+  "overlay 3": 20,
+  "overlay 4": 10,
+  "overlay 5": 8
+ },
+ "capa": {
+  "necesarias": 152,
+  "hechas": 152,
+  "faltan": []
+ },
+ "pasos": {
+  "total": 8,
+  "hechos": 3,
+  "actual": "Paso 4: arranque nativo en el PC (pantalla de titulo)"
+ },
+ "recorrido": {
+  "total": 46,
+  "validadas": 0,
+  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final"
+ }
+}

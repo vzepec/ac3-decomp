@@ -72,6 +72,15 @@ class Machine:
         self.scratch = memoryview(scratch).cast('B') if scratch is not None else bytearray(1024)
         self.hooks = {}
         self.depth = 0
+        # reloj por instrucciones: cada tick_every instrucciones se llama a on_tick (p. ej. la
+        # interrupcion de VBlank de la capa), como el tiempo de una CPU real
+        self.probes = {}    # {direccion: funcion(maquina)}: aviso al llegar, sin sustituir el codigo
+        self.prev_pc = 0    # instruccion ejecutada justo antes (para saber si se llego llamando)
+        self.tick_every = 0
+        self.on_tick = None
+        self.total_steps = 0
+        self.next_tick = 0
+        self.in_tick = False
         self.io = None      # objeto con read(addr, size) / write(addr, size, value) para 0x1F801000-0x1F802FFF
         self.r = [0] * 32
         self.hi = self.lo = 0
@@ -163,12 +172,16 @@ class Machine:
         pc, npc = addr, addr + 4
         steps = 0
         hooks = self.hooks
+        probes = self.probes
         self.depth += 1
         try:
             while pc != RETURN_MAGIC:
                 steps += 1
                 if steps > max_steps:
                     raise MipsError('demasiados pasos (bucle?) en %08x' % pc)
+                if pc in probes:
+                    probes[pc](self)
+                    r = self.r
                 if pc in hooks:
                     ra = r[31]
                     v = hooks[pc](self)
@@ -178,8 +191,19 @@ class Machine:
                     continue
                 ins = self.lw(pc)
                 target = self._exec(ins, pc, npc)
+                self.prev_pc = pc
                 pc, npc = npc, (target if target is not None else npc + 4)
                 r[0] = 0
+                if self.tick_every:
+                    self.total_steps += 1
+                    if self.total_steps >= self.next_tick and not self.in_tick:
+                        self.next_tick = self.total_steps + self.tick_every
+                        self.in_tick = True
+                        try:
+                            self.on_tick(self)
+                        finally:
+                            self.in_tick = False
+                        r = self.r
         finally:
             self.depth -= 1
         self.steps = steps
@@ -188,6 +212,45 @@ class Machine:
             r[:] = saved[0]
             self.hi, self.lo = saved[1], saved[2]
         return v0
+
+    def run(self, addr, regs, hi=0, lo=0, max_steps=200000):
+        """Ejecuta desde `addr` con los 32 registros dados ($ra debe ser RETURN_MAGIC).
+        Devuelve (estado, pasos): 'ok', 'mem', 'align', 'break', 'timeout' u 'otro:<texto>'."""
+        r = self.r
+        r[:] = [v & 0xFFFFFFFF for v in regs]
+        r[0] = 0
+        self.hi, self.lo = hi & 0xFFFFFFFF, lo & 0xFFFFFFFF
+        pc, npc, steps, hooks = addr, addr + 4, 0, self.hooks
+        self.depth += 1
+        try:
+            while pc != RETURN_MAGIC:
+                steps += 1
+                if steps > max_steps:
+                    return 'timeout', steps
+                if pc in hooks:
+                    ra = r[31]
+                    v = hooks[pc](self)
+                    r = self.r
+                    if v is not None:
+                        r[2] = v & 0xFFFFFFFF
+                    pc, npc = ra, ra + 4
+                    continue
+                ins = self.lw(pc)
+                target = self._exec(ins, pc, npc)
+                pc, npc = npc, (target if target is not None else npc + 4)
+                r[0] = 0
+        except MipsError as e:
+            t = str(e)
+            if 'fuera de memoria' in t:
+                return 'mem', steps
+            if 'desalineado' in t:
+                return 'align', steps
+            if 'break' in t:
+                return 'break', steps
+            return 'otro:' + t, steps
+        finally:
+            self.depth -= 1
+        return 'ok', steps
 
     def _exec(self, ins, pc, npc):
         r = self.r

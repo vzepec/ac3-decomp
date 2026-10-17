@@ -11,6 +11,7 @@
 #include <string.h>
 
 #include "ace.h"
+#include "psx_display.h"
 #include "psx_gpu.h"
 #include "psx_gte.h"
 #include "psx_libgpu.h"
@@ -180,14 +181,17 @@ int main(int argc, char **argv) {
     PsxGpu *gpu = psx_gpu();
     printf("TIM %d, primitivas %d (%d descartadas por NCLIP), pixeles %u, paquetes %ld B\n", tims, prims, culled,
            gpu->pixels_drawn, (long)(pk_next - (psx_ram + 0x110000)));
+    /* salida por el camino de video de la capa (psx_display.h), como la vera la pantalla */
+    DISPENV disp;
+    SetDefDispEnv(&disp, 0, 0, 320, 240);
+    PutDispEnv(&disp);
+    SetDispMask(1);
+    static uint32_t img[320 * 240];
+    int iw, ih;
+    psx_display_frame(img, 320 * 240, &iw, &ih);
     FILE *f = fopen(argv[3], "wb");
-    fprintf(f, "P6\n320 240\n255\n");
-    for (int y = 0; y < 240; y++)
-        for (int x = 0; x < 320; x++) {
-            uint16_t c = gpu->vram[y * PSX_VRAM_W + x];
-            uint8_t rgb[3] = {(uint8_t)((c & 31) << 3), (uint8_t)(((c >> 5) & 31) << 3), (uint8_t)(((c >> 10) & 31) << 3)};
-            fwrite(rgb, 1, 3, f);
-        }
+    fprintf(f, "P6\n%d %d\n255\n", iw, ih);
+    for (int i = 0; i < iw * ih; i++) fwrite(&img[i], 1, 3, f);
     fclose(f);
     return 0;
 }

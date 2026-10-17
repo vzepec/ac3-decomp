@@ -77,6 +77,7 @@ typedef struct {
     Scene *scene;
     int status;            /* 0 cargando, 1 listo, -1 sin disco, -2 error */
     int music_entry;       /* pista del SPH que suena (-1 ninguna) */
+    int demo;              /* demo de la capa PsyQ (psxdemo.h): -1 apagada, o 0..2 */
     uint32_t mission, plane;
     int reload_mission, reload_plane, loaded_gl;
     /* vuelo */

@@ -5,6 +5,431 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Primera release pública: AC3Recomp 1.7-alfa (APK libre)
+
+**Prueba del dueño en la Retroid:** el APK libre de la etapa 7 va a `VEL` 100 %
+y todo funciona.
+
+**Decisiones del dueño:**
+- desde ahora solo se genera el APK publicable;
+- se llama `AC3Recomp-<versión>.apk`;
+- se publica una primera release alfa con requisitos, pasos y la tabla de
+  controles (`INSTALAR.md`).
+
+**Hecho:**
+- `android_game/build.sh` genera por defecto `REGION=libre` con el paquete
+  principal;
+- auditoría: 0 coincidencias;
+- `etapa-7` integrada en `develop` y `main`;
+- etiqueta `v1.7-alfa`.
+
+**Controles en `INSTALAR.md`:** solo se describe la función en el juego de lo
+comprobado:
+- A/cruz acepta en los menús (guiones de `native_main`);
+- B/círculo dispara misil (captura del PC);
+- X/cuadrado mantenido abre el mapa, las palancas pilotan y mueven la cámara
+  (dueño);
+- Start pausa y Select cambia la vista (capturas del PC).
+
+**SIN DOCUMENTAR:** el resto de botones ("según el juego").
+
+## 2026-10-17 — Etapa 7: APK libre (intérprete MIPS, ACE.BIN del disco), 0 bytes del juego
+
+**Decisión del dueño:** camino B. Un APK sin nada de Namco, como un
+emulador, en la rama `etapa-7` (docs/12-etapa7.md).
+
+**Hecho:**
+- intérprete MIPS en C (`psx/recomp/mipsi.c`) con la semántica del código
+  traducido;
+- enlace con la librería versionable, sin las firmas de los overlays
+  (`gen_hle.py --libre` → `psx/recomp/hle_eu.c`, `hle_us.c`);
+- `ACE.BIN` del disco (`psx/src/acebin.c`);
+- versión detectada por el ejecutable de arranque (`ac3_versions.c`);
+- `make libre` (PC) y `REGION=libre android_game/build.sh` (APK de 140 KB);
+- auditoría `tools/apk_audit.py`.
+
+**Validación:**
+- Comparador frente a `tools/mipsemu.py`, 24 casos, residente y 5 overlays
+  europeos: 2.260 entradas validadas y **0 distintas**. Funciones de Ghidra:
+  1.672 de 1.821, igual que el código traducido.
+- Arranque solo con el intérprete: 40/40 capturas idénticas al código
+  traducido en la europea (también con el binario compilado solo con el
+  repositorio) y 36/36 en la americana.
+- `ACE.BIN` del disco idéntico al de la etapa 2 en las dos versiones.
+- Auditoría del APK libre: 0 coincidencias de 32 bytes con el juego. El caso
+  positivo, el APK universal, da 334.355.
+
+**SIN RESOLVER:** el rendimiento en la Retroid.
+
+**Reproducir:**
+- `make mipsi-check`
+- `make libre` (`DISCO="$(US)"` y `LIBRE_GUION` para la americana)
+- `REGION=libre sh android_game/build.sh`
+- `python3 tools/apk_audit.py <apk> data/exe/ace_*.bin ...`
+
+## 2026-10-17 — APK universal EU + US (1.6-alfa)
+
+**Fusión:** `etapa-6-rom-us` (subagente) entra en `etapa-6`.
+- El dueño probó en la Retroid el APK americano 1.5: va más estable y con
+  menos artefactos que el europeo. **SIN RESOLVER:** por qué. Hipótesis: 30
+  pasos/s frente a 25, con desplazamientos menores por paso.
+
+**APK universal:** una app con las dos versiones, elegida por el ejecutable
+de arranque del disco.
+- Tablas por versión en `android_game/src/regions.c`.
+- Símbolos americanos con sufijo `_us` (`llvm-objcopy --redefine-syms`).
+
+**Comprobado:** enlaza sin duplicados, define las dos tablas (4.077 funciones
+`f_`) y genera las tres variantes (`REGION=all|eu|us`). Falta probarlo en la
+Retroid.
+
+**Release en GitHub:** no se adjuntan APK, porque llevan código traducido y
+el `ACE.BIN` de Namco (docs/06-legal.md). El dueño decidió esperar a un APK
+distribuible.
+
+**Reproducir:** `make native`, `make us-prep ghidra-us native-us` y
+`android_game/build.sh`.
+
+## 2026-10-17 — La versión americana, recompilada y en vuelo (rama `etapa-6-rom-us`)
+
+**Problema:** las herramientas de la etapa 6 llevaban escritas las direcciones
+del `ACE.BIN` europeo. En la US (`SLUS_009.72`) el código propio no va
+desplazado en bloque: el desplazamiento cambia por zonas, de `+0x154` a
+`+0x3D8`, porque hay funciones distintas (no hay menú de idioma). La librería
+de Sony sí va entera `+0x3D4`.
+
+**Herramienta:** `tools/recomp/region.py` saca el perfil de direcciones de la
+US sin escribir ninguna a mano:
+- del arranque (`crt0`): BSS, `$gp`, base de los overlays, `ac3_main`;
+- de la tabla de modos, buscada: el final de cada overlay;
+- por firma de código frente a la EU: límites de la librería, las 16
+  funciones sin firma de Ghidra y los 6 callbacks de `FixFunctionStarts`;
+- por correspondencia de datos en las funciones emparejadas (876 parejas):
+  el estado del juego y el búfer del mando;
+- `SetVideoMode`: EU 1 (PAL), US 0 (NTSC, 60 Hz).
+
+**Validación del heurístico:** sobre la EU reproduce las 16 constantes ya
+conocidas (lo comprueba en cada ejecución). Dos casos que lo pusieron a
+prueba:
+- `g_state` no salía porque se calcula desde una base en un registro (`s0 +
+  0x2200`): hizo falta propagar `addiu`;
+- la US llama a `SetVideoMode` con `move a0, zero` en lugar de `addiu`.
+
+Comprobación independiente: el análisis de Ghidra de la US da las mismas 155
+funciones de librería con los mismos nombres (154 a `+0x3D4`, `__main` a
+`+0x180`).
+
+**Resultados:**
+- `make recomp-check-us`: 3.419 entradas, 2.291 validadas, **0 distintas**.
+  Funciones de Ghidra validadas: 1.671 / 1.824, frente a 1.672 / 1.821 en la
+  EU.
+- `make native-us`: carga, título, menús, briefing, avión, película, prólogo
+  (Start) y **primera misión en vuelo** con «ENGAGE» (f3300, 320×240).
+- La EU no cambia:
+  - `ace_eu.c`, `overlay1-5.c` y `hle_gen.c` salen idénticos byte a byte;
+  - 36 de 36 capturas de `make native` son iguales a las de `native_main` y
+    `recomp_rt` de la base (`d22a33c`).
+- APK: `REGION=us android_game/build.sh` → `data/android/ac3game-1.5-alfa-us.apk`
+  (paquete `com.vzepec.ac3game.us`). Sin probar en la Retroid.
+
+**Reproducir:**
+```bash
+make us-prep ghidra-us     # GHIDRA_US_PROJ=<dir sin "."> si la ruta lo tiene
+make recomp-check-us
+make native-us             # capturas en data/recomp_us/native/shots
+REGION=us android_game/build.sh
+```
+
+**SIN RESOLVER:** el APK US en la Retroid; si `BUDGET_PER_FRAME` necesita
+otro valor en NTSC; `record.py`/`boot.py` siguen siendo solo EU.
+
+---
+
+## 2026-10-17 — Radar, mapa y temblor del terreno en las intermedias (APK 1.5-alfa)
+
+**Informe:** capturas y vídeo de la 1.4 en la Retroid. Se ven:
+- una cuña cortada en el radar;
+- bloques del mapa desplazados;
+- puntos oscuros en el horizonte;
+- temblor del terreno en giros.
+
+**Hallazgos:**
+- El HUD, el radar y el mapa usan la GTE en otros espacios de dibujo y se
+  interpolaban como escena 3D.
+- El movimiento global fallaba uno de cada dos pasos: solo 15 claves 3D
+  únicas, con un mínimo de 24. En esos pasos el 12 % del terreno quedaba
+  quieto (parpadeo a 12,5 Hz).
+- Con la palanca derecha, el terreno quedaba mitad movido y mitad quieto, y
+  se abrían grietas.
+
+**Arreglos:**
+- solo se interpola el espacio 3D (E5 + E3);
+- unicidad contada en ese espacio;
+- segundo ajuste del movimiento global con todas las parejas;
+- paso sin intermedias si quedan coordenadas sin mover.
+
+**Herramientas:**
+- palancas en el guion de `native_main`;
+- `tools/interp_dark.py`;
+- `PSX_INTERP_DBG2`.
+
+**Validación:**
+- Píxeles oscuros por intermedia en un alabeo: 16,0 → 0,2.
+- Guion de estrés: 26,72 → 27,06 dB.
+- Mapa: 1,87 → 1,23 de diferencia frente a la real.
+- Con hilos y sin ellos: 47 de 47 iguales.
+
+**SIN RESOLVER:** la costa del vídeo, que no se reprodujo en el PC.
+
+**Reproducir:** docs/11-etapa6.md, paso 9.
+
+## 2026-10-17 — Terreno lejano en giros rápidos: fondo sin GTE, caras que se dan la vuelta (APK 1.4-alfa)
+
+**Informe:** con la 1.3, en giros rápidos aparecen parpadeos y "terreno
+negro" en el terreno lejano.
+
+**Herramientas nuevas:**
+- `AC3_INTERP_TEST=S`: verdad conocida con movimientos S+1 veces mayores.
+- Medida de agujeros en la prueba y `tools/interp_holes.py` (prueba
+  sintética: 80 de 80).
+- `PSX_INTERP_PROBE=vb,x,y`: qué paquete escribe un píxel de la intermedia.
+- `PSX_INTERP_PRIMDUMP`: vuelco de la lista.
+
+**Hallazgos:**
+- **Fondo:** el cielo y la bruma son un cuadrilátero que cubre la pantalla.
+  Lo coloca la CPU (sin GTE) con el desplazamiento de dibujo del espacio 3D,
+  y no se movía en las intermedias.
+- **Puntos oscuros (sonda, S=5):** son caras de ladera de espaldas en el paso
+  anterior y de cara en este. Interpolando los vértices quedan de cara antes
+  de tiempo (superficie −120 → +12 → +29).
+- **Parejas:** los vértices repetidos del terreno se emparejaban mal con la
+  predicción global.
+- **La grieta por vértice compartido no aparece en el PC:** con los giros del
+  guion, la medida de agujeros es igual que entre reales (9 por imagen).
+
+**Arreglos:**
+- parejas por vecinos;
+- fondo interpolado con sus propios vértices;
+- ocultar caras antes de que se den la vuelta;
+- un único desplazamiento por punto;
+- saltos de hasta 128 px si cuadran con la predicción;
+- imagen real como base.
+
+**Validación:**
+- PSNR con S=1: de 28,34 a 28,47 dB.
+- S=3 y S=5 iguales, dentro de ±0,07 dB.
+- El fondo mejora 9 de 127 casos con S=5, sin empeorar ninguno.
+- Con hilos y sin ellos: 44 de 44 iguales.
+
+**SIN RESOLVER:** el giro de la Retroid no se reproduce en el PC (sin palanca
+de cámara en el guion).
+
+## 2026-10-17 — Titileo: los pasos sin intermedias no llegaban a la pantalla (APK 1.3-alfa)
+
+**Informe:** en la Retroid, la 1.2-alfa va a 60 FPS (VEL 100 %, INT 3, CPU
+15 %). En pruebas de estrés (giros, mapa) aparecen artefactos y titileo.
+
+**Causa:** un paso con pocas parejas, o el primero tras cada ajuste del
+número de intermedias, no entregaba su imagen a la cola. La pantalla mostraba
+la vieja y a los 0,15 s cambiaba de vía, de ahí la alternancia.
+
+**Medida:** 5 de 480 pasos con el guion de la misión (`make native` con
+`AC3_INTERP=3`; línea "sin bastantes parejas").
+
+**Arreglo:** esos pasos entregan la imagen real. El número de intermedias
+sube con más histéresis.
+
+**Corrección del paso 5:** la prueba de verdad conocida da 28,34 dB en 393
+casos, frente a 27,27 y 27,57 dB de los vecinos. Es igual con el binario de
+`5fac7bc` compilado de nuevo. Las cifras anotadas antes (28,7 dB y 390 casos)
+venían de un binario anterior.
+
+## 2026-10-17 — Intermedias en hilos aparte y contador de FPS (APK 1.2-alfa)
+
+**Problema:** en la Retroid, la 1.1-alfa con intermedias bajaba a ~5-10
+imágenes por segundo a ojo (informe del dueño). Las intermedias se dibujaban
+en el hilo del juego, así que si no cabían en el paso frenaban también la
+lógica. La causa exacta en el aparato está **SIN RESOLVER** porque no hay
+mediciones.
+
+**Cambio:**
+- Las intermedias se dibujan ahora en hilos aparte: `psx_interp_threads` y
+  `psx_gpu_draw_list_mem`, sobre una instantánea de la RAM y de la GPU.
+- El juego nunca espera: si los hilos no llegan, ese paso va sin intermedias.
+- Afinidad a los núcleos rápidos.
+- Contador en pantalla (`FPS`, `VEL`, `INT`, `CPU`) y una línea por segundo
+  en logcat.
+
+**Validación:**
+- Las capturas de los pasos 225-228 salen idénticas byte a byte con y sin
+  hilos (13 de 13).
+- `make psx-check` sin fallos.
+
+**Reproducir** con el binario de `make native` y el guion de la misión
+(docs/11-etapa6.md, paso 6), una vez sin `AC3_INTERP_THREADS` y otra con
+`AC3_INTERP_THREADS=3`. Las variables son `AC3_INTERP=3
+AC3_INTERP_FROM=3900`; después se comparan los `i*.ppm` con `cmp`.
+
+## 2026-10-17 — Imágenes intermedias por vértices y GPU por software exacta 2× más rápida
+
+**Interpolación** (`psx/src/interp.c`):
+- La GTE anota modelo → pantalla y `DrawOTag` reconoce esas coordenadas en la
+  lista de dibujo.
+- Se dibujan imágenes intermedias con las posiciones mezcladas con el paso
+  anterior.
+- **Primer intento fallido:** emparejar por "n-ésima aparición" de las
+  coordenadas de modelo. Más de la mitad se repiten (casillas del terreno) y
+  salían astillas en el horizonte.
+- **Arreglo:** un modelo afín del movimiento global, ajustado con las claves
+  únicas, que decide entre los candidatos.
+
+**Validación** (`AC3_INTERP_TEST=1 AC3_INTERP=1 PSX_VSYNC_MAX=1`, binario de
+`make native`): la intermedia de *k* y *k+2* frente al *k+1* real da 28,7 dB,
+frente a 27,5 y 27,8 dB de los vecinos, en 390 casos.
+
+**Medición que cambió el plan:**
+- Una imagen de la misión costaba ~8 ms: 138.000 píxeles a 58 ns.
+- El rasterizador recalculaba las aristas y hacía divisiones de 64 bits por
+  cada píxel del rectángulo envolvente.
+- Reescrito (tramos exactos, cociente + resto incremental): 3,3 ms y el
+  arranque completo al doble de velocidad.
+- Idéntico byte a byte: 84 capturas, resumen de VRAM, `test_gpu`.
+- Banco de pruebas: `psx/test/bench_gpu.c` sobre `data/bench/mision.gpu`
+  (`PSX_GPU_DUMP`).
+
+## 2026-10-17 — Los 25 fps son del juego, y su lógica va atada a las imágenes
+
+En la misión, el bucle principal (`ac3_main`) llama a `VSync(n)` con `n`
+leído de `[DAT_800bacb8]+0x14`. Vale 1 en los menús y 2 en la misión, lo que
+da **25 imágenes por segundo en PAL** (30 en NTSC).
+
+Con `PSX_FPSDBG=1` se miden los `DrawOTag` por cada 100 VBlank: 100 en los
+menús y 50 en la misión.
+
+Experimento con `PSX_VSYNC_MAX=1`, que hace esperar 1 VBlank por imagen:
+- La misión dibuja 100 imágenes cada 100 VBlank.
+- El reloj del HUD avanza 4 s por cada 2 s reales (00:07 → 00:27 frente a
+  00:02 → 00:12, en los fotogramas 3700 → 4200).
+- **La lógica avanza un paso por imagen.** El juego no usa el valor que
+  devuelve `VSync` como tiempo transcurrido.
+
+Consecuencia: para ver 60 fps sin acelerar el juego hay dos caminos:
+- **interpolar** imágenes intermedias entre dos pasos de lógica;
+- **partir el paso** de toda la lógica: física, IA, animaciones y relojes.
+
+Reproducir con `make native` (el binario de `data/recomp/native/`) y esas
+variables de entorno.
+
+## 2026-10-17 — APK personal 1.0-alfa con el juego recompilado
+
+`android_game/build.sh` empaqueta el juego recompilado con la capa en una app
+Android (`data/android/ac3game-1.0-alfa.apk`, 3,5 MB; solo uso personal).
+Antes, en el PC (`AC3_PAD_ID=73 make native`), se comprobó que el arranque con
+mando analógico llega igual a la primera misión.
+
+Encontrado al compilar con el NDK: `recomp_rt.c` usaba `psx_gte_get_context`
+sin declararla. gcc lo dejaba pasar; clang no.
+
+## 2026-10-17 — El juego recompilado llega a la primera misión, nativo en el PC
+
+Dos hitos:
+1. **El juego original arranca en el intérprete sobre la capa PsyQ**
+   (`tools/recomp/boot.py`): menú de idioma, título, películas, menús y
+   briefing.
+2. **El código recompilado, enlazado con la capa y compilado de forma
+   nativa, llega a la primera misión en vuelo**, a varias veces el tiempo real
+   (`make native`).
+
+El comparador con estados reales (`tools/recomp/record.py`) reproduce las
+funciones recompiladas desde instantáneas del arranque: 239 funciones, 641
+casos reales, todos idénticos.
+
+Correcciones:
+- `_card_clear` avisa con `HwCARD`;
+- el tiempo debe avanzar también por instrucciones (bucles de espera del
+  reproductor de vídeo);
+- detección de tablas de `switch` con la base en un registro `s`;
+- en mi script de montaje de capturas, unas "rayas" que no eran del juego.
+
+## 2026-10-17 — Etapa 6, paso 3: el juego recompilado a C, 1.672/1.821 funciones validadas
+
+`tools/recomp/recomp.py` traduce el residente y los 5 overlays a C sobre
+`psx/recomp/` (el C generado, en `data/recomp/`, fuera de git). Se compara
+cada función con el intérprete con estados aleatorios (24 casos):
+- 0 distintas;
+- 1.672 de las 1.821 funciones de Ghidra validadas;
+- las 149 restantes, sin caso: necesitan estados reales.
+
+Hallazgos del código del juego:
+- finales de función compartidos (saltos a mitad de otra función);
+- tablas de manejadores en datos;
+- `switch` con tabla y número de casos (`sltiu`);
+- `ulz_decompress` (0x800AE118, colocado tras las librerías) con tabla de
+  saltos en línea y saltos a un hueco de retardo.
+
+Sensibilidad medida con mutaciones: 53 % con 24 casos, 65 % con 120. La
+validación fuerte, con estados reales, es parte del paso 4.
+
+Reproducir: `make recomp`, `make recomp-check`.
+
+## 2026-10-16 — APK 0.9: la capa PsyQ funcionando en el dispositivo
+
+Version de prueba con una demo (R3, o L2 + R2 + A) en la que todo sale de `psx/`:
+- las dos peliculas del juego (libpress, MDEC, VRAM de 24 bits, salida de video
+  y audio XA), sincronizadas con el audio;
+- el terreno de la mision dibujado por la GTE y la GPU por software a 320x240.
+
+Prueba de escritorio (`android/test/test_psxdemo.c`): 18,7 fotogramas distintos
+por segundo en la intro, a ritmo real y sin cortes de audio; terreno correcto.
+Pendiente de probar en la Retroid.
+
+## 2026-10-16 — Etapa 6, paso 2: salida de vídeo
+
+El área visible de la VRAM pasa a RGBA (`psx/src/display.c`) y se presenta con
+GLES 3 (`psx/gl/psx_present.c`). Validado:
+- conversión exacta en 15 y 24 bits;
+- `glReadPixels` idéntico píxel a píxel;
+- fotogramas reales de las películas, montados en la VRAM como lo hace el
+  juego, iguales al RGB del MDEC;
+- compila para Android arm64.
+
+Reproducir: `make psx-display`, `make psx-android`.
+
+## 2026-10-16 — Etapa 6, paso 1: la capa cubre las 152 funciones de Sony que llama el juego
+
+El inventario de la apertura (por nombres con firma) se quedaba corto: faltaban
+las funciones sin firma y todas las llamadas de los overlays, que en sus
+volcados aparecen por dirección. Con `tools/progress.py` corregido salen 152.
+Todas implementadas y validadas (`make psx-check`):
+- oráculo: libgte, `ReadTIM`, `SetDrawMode`, `printf`, `sprintf`, 64 bits y
+  `DecDCTvlc2` sobre 120 fotogramas reales;
+- libav para el MDEC: ≥ 49,5 dB;
+- el código de guardado del juego para la tarjeta de memoria.
+
+Hallazgos:
+- `printf` y `sprintf` de PsyQ tienen formateadores distintos. Rarezas de
+  `sprintf`: `%#s` es una cadena Pascal y `%#p` lleva el prefijo `0p`.
+- Las películas usan cabecera de sector propia de Namco y flujo de versión 3,
+  con un código de fin de fotograma.
+- Las tablas del MDEC salen exactas por fórmula.
+
+Reproducir: `make psx-check`; inventario: `make progress`.
+
+## 2026-10-16 — Etapa 6 abierta: recompilación estática
+
+Por decisión del dueño del proyecto se abre la etapa 6, plan en
+`docs/11-etapa6.md`. El juego se recompila de MIPS a C sobre la capa `psx/`;
+no se reescribe pantalla a pantalla. El orden pantalla inicial → menú →
+misiones es el orden de pruebas. 60 fps llegará por interpolación del dibujo
+sobre la lógica original de 25/30 ticks.
+
+Condición legal: el C generado no se distribuye. Se genera desde el disco del
+usuario, y él compila su APK.
+
+Inventario de lo que falta en la capa (`make psyq-api` frente a
+`psx/include`): libapi, libcard, libpress/MDEC y libsn enteras; restos de
+libc y libgpu; internas de libspu, libpad y libcd por confirmar.
+
 ## 2026-10-16 — Pista de música de cada misión; APK 0.8 con música y afinación corregida
 
 La música de una misión se elige en `FUN_8007DDCC`:

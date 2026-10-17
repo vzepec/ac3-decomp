@@ -1,16 +1,22 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-16 (etapa 5 cerrada e integrada en `develop`)
+**Última actualización:** 2026-10-17 (primera release pública: AC3Recomp 1.7-alfa, APK libre de la etapa 7)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapas 1-5 cerradas.** La etapa 5 dejó la capa de compatibilidad PsyQ en
-`psx/` (resultados en `docs/10-etapa5.md`). La etapa 6 (recompilar el juego)
-**no está abierta**: la decide el dueño del proyecto. Mientras, la rebanada de
-Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
+**Etapa 6 — El juego, nativo: EN CURSO** (rama `etapa-6`, plan en
+`docs/11-etapa6.md`): recompilación estática del código MIPS a C sobre la capa
+`psx/` de la etapa 5. Etapas 1-5 cerradas.
+
+**Compatible con los discos europeo y americano.** Los dos se recompilan
+(0 funciones distintas del original), arrancan en el PC hasta la primera
+misión y tienen APK personal: en la 1.5, una app por versión, probadas en la
+Retroid; desde la 1.6, el universal `ac3game-1.6-alfa.apk`, con las dos
+versiones y la del disco elegida al abrirlo (sin probar aún en la Retroid). Según el dueño, la
+americana va más estable y con muchos menos artefactos que la europea.
 
 ## Hecho
 
@@ -64,15 +70,52 @@ Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
-## Siguiente tarea concreta
+## Etapa 7: APK libre — PUBLICADO (v1.7-alfa)
 
-1. **Probar el APK 0.8 en la Retroid** (`~/Escritorio/ac3slice-0.8.apk`):
-   música XA de cada misión y afinación corregida de los efectos.
-2. Pendiente de la rebanada: la pista que elige el guion en partida
-   (`FUN_800550F0`, SIN RESOLVER); ahora suena la de las demostraciones.
-3. Decisión del dueño sobre la etapa 6. Antes de recompilar habría que
-   llevar la VRAM de la GPU por software a GLES en Android y sustituir las
-   aproximaciones marcadas SIN HACER en `psx/`.
+`docs/12-etapa7.md`. **El único APK que se genera:** `sh android_game/build.sh`
+→ `data/android/AC3Recomp-<versión>.apk`.
+- Intérprete MIPS en C y capa `psx/`; lee `ACE.BIN` del disco del usuario.
+- 0 bytes del juego según `tools/apk_audit.py`.
+- Probado en la Retroid: `VEL` 100 %.
+- Release alfa en GitHub con [`INSTALAR.md`](INSTALAR.md): requisitos,
+  instalación y controles.
+
+**Siguiente:** seguir con lo pendiente de la etapa 6, sobre el APK libre:
+1. afinar la interpolación en la europea;
+2. sprites colocados por la CPU (explosiones, humo, llamas);
+3. GPU por GLES (alta resolución y pantalla ancha);
+4. documentar los botones "según el juego" de la tabla de controles.
+
+## Siguiente tarea concreta (etapa 6)
+
+**Afinar la interpolación en la europea** con lo que se vea en la Retroid. En
+la americana va bastante mejor. Hipótesis **SIN RESOLVER**: la americana
+dibuja 30 pasos por segundo en vez de 25, con desplazamientos un 17 % menores
+por paso, y la europea tiene más pasos al límite del emparejamiento. Medirlo
+con el guion de estrés en las dos.
+
+Pendiente:
+1. (Hecho en la etapa 7: el APK libre, el único que se genera.)
+2. Sprites colocados por la CPU (explosiones, humo, llamas de los motores).
+4. GPU por GLES (alta resolución y pantalla ancha).
+5. Calibrar `BUDGET_PER_FRAME` (también en NTSC).
+
+El contador de la app (arriba a la izquierda) da `FPS`, `VEL` (100 % = la
+velocidad de la consola), `INT` (intermedias por paso) y `CPU`. L3+R3 activa o
+desactiva las intermedias, y `adb logcat -s AC3Game` da el detalle por
+segundo.
+
+Hecho en la etapa 6:
+- paso 1, capa completa (152/152);
+- paso 2, salida de vídeo;
+- paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas);
+- pasos 4-9 y APK universal: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
+  intermedias en hilos aparte y contador; 1.3 sin titileo en pasos sin
+  parejas; 1.4 terreno lejano en giros rápidos; 1.5 radar, mapa y temblor
+  del terreno; 1.6 universal EU + US);
+- versión americana: perfil de direcciones (`tools/recomp/region.py`), 1.671/1.824
+  funciones validadas y 0 distintas, nativa en el PC hasta la primera misión en
+  vuelo (`make native-us`) y APK `-us` (sin probar en la Retroid).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

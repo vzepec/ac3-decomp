@@ -30,6 +30,8 @@
 
 #include "app.h"
 #include "music.h"
+#include "psxdemo.h"
+#include "../../psx/gl/psx_present.h"
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "AC3Slice", __VA_ARGS__)
 
@@ -156,12 +158,14 @@ static int egl_init(App *a) {
     eglQuerySurface(P.dpy, P.surf, EGL_HEIGHT, &a->h);
     LOG("EGL %dx%d, GL %s", a->w, a->h, glGetString(GL_VERSION));
     gl_init(a);
+    if (psx_present_init()) LOG("sin presentacion de la capa PsyQ");
     if (a->status == 1) gl_upload(a);
     return 0;
 }
 
 static void egl_term(App *a) {
     if (P.dpy != EGL_NO_DISPLAY) {
+        psx_present_shutdown();
         eglMakeCurrent(P.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
         if (P.ctx != EGL_NO_CONTEXT) eglDestroyContext(P.dpy, P.ctx);
         if (P.surf != EGL_NO_SURFACE) eglDestroySurface(P.dpy, P.surf);
@@ -171,6 +175,34 @@ static void egl_term(App *a) {
     P.ctx = EGL_NO_CONTEXT;
     P.surf = EGL_NO_SURFACE;
     a->loaded_gl = 0;
+}
+
+/* ------------------------------------------------------------------ demo de la capa */
+
+static void demo_start(App *a, int which) {
+    a->demo = (which + PSXDEMO_COUNT) % PSXDEMO_COUNT;
+    audio_stop_all();
+    if (a->demo != PSXDEMO_TERRAIN) a->music_entry = -1;   /* la pelicula usa el bufer de musica */
+    /* inicio de la mision en coordenadas PS1: GL = (x, -y, -z) */
+    V3 p = a->player_start;
+    if (psxdemo_start(&a->disc, &a->pack, a->demo, a->mission, p.x, -p.y, -p.z))
+        LOG("demo %d de la capa PsyQ: no disponible", a->demo);
+    else
+        LOG("demo %d de la capa PsyQ", a->demo);
+}
+
+static void demo_toggle(App *a) {
+    if (a->demo >= 0) {
+        psxdemo_stop();
+        a->demo = -1;
+        if (a->music_entry != music_track_for_mission(a->mission)) {
+            a->music_entry = music_track_for_mission(a->mission);
+            music_start(&a->disc, a->music_entry);
+        }
+        if (a->status == 1) reset_flight(a);
+    } else if (a->status == 1) {
+        demo_start(a, PSXDEMO_INTRO);
+    }
 }
 
 /* ------------------------------------------------------------------ entrada */
@@ -199,6 +231,20 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
     if (type == AINPUT_EVENT_TYPE_KEY) {
         int down = AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN;
         int32_t k = AKeyEvent_getKeyCode(e);
+        int first = down && !AKeyEvent_getRepeatCount(e);
+        /* demo de la capa PsyQ: R3, o L2 + R2 + A */
+        if (first && (k == AKEYCODE_BUTTON_THUMBR || (k == AKEYCODE_BUTTON_A && a->lt > 0.5f && a->rt > 0.5f))) {
+            demo_toggle(a);
+            return 1;
+        }
+        if (a->demo >= 0) {   /* en la demo: L1/R1 cambian, A reinicia; el resto no hace nada */
+            if (first && k == AKEYCODE_BUTTON_L1) demo_start(a, a->demo - 1);
+            if (first && k == AKEYCODE_BUTTON_R1) demo_start(a, a->demo + 1);
+            if (first && k == AKEYCODE_BUTTON_A) demo_start(a, a->demo);
+            if (k == AKEYCODE_BUTTON_L2) a->lt = down;
+            if (k == AKEYCODE_BUTTON_R2) a->rt = down;
+            return 1;
+        }
         switch (k) {
         case AKEYCODE_BUTTON_A:
         case AKEYCODE_BUTTON_B: a->fire = down; return 1;   /* misil */
@@ -272,6 +318,7 @@ void android_main(struct android_app *app) {
     P.dpy = EGL_NO_DISPLAY;
     a.mission = FIRST_MISSION;
     a.music_entry = -1;
+    a.demo = -1;
     a.plane = 55;  /* F-15S/MT Eagle+ (acemodel.py hangar) */
     a.reload_mission = 1;
     app->userData = &a;
@@ -296,8 +343,15 @@ void android_main(struct android_app *app) {
             load_data(&a);
             a.last = now();
         }
-        if (a.status == 1) update(&a, dt);
-        draw(&a);
+        if (a.demo >= 0) {   /* la imagen sale entera de la capa PsyQ (psx/) */
+            int fw = 0, fh = 0;
+            const uint32_t *img = psxdemo_frame(&fw, &fh, dt);
+            if (img) psx_present_frame(img, fw, fh, a.w, a.h, PSX_FIT_43, 0);
+            else { glViewport(0, 0, a.w, a.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
+        } else {
+            if (a.status == 1) update(&a, dt);
+            draw(&a);
+        }
         eglSwapBuffers(P.dpy, P.surf);
         first_frame = 0;
         a.frames++;
