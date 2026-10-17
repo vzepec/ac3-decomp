@@ -1,3 +1,4 @@
+#include <stdio.h>
 /* GPU por software segun psx-spx. Ver psx_gpu.h. */
 #include "psx_gpu.h"
 
@@ -348,8 +349,15 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w) {
 }
 
 void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) {
+    /* una lista corrupta (o ciclica) colgaria la consola; aqui se corta (un fotograma real no
+     * llega a 10.000 paquetes) */
     int guard = 0;
-    while ((addr & 0xFFFFFF) != 0xFFFFFF && guard++ < 1000000) {
+    while ((addr & 0xFFFFFF) != 0xFFFFFF) {
+        if (++guard > 200000) {
+            static int warned;
+            if (!warned++) fprintf(stderr, "gpu: lista de dibujo de mas de 200.000 paquetes: se corta\n");
+            break;
+        }
         const uint32_t *p = (const uint32_t *)psx_ptr(addr);
         uint32_t tag = p[0];
         int n = tag >> 24;

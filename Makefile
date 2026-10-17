@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -37,6 +37,8 @@ help:
 	@echo "make psx-android - etapa 6: compila la capa para Android (arm64) con el NDK"
 	@echo "make recomp     - etapa 6: recompila el juego a C (data/recomp, fuera de git)"
 	@echo "make recomp-check - etapa 6: valida cada funcion recompilada contra el interprete"
+	@echo "make recomp-record - etapa 6: valida con estados reales (arranque en el interprete)"
+	@echo "make native     - etapa 6: el juego recompilado, nativo en el PC (capturas)"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -196,3 +198,18 @@ recomp-check:
 	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24
 	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay $$k data/exe/ovl/overlay$$k.exe 24; done
 	@$(PY) tools/progress.py svg
+
+GUION ?= 320:cruz:6,1100:start:8,1400:cruz:6,1600:cruz:6,1800:cruz:6,2000:cruz:6,2200:cruz:6,2400:cruz:6,2600:cruz:6,2800:cruz:6,3000:cruz:6
+# comparador con estados reales: arranque en el interprete, funciones recompiladas reproducidas
+recomp-record:
+	@$(PY) tools/recomp/record.py "$(EU)" 3000 3 "$(GUION)"
+
+# juego recompilado nativo en el PC (sin ventana: capturas en data/recomp/native/shots)
+native: recomp
+	@$(PY) tools/recomp/gen_hle.py data/recomp/hle_gen.c
+	@mkdir -p data/recomp/native/obj data/recomp/native/shots
+	@for f in ace_eu overlay1 overlay2 overlay3 overlay4 overlay5 hle_gen; do cc -O1 -w -Ipsx/include -Ipsx/recomp -c data/recomp/$$f.c -o data/recomp/native/obj/$$f.o; done
+	@for f in psx/src/*.c psx/recomp/recomp_rt.c; do cc -O2 -w -Ipsx/include -Ipsx/recomp -c $$f -o data/recomp/native/obj/$$(basename $$f .c).o; done
+	@cc -O2 -w -D_GNU_SOURCE -Ipsx/include -Ipsx/recomp -c psx/recomp/native_main.c -o data/recomp/native/obj/native_main.o
+	@cc -rdynamic data/recomp/native/obj/*.o -lm -o data/recomp/native/ac3_native
+	@data/recomp/native/ac3_native "$(EU)" data/exe/ace_eu.bin 3600 data/recomp/native/shots 100 "$(GUION)"

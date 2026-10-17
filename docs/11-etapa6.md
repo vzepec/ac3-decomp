@@ -280,3 +280,51 @@ Un fallo de una regla de traducción afectaría a muchas funciones y saldría a
 la luz; los que se escapan son locales. La comprobación fuerte será la del
 paso 4: fotogramas reales del juego en el intérprete y en el código traducido
 desde el mismo estado, con la RAM comparada fotograma a fotograma.
+
+**Comparador con estados reales y primer arranque nativo (2026-10-17).**
+Rama `etapa-6-comparador`.
+
+*El juego original arranca en el intérprete sobre la capa*
+(`tools/recomp/boot.py`, `hle.py`):
+- Las 155 funciones de Sony a las que salta el juego se enlazan con `psx/`
+  con firmas sacadas automáticamente de las cabeceras.
+- Recorre la pantalla de carga, el menú de idioma, el título, la película de
+  presentación, los menús y el briefing.
+
+Hizo falta:
+- **Eventos de la tarjeta:** `_card_clear` avisa con eventos de hardware
+  (`HwCARD`); sin eso, el juego se quedaba en "Now Loading.".
+- **Reloj por instrucciones:** unas 450.000 instrucciones por fotograma PAL
+  (`INSNS_PER_FRAME`, aproximado). El reproductor de vídeo espera al CD en un
+  bucle sin llamar a librerías (`GMV : timeout VLC`); en la consola llegan
+  interrupciones durante ese bucle.
+
+*Validación con estados reales* (`tools/recomp/record.py`,
+`make recomp-record`):
+- Durante ese arranque, al entrar en una función (solo si se llegó llamando:
+  la instrucción anterior es el hueco de retardo de un `jal`/`jalr`) se toma
+  una instantánea y se graban sus llamadas a librería con sus efectos en RAM,
+  scratchpad y GTE.
+- Al volver se ejecuta la función recompilada desde la instantánea, con esas
+  llamadas reproducidas, y se compara el estado.
+- Resultado en 3.000 fotogramas: **239 funciones en 641 casos reales, todos
+  idénticos**; 3 descartados porque saltó una interrupción a mitad de la
+  función.
+
+*El juego recompilado, nativo en el PC* (`psx/recomp/native_main.c`,
+`tools/recomp/gen_hle.py`, `make native`):
+- Enlace nativo con la capa generado desde las cabeceras.
+- Callbacks como interrupciones, con pila propia.
+- El presupuesto de saltos hace de reloj (`BUDGET_PER_FRAME`, aproximado).
+- El overlay cargado se detecta por firma.
+
+Resultado: **el juego llega a la primera misión en vuelo** (HUD, radar,
+terreno, "ENGAGE"), pasando por menú, dificultad, briefing y selección de
+avión. Va a unos 120-330 fotogramas por segundo de CPU: varias veces el
+tiempo real.
+
+Fallos destapados al ejecutarlo:
+- una tabla de `switch` cuya base está en un registro `s` cargado al
+  principio de la función, que ya se detecta desde el inicio de la función de
+  Ghidra;
+- un límite de seguridad para listas de dibujo corruptas.

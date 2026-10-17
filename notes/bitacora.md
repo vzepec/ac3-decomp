@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — El juego recompilado llega a la primera misión, nativo en el PC
+
+Dos hitos:
+1. **El juego original arranca en el intérprete sobre la capa PsyQ**
+   (`tools/recomp/boot.py`): menú de idioma, título, películas, menús y
+   briefing.
+2. **El código recompilado, enlazado con la capa y compilado de forma
+   nativa, llega a la primera misión en vuelo**, a varias veces el tiempo real
+   (`make native`).
+
+El comparador con estados reales (`tools/recomp/record.py`) reproduce las
+funciones recompiladas desde instantáneas del arranque: 239 funciones, 641
+casos reales, todos idénticos.
+
+Correcciones:
+- `_card_clear` avisa con `HwCARD`;
+- el tiempo debe avanzar también por instrucciones (bucles de espera del
+  reproductor de vídeo);
+- detección de tablas de `switch` con la base en un registro `s`;
+- en mi script de montaje de capturas, unas "rayas" que no eran del juego.
+
 ## 2026-10-17 — Etapa 6, paso 3: el juego recompilado a C, 1.672/1.821 funciones validadas
 
 `tools/recomp/recomp.py` traduce el residente y los 5 overlays a C sobre

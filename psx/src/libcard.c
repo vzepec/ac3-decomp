@@ -106,6 +106,20 @@ int32_t StartCARD(void) { g_started = 1; return 1; }
 int32_t StopCARD(void) { g_started = 0; return 1; }
 void _bu_init(void) {}
 
+/* _card_info/_card_load/_card_clear (los llaman los overlays). Segun la referencia de
+ * PsyQ, _card_info y _card_load avisan con eventos de software (SwCARD, 0xF4000001) y
+ * _card_clear, que escribe directamente en la tarjeta, con eventos de hardware (HwCARD,
+ * 0xF0000011). Con tarjeta: fin de la operacion (EvSpIOE); sin ella: tiempo agotado
+ * (EvSpTIMOUT). Devuelven 1 (operacion aceptada). */
+static int32_t card_op(int32_t chan, uint32_t cls) {
+    int port = (chan >> 4) & 1;
+    DeliverEvent(cls, C[port].present ? 0x0004 : 0x0100);
+    return 1;
+}
+int32_t _card_info(int32_t chan) { return card_op(chan, 0xF4000001u); }
+int32_t _card_load(int32_t chan) { return card_op(chan, 0xF4000001u); }
+int32_t _card_clear(int32_t chan) { return card_op(chan, 0xF0000011u); }
+
 int32_t _card_format(int32_t chan) {
     int port = (chan >> 4) & 1;
     if (!C[port].present) return 0;
