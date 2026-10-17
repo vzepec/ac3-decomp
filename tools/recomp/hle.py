@@ -63,12 +63,24 @@ def parse_headers():
     return sigs
 
 
-def lib_targets(acebin, ovls=()):
-    """{direccion: nombre} de las funciones de libreria a las que salta el juego"""
+def lib_targets(acebin, ovls=(), region=None, ghidra_c=None):
+    """{direccion: nombre} de las funciones de libreria a las que salta el juego. Con region
+    (perfil de tools/recomp/region.py) y ghidra_c (su volcado DumpAll), de otra version"""
     d = open(acebin, 'rb').read()
+    ghidra_c = ghidra_c or os.path.join(ROOT, 'data', 'ghidra', 'all_ace_eu.c')
     names = {int(a, 16): n for n, a in re.findall(r'// ==== (\S+) @ (\S+)\n',
-                                                     open(os.path.join(ROOT, 'data', 'ghidra', 'all_ace_eu.c'),
-                                                          encoding='latin1').read())}
+                                                     open(ghidra_c, encoding='latin1').read())}
+    if region:
+        own = [(region['own_start'], region['lib'][0]), tuple(region['ulz'])]
+        lib_lo, lib_hi, lib_main = region['lib'][0], region['lib'][1], region['extra_lib'][0]
+        # las de libreria sin firma de Ghidra, por su direccion en esta version
+        unnamed = {int(a, 16): n for a, n in region['unnamed'].items()}
+        transmatrix = region['transmatrix']
+    else:
+        own = [(0x800252CC, 0x80099DE0), (0x800AE118, 0x800AE528)]
+        lib_lo, lib_hi, lib_main = 0x80099DE0, 0x800AE09C, 0x80025214
+        unnamed = None
+        transmatrix = 0x800A53A8
     tg = set()
 
     def scan(buf, base, lo, hi):
@@ -79,10 +91,10 @@ def lib_targets(acebin, ovls=()):
             w = struct.unpack_from('<I', buf, o)[0]
             if w >> 26 in (2, 3):
                 t = ((a + 4) & 0xF0000000) | ((w & 0x3FFFFFF) << 2)
-                if 0x80099DE0 <= t < 0x800AE09C or t == 0x80025214:
+                if lib_lo <= t < lib_hi or t == lib_main:
                     tg.add(t)
-    scan(d, 0x80010000, 0x800252CC, 0x80099DE0)
-    scan(d, 0x80010000, 0x800AE118, 0x800AE528)
+    for lo, hi in own:
+        scan(d, 0x80010000, lo, hi)
     for p in ovls:
         o = open(p, 'rb').read()
         base, size = struct.unpack_from('<II', o, 0x18)
@@ -90,8 +102,10 @@ def lib_targets(acebin, ovls=()):
     out = {}
     for t in tg:
         n = names.get(t, '')
+        if unnamed is not None and t in unnamed:
+            n = unnamed[t]
         out[t] = UNNAMED.get(n, n) if n.startswith('FUN_') or not n else n
-    out[0x800A53A8] = 'TransMatrix'
+    out[transmatrix] = 'TransMatrix'
     return out
 
 

@@ -82,6 +82,11 @@ Anotar el contador en vuelo con y sin intermedias (L3+R3). Si es posible,
 guardar también `adb logcat -s AC3Game`: incluye el núcleo, los pasos
 saltados y los ms por paso.
 
+**Versión americana** (rama `etapa-6-rom-us`, `docs/11-etapa6.md`, «ROM
+americana»): probar `data/android/ac3game-1.5-alfa-us.apk` con el disco US
+(`SLUS_009.72`). Es otro paquete (`com.vzepec.ac3game.us`), así que convive con
+la europea. Comprobar el ritmo a 60 Hz (`VEL` 100 % = 60 VBlank/s) y el audio.
+
 Después, según las cifras:
 1. si `VEL` < 100 % sin intermedias: el juego mismo no llega (calibrar
    `BUDGET_PER_FRAME` y medir la recompilación en el aparato);
@@ -97,7 +102,10 @@ Hecho en la etapa 6:
 - pasos 4-9: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
   intermedias en hilos aparte y contador; 1.3 sin titileo en pasos sin
   parejas; 1.4 terreno lejano en giros rápidos; 1.5 radar, mapa y temblor
-  del terreno).
+  del terreno);
+- versión americana: perfil de direcciones (`tools/recomp/region.py`), 1.671/1.824
+  funciones validadas y 0 distintas, nativa en el PC hasta la primera misión en
+  vuelo (`make native-us`) y APK `-us` (sin probar en la Retroid).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

@@ -22,7 +22,8 @@ Las entradas 1-5 son por tanto codigo, no "tablas de sistema": la etapa 1 las
 habia clasificado mal.
 
 La tabla de modos esta en una direccion distinta en cada version; aqui se
-usa la EU por defecto (--table para otra).
+usa la EU por defecto (--table para otra, o --table auto para buscarla: el
+modo del overlay 1 y el del 2 cargados en la misma base; US: 0x800AE918).
 
 Uso:
     python3 tools/aceovl.py list <ace.bin plano> <dir_bpb>
@@ -51,6 +52,24 @@ def read_modes(ace, table=MODE_TABLE_EU):
             break
         out.append((m, steps, oid, lo, hi))
     return out
+
+
+def find_mode_table(ace):
+    """Busca la tabla: un modo del overlay 1 y otro del 2 con la misma direccion de carga."""
+    for off in range(0, len(ace) - 16, 4):
+        steps, oid, lo, hi = struct.unpack_from("<4I", ace, off)
+        if oid != 1 or not (0x80000000 <= lo < hi < 0x80200000):
+            continue
+        t = off
+        while t >= 16:
+            s, o, l, h = struct.unpack_from("<4I", ace, t - 16)
+            if not (0x80000000 <= s < 0x80200000 and 0x80000000 <= l < h < 0x80200000):
+                break
+            t -= 16
+        modes = read_modes(ace, ACE_BASE + t)
+        if any(o == 2 and l == lo for _, _, o, l, _ in modes):
+            return ACE_BASE + t
+    raise SystemExit("no se encuentra la tabla de modos")
 
 
 def bpb_entry(dir_bpb, k):
@@ -93,8 +112,9 @@ def main(argv):
     if len(argv) < 4 or argv[1] not in ("list", "extract"):
         print(__doc__)
         return 2
-    table = int(argv[argv.index("--table") + 1], 0) if "--table" in argv else MODE_TABLE_EU
     ace = open(argv[2], "rb").read()
+    table = argv[argv.index("--table") + 1] if "--table" in argv else MODE_TABLE_EU
+    table = find_mode_table(ace) if table == "auto" else int(table, 0) if isinstance(table, str) else table
     modes = read_modes(ace, table)
     if argv[1] == "extract":
         os.makedirs(argv[4], exist_ok=True)

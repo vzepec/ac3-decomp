@@ -1,6 +1,6 @@
 /* Arranque NATIVO de Ace Combat 3 en el PC (etapa 6, paso 4): el codigo recompilado
  * (data/recomp/*.c, generado desde el disco del usuario) enlazado con la capa psx/.
- *   ac3_native <imagen.bin> <ace_eu.bin> <fotogramas> [dir_capturas] [cada_n] [guion]
+ *   ac3_native <imagen.bin> <ace_eu.bin|ace_us.bin> <fotogramas> [dir_capturas] [cada_n] [guion]
  * Guion del mando: "fotograma:boton[+boton]:duracion,..." como tools/recomp/boot.py.
  * Sin ventana: guarda capturas PPM de la pantalla (psx_display) y mide la velocidad.
  * El mismo arranque, ejecutado por el interprete con el codigo original, es la referencia
@@ -27,9 +27,26 @@
 #include "psx_mem.h"
 #include "recomp_rt.h"
 
-extern const RcFunc rc_funcs_ace_eu[], rc_funcs_overlay1[], rc_funcs_overlay2[], rc_funcs_overlay3[],
+/* direcciones de la version: por defecto las del ACE.BIN europeo; otra version las trae en una
+ * cabecera generada por tools/recomp/region.py (-include data/recomp_us/ac3_region.h) */
+#ifndef AC3_MAIN
+#define AC3_MAIN 0x80025D08u
+#define AC3_GP 0x800BA9F4u
+#define AC3_BSS_START 0x800BACB0u
+#define AC3_BSS_END 0x800C9DC0u
+#define AC3_OVL_BASE 0x800C9DC0u
+#define AC3_LIB_LO 0x80099DE0u
+#define AC3_LIB_HI 0x800AE09Cu
+#define AC3_LIB_MAIN 0x80025214u
+#define AC3_REFRESH 50
+#define AC3_PAD_BUF 0x800BAA04u
+#define AC3_RC_FUNCS rc_funcs_ace_eu
+#define AC3_RC_NFUNCS rc_nfuncs_ace_eu
+#endif
+
+extern const RcFunc AC3_RC_FUNCS[], rc_funcs_overlay1[], rc_funcs_overlay2[], rc_funcs_overlay3[],
     rc_funcs_overlay4[], rc_funcs_overlay5[];
-extern const unsigned rc_nfuncs_ace_eu, rc_nfuncs_overlay1, rc_nfuncs_overlay2, rc_nfuncs_overlay3,
+extern const unsigned AC3_RC_NFUNCS, rc_nfuncs_overlay1, rc_nfuncs_overlay2, rc_nfuncs_overlay3,
     rc_nfuncs_overlay4, rc_nfuncs_overlay5;
 extern const RcFunc hle_table[];
 extern const unsigned hle_count;
@@ -37,7 +54,6 @@ extern const uint8_t ovl_sig[5][64];
 void rc_register(const RcFunc *funcs, unsigned n);
 void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
 
-#define AC3_MAIN 0x80025D08u
 /* presupuesto por fotograma: unidades = entradas a funcion + saltos hacia atras. Calibrado
  * para que el juego avance como en el interprete (450.000 instrucciones por fotograma). */
 #define BUDGET_PER_FRAME 25000
@@ -78,7 +94,7 @@ static void frame_check(void) {
         }
         psx_pad_set(0, mask, ax[0], ax[1], ax[2], ax[3]);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
-            uint32_t pb = *(uint32_t *)psx_ptr(0x800BAA04u);
+            uint32_t pb = *(uint32_t *)psx_ptr(AC3_PAD_BUF);
             const uint8_t *b = psx_ptr(pb);
             printf("fotograma %d: mando %04x, bufer del juego (%08x) %02x %02x %02x %02x\n", last_vcount, mask, pb, b[0], b[1], b[2], b[3]);
         }
@@ -260,9 +276,10 @@ int main(int argc, char **argv) {
     psx_pad_connect(1, 0);
     psx_card_attach(0, "/tmp/ac3_native_tarjeta1.mcd");
     psx_card_detach(1);
-    psx_set_refresh(50);
+    psx_set_refresh(AC3_REFRESH);
     /* codigo recompilado: residente, overlays (deteccion por firma) y enlace con psx/ */
-    rc_register(rc_funcs_ace_eu, rc_nfuncs_ace_eu);
+    rc_set_region(AC3_OVL_BASE, AC3_LIB_LO, AC3_LIB_HI, AC3_LIB_MAIN, AC3_GP);
+    rc_register(AC3_RC_FUNCS, AC3_RC_NFUNCS);
     rc_register_overlay(1, rc_funcs_overlay1, rc_nfuncs_overlay1);
     rc_register_overlay(2, rc_funcs_overlay2, rc_nfuncs_overlay2);
     rc_register_overlay(3, rc_funcs_overlay3, rc_nfuncs_overlay3);
@@ -282,10 +299,10 @@ int main(int argc, char **argv) {
         if (getenv("AC3_INTERP_THREADS")) psx_interp_threads(atoi(getenv("AC3_INTERP_THREADS")), NULL);
     }
     /* como ac3_start: BSS a cero y ac3_main */
-    memset(psx_ram + 0xBACB0, 0, 0xC9DC0 - 0xBACB0);
+    memset(psx_ram + (AC3_BSS_START & 0x1FFFFFu), 0, AC3_BSS_END - AC3_BSS_START);
     RCpu c;
     memset(&c, 0, sizeof c);
-    c.r[28] = 0x800BA9F4u;
+    c.r[28] = AC3_GP;
     c.r[29] = 0x801FFF00u;
     c.r[31] = 0x8000FFF0u;
     rc_ret = c.r[31];
@@ -305,7 +322,7 @@ int main(int argc, char **argv) {
     if (t_n) printf("oscuro sobre claro por imagen: %.1f\n", (double)t_dark / t_n);
     if (t_n) printf("agujeros negros por imagen: interpolada %.1f, real del medio %.1f (ruido de la medida); peor exceso %ld (fotograma %ld)\n",
                     (double)t_holes_int / t_n, (double)t_holes_mid / t_n, t_holes_max, t_holes_max_f);
-    printf("%d fotogramas en %.2f s de CPU (%.0f fotogramas/s; tiempo real del juego: %.1f s a 50 Hz)\n", last_vcount, dt,
-           last_vcount / (dt > 0 ? dt : 1), last_vcount / 50.0);
+    printf("%d fotogramas en %.2f s de CPU (%.0f fotogramas/s; tiempo real del juego: %.1f s a %d Hz)\n", last_vcount, dt,
+           last_vcount / (dt > 0 ? dt : 1), last_vcount / (double)AC3_REFRESH, AC3_REFRESH);
     return 0;
 }

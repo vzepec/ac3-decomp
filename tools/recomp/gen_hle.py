@@ -13,7 +13,10 @@ El resultado contiene direcciones y bytes del ejecutable del juego: va a data/re
 
 Uso:
     python3 tools/recomp/gen_hle.py data/recomp/hle_gen.c
+    python3 tools/recomp/gen_hle.py data/recomp_us/hle_gen.c --region data/recomp_us/region.json \
+        data/exe/ace_us.bin data/exe/ovl_us data/ghidra_us/all_ace_us.c      (otra version)
 """
+import json
 import glob
 import os
 import re
@@ -66,8 +69,14 @@ def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
     acebin = os.path.join(ROOT, 'data', 'exe', 'ace_eu.bin')
-    ovls = sorted(glob.glob(os.path.join(ROOT, 'data', 'exe', 'ovl', 'overlay*.exe')))
-    targets = lib_targets(acebin, ovls)
+    ovl_dir = os.path.join(ROOT, 'data', 'exe', 'ovl')
+    region, ghidra_c = None, None
+    if '--region' in sys.argv:
+        i = sys.argv.index('--region')
+        region = json.load(open(sys.argv[i + 1]))
+        acebin, ovl_dir, ghidra_c = sys.argv[i + 2], sys.argv[i + 3], sys.argv[i + 4]
+    ovls = sorted(glob.glob(os.path.join(ovl_dir, 'overlay*.exe')))
+    targets = lib_targets(acebin, ovls, region, ghidra_c)
     protos = parse_protos()
     lines = ['/* GENERADO por tools/recomp/gen_hle.py: enlace nativo codigo recompilado -> psx/.',
              ' * Contiene direcciones y bytes del ejecutable del juego: no entra en git. */',

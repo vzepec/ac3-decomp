@@ -5,6 +5,61 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — La versión americana, recompilada y en vuelo (rama `etapa-6-rom-us`)
+
+**Problema:** las herramientas de la etapa 6 llevaban escritas las direcciones
+del `ACE.BIN` europeo. En la US (`SLUS_009.72`) el código propio no va
+desplazado en bloque: el desplazamiento cambia por zonas, de `+0x154` a
+`+0x3D8`, porque hay funciones distintas (no hay menú de idioma). La librería
+de Sony sí va entera `+0x3D4`.
+
+**Herramienta:** `tools/recomp/region.py` saca el perfil de direcciones de la
+US sin escribir ninguna a mano:
+- del arranque (`crt0`): BSS, `$gp`, base de los overlays, `ac3_main`;
+- de la tabla de modos, buscada: el final de cada overlay;
+- por firma de código frente a la EU: límites de la librería, las 16
+  funciones sin firma de Ghidra y los 6 callbacks de `FixFunctionStarts`;
+- por correspondencia de datos en las funciones emparejadas (876 parejas):
+  el estado del juego y el búfer del mando;
+- `SetVideoMode`: EU 1 (PAL), US 0 (NTSC, 60 Hz).
+
+**Validación del heurístico:** sobre la EU reproduce las 16 constantes ya
+conocidas (lo comprueba en cada ejecución). Dos casos que lo pusieron a
+prueba:
+- `g_state` no salía porque se calcula desde una base en un registro (`s0 +
+  0x2200`): hizo falta propagar `addiu`;
+- la US llama a `SetVideoMode` con `move a0, zero` en lugar de `addiu`.
+
+Comprobación independiente: el análisis de Ghidra de la US da las mismas 155
+funciones de librería con los mismos nombres (154 a `+0x3D4`, `__main` a
+`+0x180`).
+
+**Resultados:**
+- `make recomp-check-us`: 3.419 entradas, 2.291 validadas, **0 distintas**.
+  Funciones de Ghidra validadas: 1.671 / 1.824, frente a 1.672 / 1.821 en la
+  EU.
+- `make native-us`: carga, título, menús, briefing, avión, película, prólogo
+  (Start) y **primera misión en vuelo** con «ENGAGE» (f3300, 320×240).
+- La EU no cambia:
+  - `ace_eu.c`, `overlay1-5.c` y `hle_gen.c` salen idénticos byte a byte;
+  - 36 de 36 capturas de `make native` son iguales a las de `native_main` y
+    `recomp_rt` de la base (`d22a33c`).
+- APK: `REGION=us android_game/build.sh` → `data/android/ac3game-1.5-alfa-us.apk`
+  (paquete `com.vzepec.ac3game.us`). Sin probar en la Retroid.
+
+**Reproducir:**
+```bash
+make us-prep ghidra-us     # GHIDRA_US_PROJ=<dir sin "."> si la ruta lo tiene
+make recomp-check-us
+make native-us             # capturas en data/recomp_us/native/shots
+REGION=us android_game/build.sh
+```
+
+**SIN RESOLVER:** el APK US en la Retroid; si `BUDGET_PER_FRAME` necesita
+otro valor en NTSC; `record.py`/`boot.py` siguen siendo solo EU.
+
+---
+
 ## 2026-10-17 — Radar, mapa y temblor del terreno en las intermedias (APK 1.5-alfa)
 
 **Informe:** capturas y vídeo de la 1.4 en la Retroid. Se ven:

@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native us-prep ghidra-us recomp-us recomp-check-us native-us native-us-build
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -39,6 +39,9 @@ help:
 	@echo "make recomp-check - etapa 6: valida cada funcion recompilada contra el interprete"
 	@echo "make recomp-record - etapa 6: valida con estados reales (arranque en el interprete)"
 	@echo "make native     - etapa 6: el juego recompilado, nativo en el PC (capturas)"
+	@echo "make us-prep    - version US: ACE.BIN, BPB, overlays y perfil de direcciones (data/recomp_us)"
+	@echo "make ghidra-us  - version US: analisis y volcado de Ghidra (data/ghidra_us, ~10 min)"
+	@echo "make recomp-us / recomp-check-us / native-us - recompilacion, validacion y arranque de la US"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -214,3 +217,51 @@ native: recomp
 	@cc -O2 -w -D_GNU_SOURCE -Ipsx/include -Ipsx/recomp -c psx/recomp/native_main.c -o data/recomp/native/obj/native_main.o
 	@cc -rdynamic data/recomp/native/obj/*.o -lm -lpthread -o data/recomp/native/ac3_native
 	@data/recomp/native/ac3_native "$(EU)" data/exe/ace_eu.bin 3600 data/recomp/native/shots 100 "$(GUION)"
+
+# ---- version americana (SLUS_009.72): mismas herramientas, direcciones de tools/recomp/region.py ----
+OVLS_US = data/exe/ovl_us/overlay1.exe,data/exe/ovl_us/overlay2.exe,data/exe/ovl_us/overlay3.exe,data/exe/ovl_us/overlay4.exe,data/exe/ovl_us/overlay5.exe
+# proyecto de Ghidra fuera del arbol si la ruta lleva un ".": Ghidra no admite esos elementos
+GHIDRA_US_PROJ ?= $(CURDIR)/data/ghidra_us
+us-prep:
+	@mkdir -p data/exe data/bpb_us data/recomp_us
+	@$(PY) tools/acebin.py "$(US)" data/exe/ace_us.bin
+	@$(PY) tools/acebin.py "$(US)" data/exe/ace_us.exe --psexe
+	@test -f data/exe/ace_eu.bin || $(PY) tools/acebin.py "$(EU)" data/exe/ace_eu.bin
+	@$(PY) tools/acepack.py "$(US)" extract BPB data/bpb_us | tail -1
+	@$(PY) tools/aceovl.py extract data/exe/ace_us.bin data/bpb_us data/exe/ovl_us --table auto
+	@$(PY) tools/recomp/region.py data/exe/ace_us.bin data/exe/ace_eu.bin data/recomp_us/region.json data/recomp_us/ac3_region.h --disc "$(US)"
+
+ghidra-us:
+	@mkdir -p data/ghidra_us "$(GHIDRA_US_PROJ)"
+	@$(HEADLESS) "$(GHIDRA_US_PROJ)" ac3us -import $(CURDIR)/data/exe/ace_us.exe -overwrite -max-cpu 2 \
+		-scriptPath $(CURDIR)/tools/ghidra -postScript CreateMissingFunctions.java \
+		-postScript FixFunctionStarts.java $$($(PY) -c "import json; print(' '.join('0x%08X' % a for a in json.load(open('data/recomp_us/region.json'))['fix_starts']))") \
+		-postScript DumpAll.java $(CURDIR)/data/ghidra_us/all_ace_us.c > data/ghidra_us/import_us.log 2>&1
+	@for k in 1 2 3 4 5; do $(HEADLESS) "$(GHIDRA_US_PROJ)" ac3us -import $(CURDIR)/data/exe/ovl_us/overlay$$k.exe -overwrite -max-cpu 2 \
+		-scriptPath $(CURDIR)/tools/ghidra -postScript CreateMissingFunctions.java \
+		-postScript DumpAll.java $(CURDIR)/data/ghidra_us/all_overlay$$k.c > data/ghidra_us/import_ovl$$k.log 2>&1; done
+	@grep -h "decompiladas" data/ghidra_us/*.log | sed 's/.*> //'
+
+recomp-us:
+	@$(PY) tools/recomp/recomp.py data/exe/ace_us.bin data/ghidra_us/all_ace_us.c data/recomp_us --from $(OVLS_US) --region data/recomp_us/region.json
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/recomp.py data/exe/ovl_us/overlay$$k.exe data/ghidra_us/all_overlay$$k.c data/recomp_us --overlay $$k --resident data/recomp_us/ace_us.json --region data/recomp_us/region.json; done
+	@cc -O1 -fPIC -shared -w -Ipsx/include -Ipsx/recomp data/recomp_us/ace_us.c data/recomp_us/overlay[1-5].c psx/recomp/recomp_rt.c psx/src/*.c -lm -o data/recomp_us/librecomp.so
+	@echo "data/recomp_us/librecomp.so"
+
+recomp-check-us:
+	@$(PY) tools/recomp/check.py data/exe/ace_us.bin data/recomp_us 24 --region data/recomp_us/region.json
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_us.bin data/recomp_us --overlay $$k data/exe/ovl_us/overlay$$k.exe 24 --region data/recomp_us/region.json; done
+
+# guion del mando de la US (NTSC, 60 VBlank/s; sin menu de idioma): ver docs/11-etapa6.md
+GUION_US ?= 300:start:8,500:cruz:6,700:cruz:6,900:cruz:6,1100:cruz:6,1300:cruz:6,1500:cruz:6,1700:cruz:6,1900:cruz:6,2100:cruz:6,2300:cruz:6,2500:cruz:6,3100:start:6,3500:cruz:6,3700:cruz:6,3900:cruz:6,4100:cruz:6
+FRAMES_US ?= 4300
+native-us: recomp-us native-us-build
+	@data/recomp_us/native/ac3_native "$(US)" data/exe/ace_us.bin $(FRAMES_US) data/recomp_us/native/shots 100 "$(GUION_US)"
+
+native-us-build:
+	@$(PY) tools/recomp/gen_hle.py data/recomp_us/hle_gen.c --region data/recomp_us/region.json data/exe/ace_us.bin data/exe/ovl_us data/ghidra_us/all_ace_us.c
+	@mkdir -p data/recomp_us/native/obj data/recomp_us/native/shots
+	@for f in ace_us overlay1 overlay2 overlay3 overlay4 overlay5 hle_gen; do cc -O1 -w -Ipsx/include -Ipsx/recomp -c data/recomp_us/$$f.c -o data/recomp_us/native/obj/$$f.o; done
+	@for f in psx/src/*.c psx/recomp/recomp_rt.c; do cc -O2 -w -Ipsx/include -Ipsx/recomp -c $$f -o data/recomp_us/native/obj/$$(basename $$f .c).o; done
+	@cc -O2 -w -D_GNU_SOURCE -Ipsx/include -Ipsx/recomp -include data/recomp_us/ac3_region.h -c psx/recomp/native_main.c -o data/recomp_us/native/obj/native_main.o
+	@cc -rdynamic data/recomp_us/native/obj/*.o -lm -lpthread -o data/recomp_us/native/ac3_native

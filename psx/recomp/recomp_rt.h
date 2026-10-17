@@ -137,6 +137,8 @@ void rc_libcall(RCpu *c, uint32_t addr);
 /* ---- modo nativo (psx/recomp/native_main.c y la app de Android) ---- */
 void rc_set_hle(const RcFunc *table, unsigned n);              /* enlace generado (gen_hle.py) */
 void rc_set_overlay_sigs(const uint8_t (*sigs)[64], int n);    /* deteccion del overlay cargado */
+/* direcciones de la version (por defecto EU): base de overlays, libreria, __main y $gp */
+void rc_set_region(uint32_t ovl_base, uint32_t lib_lo, uint32_t lib_hi, uint32_t lib_main, uint32_t gp);
 void rc_set_tick(void (*fn)(void), int64_t every);             /* reloj: VBlank cada `every` */
 void rc_vsync_hook(void);                                      /* el juego llamo a VSync */
 void rc_set_frame_hook(void (*fn)(void));                       /* aviso al host tras VSync */
