@@ -34,18 +34,20 @@ JSON = os.path.join(ROOT, 'docs', 'progreso.json')
 SVG = os.path.join(ROOT, 'docs', 'img', 'progreso.svg')
 FUNC_RE = re.compile(r'// ==== (\S+) @ (\S+)\n(.*?)(?=\n// ==== |\Z)', re.S)
 CALL_RE = re.compile(r'\b([A-Za-z_]\w*)\s*\(')
-OWN_START, LIB_START, OVL_BASE = 0x800252CC, 0x80099DE0, 0x800C9DC0
+OWN_START, LIB_START, LIB_END, OVL_BASE = 0x800252CC, 0x80099DE0, 0x800AE098, 0x800C9DC0
 OVL_END = {1: 0x800DB010, 2: 0x800F9E18, 3: 0x800DECE8, 4: 0x800D96C0, 5: 0x800CBA38}
 # funciones de libreria sin firma que llama el juego, identificadas por su codigo
 UNNAMED = {'FUN_8009e238': 'SpuQuit', 'FUN_8009eec8': 'SpuSetReverbVoice', 'FUN_800a11f8': 'SetVideoMode',
            'FUN_800a55b8': 'ReadGeomScreen', 'FUN_800a55e8': 'SetGeomOffset', 'FUN_800a5608': 'SetGeomScreen',
            'FUN_800a58e8': 'NormalClip', 'FUN_800aacd8': 'DecDCTReset', 'FUN_800aae30': 'DecDCTin',
            'FUN_800aaeac': 'DecDCTout', 'FUN_800aaf08': 'DecDCToutSync', 'FUN_800aaf74': 'DecDCToutCallback',
-           'FUN_800ac328': 'strlen', 'FUN_800ad7f8': 'ExitCriticalSection', 'FUN_800ad7e8': 'EnterCriticalSection'}
+           'FUN_800ac328': 'strlen', 'FUN_800a53a8': 'TransMatrix', 'FUN_800ad7f8': 'ExitCriticalSection', 'FUN_800ad7e8': 'EnterCriticalSection'}
 # nombres de la capa para funciones que el ACE.BIN firma mal, o que van al anfitrion
 ALIAS = {'SsUtReverbOff': 'SpuInit', 'SpuRead': 'SpuWrite', 'rand': 'psx_rand', 'srand': 'psx_srand',
-         'printf': 'psx_printf', 'puts': 'psx_puts', '__divdi3': 'psx_divdi3', '__udivdi3': 'psx_udivdi3'}
-HOST = {'memset', 'memcpy', 'memmove', 'memchr', 'strlen', 'strcmp', 'strncmp', 'bzero', '__main'}
+         'printf': 'psx_printf', 'puts': 'psx_puts', '__divdi3': 'psx_divdi3', '__udivdi3': 'psx_udivdi3',
+         'sprintf': 'psx_sformat', 'open': 'bios_open', 'read': 'bios_read', 'write': 'bios_write',
+         'close': 'bios_close', 'firstfile': 'bios_firstfile', 'nextfile': 'bios_nextfile', 'erase': 'bios_erase'}
+HOST = {'memset', 'memcpy', 'memmove', 'memchr', 'strlen', 'strcmp', 'strncmp', 'strcpy', 'strcat', 'bzero', '__main'}
 
 
 def funcs(path):
@@ -63,8 +65,8 @@ def cmd_count(ghidra):
     data = json.load(open(JSON)) if os.path.exists(JSON) else {}
     mods = {}
     res = funcs(os.path.join(ROOT, 'data', 'ghidra', 'all_ace_eu.c'))
-    own = {n: b for n, a, b in res if OWN_START <= a < LIB_START and n not in sym}
-    libaddr = {n: a for n, a, b in res if a >= LIB_START or n in sym}
+    own = {n: b for n, a, b in res if (OWN_START <= a < LIB_START or LIB_END < a < OVL_BASE) and n not in sym}
+    libaddr = {n: a for n, a, b in res if LIB_START <= a <= LIB_END or n in sym}
     mods['residente'] = len(own)
     bodies = dict(own)
     for k, end in OVL_END.items():
@@ -72,10 +74,18 @@ def cmd_count(ghidra):
         o = {n: b for n, a, b in f if OVL_BASE <= a < end}
         mods['overlay %d' % k] = len(o)
         bodies.update({'ovl%d:%s' % (k, n): b for n, b in o.items()})
+    # los overlays llaman al residente por direccion (FUN_800xxxxx en su volcado): se
+    # traduce al nombre que tiene en el residente
+    byaddr = {a: n for n, a, b in res}
     called = set()
     for b in bodies.values():
         for c in set(CALL_RE.findall(b)):
-            if c in libaddr and c in sym or c in UNNAMED:
+            if c.startswith('FUN_') and c not in libaddr:
+                try:
+                    c = byaddr.get(int(c[4:], 16), c)
+                except ValueError:
+                    pass
+            if c in libaddr or c in UNNAMED:
                 called.add(UNNAMED.get(c, c))
     impl = set()
     for h in glob.glob(os.path.join(ROOT, 'psx', 'include', '*.h')):

@@ -87,7 +87,8 @@ uint16_t psx_spu_read16(PsxSpu *s, uint32_t off) {
     switch (off) {
     case ENDX: return (uint16_t)s->endx;
     case ENDX + 2: return (uint16_t)(s->endx >> 16);
-    case SPUSTAT: return R(SPUCNT) & 0x3F;   /* modo actual = SPUCNT bits 0-5; nunca ocupada */
+    case SPUSTAT: /* modo actual = SPUCNT bits 0-5; nunca ocupada; bit 11 = mitad de captura */
+        return (uint16_t)((R(SPUCNT) & 0x3F) | (s->cap >= 0x100 ? 0x800 : 0));
     case CURVOL_L: return R(MVOL_L);
     case CURVOL_R: return R(MVOL_R);
     default: return s->regs[off >> 1];
@@ -166,7 +167,7 @@ static int16_t clamp16(int32_t x) { return (int16_t)(x > 32767 ? 32767 : x < -32
 void psx_spu_render(PsxSpu *s, int16_t *out, int frames) {
     uint16_t cnt = R(SPUCNT);
     for (int n = 0; n < frames; n++) {
-        int32_t l = 0, r = 0;
+        int32_t l = 0, r = 0, cap1 = 0, cap3 = 0, cdl = 0, cdr = 0;
         for (int i = 0; i < 24; i++) {
             PsxSpuVoice *v = &s->v[i];
             if (v->phase == 4) continue;
@@ -175,6 +176,8 @@ void psx_spu_render(PsxSpu *s, int16_t *out, int frames) {
             int32_t smp = prev + (((int32_t)cur - prev) * frac >> 12);
             envelope(s, i);
             smp = smp * v->level >> 15;
+            if (i == 1) cap1 = smp;   /* captura: voces 1 y 3 tras la envolvente, antes del volumen */
+            if (i == 3) cap3 = smp;
             l += smp * vol(s->regs[i * 8]) >> 15;
             r += smp * vol(s->regs[i * 8 + 1]) >> 15;
             uint32_t pitch = s->regs[i * 8 + 2];
@@ -194,11 +197,21 @@ void psx_spu_render(PsxSpu *s, int16_t *out, int frames) {
             }
         }
         if ((cnt & 1) && s->cd_r != s->cd_w) {   /* entrada de CD */
-            l += s->cd[s->cd_r % PSX_SPU_CD_BUF][0] * (int16_t)R(CDVOL_L) >> 15;
-            r += s->cd[s->cd_r % PSX_SPU_CD_BUF][1] * (int16_t)R(CDVOL_R) >> 15;
+            cdl = s->cd[s->cd_r % PSX_SPU_CD_BUF][0] * (int16_t)R(CDVOL_L) >> 15;
+            cdr = s->cd[s->cd_r % PSX_SPU_CD_BUF][1] * (int16_t)R(CDVOL_R) >> 15;
+            l += cdl;
+            r += cdr;
             s->cd_r++;
         } else if (s->cd_r != s->cd_w) {
             s->cd_r++;
+        }
+        {   /* captura en anillo de 0x200 muestras */
+            int16_t cv[4] = {clamp16(cdl), clamp16(cdr), clamp16(cap1), clamp16(cap3)};
+            for (int k = 0; k < 4; k++) {
+                s->ram[k * 0x400 + s->cap * 2] = (uint8_t)cv[k];
+                s->ram[k * 0x400 + s->cap * 2 + 1] = (uint8_t)(cv[k] >> 8);
+            }
+            s->cap = (s->cap + 1) & 0x1FF;
         }
         if (!(cnt & 0x8000) || !(cnt & 0x4000)) { l = r = 0; }   /* SPU apagada o en silencio */
         l = clamp16(l) * vol(R(MVOL_L)) >> 15;

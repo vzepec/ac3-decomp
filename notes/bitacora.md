@@ -5,6 +5,26 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 6, paso 1: la capa cubre las 152 funciones de Sony que llama el juego
+
+El inventario de la apertura (por nombres con firma) se quedaba corto: faltaban
+las funciones sin firma y todas las llamadas de los overlays, que en sus
+volcados aparecen por dirección. Con `tools/progress.py` corregido salen 152.
+Todas implementadas y validadas (`make psx-check`):
+- oráculo: libgte, `ReadTIM`, `SetDrawMode`, `printf`, `sprintf`, 64 bits y
+  `DecDCTvlc2` sobre 120 fotogramas reales;
+- libav para el MDEC: ≥ 49,5 dB;
+- el código de guardado del juego para la tarjeta de memoria.
+
+Hallazgos:
+- `printf` y `sprintf` de PsyQ tienen formateadores distintos. Rarezas de
+  `sprintf`: `%#s` es una cadena Pascal y `%#p` lleva el prefijo `0p`.
+- Las películas usan cabecera de sector propia de Namco y flujo de versión 3,
+  con un código de fin de fotograma.
+- Las tablas del MDEC salen exactas por fórmula.
+
+Reproducir: `make psx-check`; inventario: `make progress`.
+
 ## 2026-10-16 — Etapa 6 abierta: recompilación estática
 
 Por decisión del dueño del proyecto se abre la etapa 6, plan en
