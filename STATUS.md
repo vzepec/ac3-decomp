@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-16 (etapa 5 cerrada e integrada en `develop`)
+**Última actualización:** 2026-10-17 (etapa 6: discos EU y US, APK personal 1.5-alfa de los dos)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -9,9 +9,13 @@
 
 **Etapa 6 — El juego, nativo: EN CURSO** (rama `etapa-6`, plan en
 `docs/11-etapa6.md`): recompilación estática del código MIPS a C sobre la capa
-`psx/` de la etapa 5. Etapas 1-5 cerradas. Mientras, la rebanada de
-Android sigue como medición: **APK 0.9** (demo de la capa PsyQ en el dispositivo:
-películas y terreno 1:1; R3 o L2 + R2 + A).
+`psx/` de la etapa 5. Etapas 1-5 cerradas.
+
+**Compatible con los discos europeo y americano.** Los dos se recompilan
+(0 funciones distintas del original), arrancan en el PC hasta la primera
+misión y tienen su APK personal (`ac3game-1.5-alfa.apk` y
+`ac3game-1.5-alfa-us.apk`), probados en la Retroid. Según el dueño, la
+americana va más estable y con muchos menos artefactos que la europea.
 
 ## Hecho
 
@@ -67,33 +71,27 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-**Probar `data/android/ac3game-1.5-alfa.apk` en la Retroid** (uso personal):
-radar, mapa y temblor del terreno con la interpolación activa
-(docs/11-etapa6.md, paso 9). Si quedan defectos, lo más útil es un vídeo como
-el de `imagenes bugs/`.
-Las intermedias se dibujan ahora en hilos aparte y hay un contador arriba a
-la izquierda:
-- `FPS`: imágenes distintas por segundo;
-- `VEL`: velocidad del juego (100 % = la de la consola);
-- `INT`: intermedias por paso;
-- `CPU`: uso del hilo del juego.
+**Afinar la interpolación en la europea** con lo que se vea en la Retroid. En
+la americana va bastante mejor. Hipótesis **SIN RESOLVER**: la americana
+dibuja 30 pasos por segundo en vez de 25, con desplazamientos un 17 % menores
+por paso, y la europea tiene más pasos al límite del emparejamiento. Medirlo
+con el guion de estrés en las dos.
 
-Anotar el contador en vuelo con y sin intermedias (L3+R3). Si es posible,
-guardar también `adb logcat -s AC3Game`: incluye el núcleo, los pasos
-saltados y los ms por paso.
-
-**Versión americana** (rama `etapa-6-rom-us`, `docs/11-etapa6.md`, «ROM
-americana»): probar `data/android/ac3game-1.5-alfa-us.apk` con el disco US
-(`SLUS_009.72`). Es otro paquete (`com.vzepec.ac3game.us`), así que convive con
-la europea. Comprobar el ritmo a 60 Hz (`VEL` 100 % = 60 VBlank/s) y el audio.
-
-Después, según las cifras:
-1. si `VEL` < 100 % sin intermedias: el juego mismo no llega (calibrar
-   `BUDGET_PER_FRAME` y medir la recompilación en el aparato);
-2. si saltan pasos: abaratar el dibujo de las intermedias (por ejemplo,
-   redibujar solo lo que se mueve) o GPU por GLES;
-3. sprites colocados por la CPU (explosiones, humo);
+Pendiente:
+1. **APK universal** (una sola app para los dos discos, elegido por el
+   ejecutable `SCES_020.66` / `SLUS_009.72`), si el dueño lo quiere. Seguiría
+   siendo de uso personal.
+2. **APK distribuible sin nada de Namco**, que lea el disco del usuario y
+   genere o interprete el código en el aparato. Es el único que se puede
+   publicar (docs/06-legal.md).
+3. Sprites colocados por la CPU (explosiones, humo, llamas de los motores).
 4. GPU por GLES (alta resolución y pantalla ancha).
+5. Calibrar `BUDGET_PER_FRAME` (también en NTSC).
+
+El contador de la app (arriba a la izquierda) da `FPS`, `VEL` (100 % = la
+velocidad de la consola), `INT` (intermedias por paso) y `CPU`. L3+R3 activa o
+desactiva las intermedias, y `adb logcat -s AC3Game` da el detalle por
+segundo.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);

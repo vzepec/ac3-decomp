@@ -15,8 +15,23 @@ Se regenera con `make progress`. Plan en
 
 **Estado:** etapas 1-5 cerradas (formatos, código, rebanada de Android y capa
 de compatibilidad PsyQ en `psx/`). **Etapa 6 en curso:** el juego nativo por
-recompilación estática. El código recompilado se genera desde el disco del
-usuario y no se distribuye.
+recompilación estática. **Compatible con los discos europeo (SCES-02066) y
+americano (SLUS-00972):** las dos versiones se recompilan, arrancan en el PC
+hasta la primera misión y generan su APK personal para Android, con imágenes
+intermedias a 60 fps en la misión. El código recompilado y los APK se generan
+desde el disco del usuario y **no se distribuyen** (llevan código de Namco).
+
+### Generar los APK desde tu propio disco
+
+Requisitos: los `.bin`/`.cue` en `Rom/`, Ghidra 12.1.4, el SDK y el NDK de
+Android (ver [`android_game/README.md`](android_game/README.md)).
+
+```bash
+make native                          # europea: recompila y prueba en el PC
+sh android_game/build.sh             # -> data/android/ac3game-<version>.apk
+make us-prep ghidra-us native-us     # americana
+REGION=us sh android_game/build.sh   # -> data/android/ac3game-<version>-us.apk
+```
 
 - 👉 **Agentes de IA: empezad por [`CLAUDE.md`](CLAUDE.md)** (bootstrap) y
   luego [`AGENTS.md`](AGENTS.md) (contrato completo).

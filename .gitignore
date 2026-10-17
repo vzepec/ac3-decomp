@@ -26,3 +26,6 @@ psx/build/
 
 # capturas del juego del dueno (salida del juego: no se versiona)
 imagenes bugs/
+
+# copias de trabajo de los subagentes
+.claude/worktrees/
