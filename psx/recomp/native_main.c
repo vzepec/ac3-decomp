@@ -42,7 +42,7 @@ void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
  * para que el juego avance como en el interprete (450.000 instrucciones por fotograma). */
 #define BUDGET_PER_FRAME 25000
 
-static struct { int frame; uint16_t mask; int dur; } script[64];
+static struct { int frame; uint32_t mask; int dur; } script[64];   /* bits 16-23: palancas */
 static int nscript, max_frames, every, last_vcount;
 static const char *shots;
 static jmp_buf stop;
@@ -66,10 +66,17 @@ static void frame_check(void) {
     int v = VSync(-1);
     while (last_vcount < v) {
         last_vcount++;
-        uint16_t mask = 0;
+        uint32_t all = 0;
         for (int i = 0; i < nscript; i++)
-            if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) mask |= script[i].mask;
-        psx_pad_set(0, mask, 0x80, 0x80, 0x80, 0x80);
+            if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) all |= script[i].mask;
+        uint16_t mask = (uint16_t)all;
+        /* palancas a tope (con AC3_PAD_ID=73): lizq/lder/larr/laba, rizq/rder/rarr/raba */
+        uint8_t ax[4] = {0x80, 0x80, 0x80, 0x80};
+        for (int a = 0; a < 4; a++) {
+            if (all >> (16 + 2 * a) & 1) ax[a] = 0x00;
+            if (all >> (17 + 2 * a) & 1) ax[a] = 0xFF;
+        }
+        psx_pad_set(0, mask, ax[0], ax[1], ax[2], ax[3]);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
             uint32_t pb = *(uint32_t *)psx_ptr(0x800BAA04u);
             const uint8_t *b = psx_ptr(pb);
@@ -210,10 +217,12 @@ static void watch(int sig) {
     _exit(3);
 }
 
-static uint16_t button(const char *b) {
+static uint32_t button(const char *b) {
     static const char *names[16] = {"select", "l3", "r3", "start", "arriba", "derecha", "abajo", "izquierda",
                                     "l2", "r2", "l1", "r1", "triangulo", "circulo", "cruz", "cuadrado"};
-    for (int i = 0; i < 16; i++) if (!strcmp(names[i], b)) return (uint16_t)(1u << i);
+    for (int i = 0; i < 16; i++) if (!strcmp(names[i], b)) return 1u << i;
+    static const char *sticks[8] = {"lizq", "lder", "larr", "laba", "rizq", "rder", "rarr", "raba"};
+    for (int i = 0; i < 8; i++) if (!strcmp(sticks[i], b)) return 1u << (16 + i);
     return 0;
 }
 
@@ -225,7 +234,7 @@ static void parse_script(const char *s) {
         char btns[128];
         int f, d;
         if (sscanf(item, "%d:%127[^:]:%d", &f, btns, &d) != 3) continue;
-        uint16_t m = 0;
+        uint32_t m = 0;
         for (char *b = strtok_r(btns, "+", &sp2); b; b = strtok_r(NULL, "+", &sp2)) m |= button(b);
         script[nscript].frame = f; script[nscript].mask = m; script[nscript].dur = d;
         nscript++;

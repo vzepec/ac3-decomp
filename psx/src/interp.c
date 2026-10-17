@@ -33,11 +33,13 @@ static int16_t pdx[MAXV], pdy[MAXV];
 static uint8_t pok[MAXV];
 static float lsx[MAXV], lsy[MAXV];      /* prediccion local (vecinos emparejados) */
 static uint16_t lc[MAXV];
+static uint8_t in3d[MAXV];              /* vertice usado en el espacio 3D */
 static int refk[131072];               /* vertice de la GTE de cada coordenada de la lista */
 
 /* tablas hash con generacion (se "vacian" subiendo la generacion) */
 typedef struct { uint64_t key; uint32_t val; uint32_t cnt; uint32_t gen; } Slot;
-static Slot occ[HSIZE], prevt[HSIZE], valt[HSIZE], dragt[HSIZE];
+static Slot occ[HSIZE], prevt[HSIZE], valt[HSIZE], dragt[HSIZE], occ3[HSIZE];
+static uint32_t occ3_gen = 1;
 static uint32_t occ_gen = 1, prev_gen = 1, val_gen = 1, drag_gen = 1;
 static int32_t dsx[HSIZE], dsy[HSIZE];   /* sumas por punto de pantalla (dragt) */
 static Slot pocc[HSIZE], pprimt[HSIZE];  /* apariciones de cada clave; clave -> primitiva anterior */
@@ -45,7 +47,7 @@ static uint32_t pocc_gen = 1, pprim_gen = 1;
 static uint32_t pp_xy[MAXREF];           /* coordenadas de las primitivas del paso anterior */
 static int pp_first[MAXREF], pp_n[MAXREF];
 static int have_prev, last_vb = -1;
-static int st_dup, st_gte, st_matched, st_paired, st_dragged, st_total, st_backdrop;
+static int st_dup, st_gte, st_matched, st_paired, st_dragged, st_total, st_backdrop, st_stuck;
 
 static uint64_t mix(uint64_t x) {
     x ^= x >> 30; x *= 0xbf58476d1ce4e5b9ull;
@@ -91,8 +93,13 @@ void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy) 
 static uint32_t *ref[MAXREF];
 static int ref_prim[MAXREF], nref, nprim;
 
-static int ref_ofs[MAXREF], cur_ofs;   /* desplazamiento de dibujo (E5) de cada coordenada (depuracion) */
-static void add_ref(uint32_t *w) { if (nref < MAXREF) { ref[nref] = w; ref_prim[nref] = nprim; ref_ofs[nref] = cur_ofs; nref++; } }
+/* espacio de dibujo de cada coordenada: desplazamiento (E5) y origen del area de dibujo (E3).
+ * La escena 3D, el radar y el mapa se distinguen por estos dos */
+static int ref_ofs[MAXREF], cur_ofs, cur_area;
+static int64_t ref_spc[MAXREF];
+static void add_ref(uint32_t *w) {
+    if (nref < MAXREF) { ref[nref] = w; ref_prim[nref] = nprim; ref_ofs[nref] = cur_ofs; ref_spc[nref] = (int64_t)cur_ofs | (int64_t)cur_area << 22; nref++; }
+}
 
 /* identidad de cada primitiva para reconocerla en el paso anterior sin la GTE: comando,
  * desplazamiento de dibujo, pagina y CLUT de la textura (no el color: el del fondo cambia con la
@@ -157,12 +164,13 @@ static void walk_packet(uint32_t *p, int n) {
             int words = (int)(((wh & 0xFFFF) * (wh >> 16) + 1) / 2);
             i += 3 + words;
         } else if (c >= 0xC0 && c < 0xE0) i += 3;
-        else { if (c == 0xE5) cur_ofs = (int)(p[i] & 0x3FFFFF); i += 1; }
+        else { if (c == 0xE5) cur_ofs = (int)(p[i] & 0x3FFFFF); if (c == 0xE3) cur_area = (int)(p[i] & 0xFFFFF); i += 1; }
     }
 }
 
 static void walk(uint32_t addr) {
     nref = nprim = prim_start = 0;
+    cur_ofs = cur_area = 0;   /* lo que haya antes de la lista: el entorno de PutDrawEnv */
     int guard = 0;
     while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard < 200000) {
         uint32_t *p = (uint32_t *)psx_ptr(addr);
@@ -358,6 +366,44 @@ void psx_interp_perf(PsxInterpPerf *p, int reset) {
 static double tnow(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
 static double tm_pair, tm_draw, tm_cap, tm_copy, tm_real; static int tm_n;
 
+/* movimiento global afin d = A * (P - centro) por minimos cuadrados, con un rechazo de los que
+ * se apartan mas de 6 px del primer ajuste; 1 si hay al menos minn puntos */
+static int fit_affine(const int16_t *px, const int16_t *py, const int16_t *qx, const int16_t *qy, int n, int minn, double A[2][3]) {
+    double B[2][3] = {{0}};
+    int ok = 0;
+    for (int it = 0; it < 2; it++) {
+        double M[3][3] = {{0}}, R[2][3] = {{0}};
+        int m = 0;
+        for (int i = 0; i < n; i++) {
+            double x = px[i] - 160, y = py[i] - 128, dx = qx[i], dy = qy[i];
+            if (it && (fabs(dx - (B[0][0] * x + B[0][1] * y + B[0][2])) > 6 || fabs(dy - (B[1][0] * x + B[1][1] * y + B[1][2])) > 6)) continue;
+            double v[3] = {x, y, 1};
+            for (int r = 0; r < 3; r++) {
+                for (int c = 0; c < 3; c++) M[r][c] += v[r] * v[c];
+                R[0][r] += v[r] * dx;
+                R[1][r] += v[r] * dy;
+            }
+            m++;
+        }
+        if (m < minn) break;
+        double det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
+                     M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
+        if (fabs(det) < 1e-6) break;
+        for (int k = 0; k < 2; k++)
+            for (int c = 0; c < 3; c++) {
+                double T[3][3];
+                memcpy(T, M, sizeof T);
+                for (int r = 0; r < 3; r++) T[r][c] = R[k][r];
+                B[k][c] = (T[0][0] * (T[1][1] * T[2][2] - T[1][2] * T[2][1]) - T[0][1] * (T[1][0] * T[2][2] - T[1][2] * T[2][0]) +
+                           T[0][2] * (T[1][0] * T[2][1] - T[1][1] * T[2][0])) / det;
+            }
+        ok = 1;
+    }
+    if (ok) memcpy(A, B, sizeof B);
+    return ok;
+}
+static int16_t fx[MAXV], fy[MAXV], fdx[MAXV], fdy[MAXV];
+
 /* la lista de la fase a partir del emparejamiento de este paso */
 static PhaseList g_L;
 static void build_list(PhaseList *L) {
@@ -417,44 +463,66 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     }
     st_dup = 0; st_backdrop = 0;
     st_gte = ncur; st_matched = st_paired = st_dragged = 0; st_total = nref;
+    /* 0. el espacio 3D: el espacio de dibujo (desplazamiento E5 + area E3) con mas coordenadas
+     *    de la GTE (en la mision, 160,384 a pantalla completa). Solo eso se interpola. El HUD, el radar y el mapa tambien usan la GTE
+     *    (giran) pero en sus propias ventanas y desplazamientos: interpolarlos como parte de la
+     *    escena desplazaba bloques del mapa y cortaba cunas del radar, y sus vertices falseaban
+     *    el movimiento global de la camara (Retroid 1.4) */
+    for (int i = 0; i < nref; i++) {   /* vertice de la GTE de cada coordenada de la lista */
+        Slot *sv = slot(valt, val_gen, mix(*ref[i] | (1ull << 40)), 0);
+        refk[i] = sv && sv->val ? (int)sv->val - 1 : -1;
+    }
+    int64_t spc3d = -1;
+    {
+        int64_t ov[16];
+        int oc[16], no = 0, best = 0;   /* recuento por espacio (hay pocos) */
+        for (int i = 0; i < nref; i++) {
+            if (refk[i] < 0) continue;
+            int j = 0;
+            while (j < no && ov[j] != ref_spc[i]) j++;
+            if (j == no) { if (no == 16) continue; ov[no] = ref_spc[i]; oc[no++] = 0; }
+            if (++oc[j] > best) { best = oc[j]; spc3d = ov[j]; }
+        }
+    }
+    int ofs3d = (int)(spc3d & 0x3FFFFF);
+    for (int i = 0; i < ncur; i++) in3d[i] = 0;
+    for (int i = 0; i < nref; i++) {
+        if (refk[i] >= 0 && ref_spc[i] != spc3d) refk[i] = -1;   /* fuera del espacio 3D: quieto */
+        else if (refk[i] >= 0) in3d[refk[i]] = 1;
+    }
+    /* apariciones de cada clave del modelo contando solo los vertices del espacio 3D: el juego
+     * vuelve a transformar los mismos vertices para otras cosas (el radar, en pasos alternos) y
+     * entonces ninguna clave salia unica: el movimiento global fallaba uno de cada dos pasos y
+     * ~12 % del terreno se quedaba quieto en las intermedias (parpadeo a 12,5 Hz) */
+    occ3_gen++;
+    for (int i = 0; i < ncur; i++)
+        if (in3d[i]) { Slot *o = slot(occ3, occ3_gen, cur[i].base, 1); if (o) o->cnt++; }
     /* 1. pares sin ambiguedad (clave unica en los dos pasos) -> movimiento global afin:
      *    d = P0 - P1 = A * (P1 - centro) + e, por minimos cuadrados con un rechazo */
     double A[2][3] = {{0, 0, 0}, {0, 0, 0}};
     int model = 0;
-    if (have_prev) {
-        for (int it = 0; it < 2; it++) {
-            double M[3][3] = {{0}}, R[2][3] = {{0}};
-            int n = 0;
-            for (int i = 0; i < ncur; i++) {
-                Slot *o = slot(occ, occ_gen, cur[i].base, 0), *p = slot(prevt, prev_gen, cur[i].base, 0);
-                if (!o || o->cnt != 1 || !p || p->cnt != 1) continue;
-                double x = lo(cur[i].sxy) - 160, y = hi(cur[i].sxy) - 128;
-                double dx = lo(prv[p->val - 1].sxy) - lo(cur[i].sxy), dy = hi(prv[p->val - 1].sxy) - hi(cur[i].sxy);
-                if (fabs(dx) > JUMP_FIT || fabs(dy) > JUMP_FIT) continue;
-                if (it && (fabs(dx - (A[0][0] * x + A[0][1] * y + A[0][2])) > 6 || fabs(dy - (A[1][0] * x + A[1][1] * y + A[1][2])) > 6)) continue;
-                double v[3] = {x, y, 1};
-                for (int r = 0; r < 3; r++) {
-                    for (int c = 0; c < 3; c++) M[r][c] += v[r] * v[c];
-                    R[0][r] += v[r] * dx;
-                    R[1][r] += v[r] * dy;
-                }
-                n++;
-            }
-            if (n < 24) break;
-            /* resolver M a = R (3x3, Cramer) */
-            double det = M[0][0] * (M[1][1] * M[2][2] - M[1][2] * M[2][1]) - M[0][1] * (M[1][0] * M[2][2] - M[1][2] * M[2][0]) +
-                         M[0][2] * (M[1][0] * M[2][1] - M[1][1] * M[2][0]);
-            if (fabs(det) < 1e-6) break;
-            for (int k = 0; k < 2; k++)
-                for (int c = 0; c < 3; c++) {
-                    double T[3][3];
-                    memcpy(T, M, sizeof T);
-                    for (int r = 0; r < 3; r++) T[r][c] = R[k][r];
-                    A[k][c] = (T[0][0] * (T[1][1] * T[2][2] - T[1][2] * T[2][1]) - T[0][1] * (T[1][0] * T[2][2] - T[1][2] * T[2][0]) +
-                               T[0][2] * (T[1][0] * T[2][1] - T[1][1] * T[2][0])) / det;
-                }
-            model = 1;
+    if (getenv("PSX_INTERP_DBG2")) {
+        int a = 0, b = 0, c = 0, d = 0;
+        for (int i = 0; i < ncur; i++) {
+            if (!in3d[i]) continue;
+            a++;
+            Slot *o = slot(occ3, occ3_gen, cur[i].base, 0), *p = slot(prevt, prev_gen, cur[i].base, 0);
+            if (o && o->cnt == 1) b++;
+            if (p) c++;
+            if (o && o->cnt == 1 && p && p->cnt == 1) d++;
         }
+        fprintf(stderr, "ajuste: 3d %d unicos %d en el anterior %d unicos en los dos %d\n", a, b, c, d);
+    }
+    if (have_prev) {
+        int n = 0;
+        for (int i = 0; i < ncur; i++) {
+            Slot *o = slot(occ3, occ3_gen, cur[i].base, 0), *p = slot(prevt, prev_gen, cur[i].base, 0);
+            if (!in3d[i] || !o || o->cnt != 1 || !p || p->cnt != 1) continue;
+            int dx = lo(prv[p->val - 1].sxy) - lo(cur[i].sxy), dy = hi(prv[p->val - 1].sxy) - hi(cur[i].sxy);
+            if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) continue;
+            fx[n] = lo(cur[i].sxy); fy[n] = hi(cur[i].sxy); fdx[n] = (int16_t)dx; fdy[n] = (int16_t)dy; n++;
+        }
+        model = fit_affine(fx, fy, fdx, fdy, n, 12, A);
     }
     /* 2. pareja de cada vertice. Primero las claves unicas en los dos pasos (con la prediccion
      *    del movimiento global solo para admitir saltos grandes). Luego las repetidas (casillas
@@ -463,10 +531,6 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
      *    movimiento global solo si no tiene vecinos emparejados. Con solo el global, en giros
      *    fuertes se elegia el candidato equivocado, la malla se revolvia en la silueta y
      *    asomaban caras de detras (puntos oscuros en el terreno lejano, Retroid 1.3) */
-    for (int i = 0; i < nref; i++) {   /* vertice de la GTE de cada coordenada de la lista */
-        Slot *sv = slot(valt, val_gen, mix(*ref[i] | (1ull << 40)), 0);
-        refk[i] = sv && sv->val ? (int)sv->val - 1 : -1;
-    }
     for (int pass = 0; pass < 2; pass++) {
         if (pass == 1) {   /* predicciones locales para los que faltan */
             for (int i = 0; i < ncur; i++) lc[i] = 0;
@@ -490,10 +554,10 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         for (int i = 0; i < ncur; i++) {
             if (pass == 0) pok[i] = 0;
             else if (pok[i]) continue;
-            if (!have_prev) continue;
+            if (!have_prev || !in3d[i]) continue;
             Slot *p = slot(prevt, prev_gen, cur[i].base, 0);
             if (!p) continue;
-            Slot *o = slot(occ, occ_gen, cur[i].base, 0);
+            Slot *o = slot(occ3, occ3_gen, cur[i].base, 0);
             int uniq = p->cnt == 1 && o && o->cnt == 1;
             if (pass == 0 && !uniq) continue;
             int x1 = lo(cur[i].sxy), y1 = hi(cur[i].sxy);
@@ -520,6 +584,15 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             pdx[i] = (int16_t)dx; pdy[i] = (int16_t)dy; pok[i] = 1;
         }
     }
+    /* 2b. el movimiento global otra vez, con todas las parejas 3D (las repetidas ya resueltas por
+     *     sus vecinos): con solo las claves unicas a veces no hay bastantes (el terreno repite
+     *     coordenadas) y entonces lo que queda sin pareja no se podia mover */
+    {
+        int n = 0;
+        for (int i = 0; i < ncur; i++)
+            if (pok[i] && in3d[i]) { fx[n] = lo(cur[i].sxy); fy[n] = hi(cur[i].sxy); fdx[n] = pdx[i]; fdy[n] = pdy[i]; n++; }
+        if (fit_affine(fx, fy, fdx, fdy, n, 24, A)) model = 1;
+    }
     /* 3. desplazamiento de cada coordenada de la lista */
     for (int i = 0; i < nref; i++) {
         uint32_t w = *ref[i];
@@ -541,8 +614,6 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
      * proponen todas, igual en cada una. Con un valor por primitiva, los vertices compartidos
      * se separaban y asomaba el fondo entre los poligonos (grietas negras al girar rapido) */
     drag_gen++;
-    int ofs3d = -1;   /* desplazamiento de dibujo (E5) de lo que sale de la GTE: el espacio 3D */
-    for (int i = 0; i < nref && ofs3d < 0; i++) if (moved[i]) ofs3d = ref_ofs[i];
     /* bordes del area de dibujo en coordenadas de ese espacio */
     int o3x = ((ofs3d & 0x7FF) ^ 0x400) - 0x400, o3y = (((ofs3d >> 11) & 0x7FF) ^ 0x400) - 0x400;
     int bx0 = g->area_x1 - o3x, bx1 = g->area_x2 - o3x, by0 = g->area_y1 - o3y, by1 = g->area_y2 - o3y;
@@ -569,7 +640,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
                 dsx[d - dragt] += px; dsy[d - dragt] += py; d->cnt++;
                 moved[i] = 3; st_dragged++;
             }
-        else if (ref_ofs[a] == ofs3d) {
+        else if (ref_spc[a] == spc3d) {
             /* sin nada de la GTE pero en el espacio 3D y grande: el fondo (cielo, bruma) que el
              * juego coloca con la CPU segun la orientacion de la camara. Se interpola entre sus
              * propios vertices de los dos pasos si se reconoce la misma primitiva en el anterior
@@ -653,13 +724,24 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     nprv = ncur;
     for (int i = ncur - 1; i >= 0; i--) {
         prv[i] = cur[i];
+        prv[i].next = -1;
+        if (!in3d[i]) continue;   /* solo el espacio 3D sirve de referencia */
         Slot *s = slot(prevt, prev_gen, cur[i].base, 1);
         if (!s) { prv[i].next = -1; continue; }
         prv[i].next = (int)s->val - 1;
         s->val = (uint32_t)i + 1;
         s->cnt++;
     }
-    int ok = have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched;
+    /* coordenadas 3D que no se pueden mover (sin pareja, sin vecinos emparejados ni movimiento
+     * global): si son muchas, la intermedia mezclaria terreno movido y quieto y se abririan
+     * grietas por las que se ve el cielo (giros de camara bruscos con la palanca derecha: lo
+     * unico emparejado es el avion propio). Ese paso va sin intermedias */
+    int stuck = 0;
+    for (int i = 0; i < nref; i++) stuck += moved[i] == 1;
+    st_stuck = stuck;
+    if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d\n",
+                                           VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model);
+    int ok = have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
     have_prev = 1;
     ncur = 0;
     occ_gen++;

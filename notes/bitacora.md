@@ -5,6 +5,44 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Radar, mapa y temblor del terreno en las intermedias (APK 1.5-alfa)
+
+**Informe:** capturas y vídeo de la 1.4 en la Retroid. Se ven:
+- una cuña cortada en el radar;
+- bloques del mapa desplazados;
+- puntos oscuros en el horizonte;
+- temblor del terreno en giros.
+
+**Hallazgos:**
+- El HUD, el radar y el mapa usan la GTE en otros espacios de dibujo y se
+  interpolaban como escena 3D.
+- El movimiento global fallaba uno de cada dos pasos: solo 15 claves 3D
+  únicas, con un mínimo de 24. En esos pasos el 12 % del terreno quedaba
+  quieto (parpadeo a 12,5 Hz).
+- Con la palanca derecha, el terreno quedaba mitad movido y mitad quieto, y
+  se abrían grietas.
+
+**Arreglos:**
+- solo se interpola el espacio 3D (E5 + E3);
+- unicidad contada en ese espacio;
+- segundo ajuste del movimiento global con todas las parejas;
+- paso sin intermedias si quedan coordenadas sin mover.
+
+**Herramientas:**
+- palancas en el guion de `native_main`;
+- `tools/interp_dark.py`;
+- `PSX_INTERP_DBG2`.
+
+**Validación:**
+- Píxeles oscuros por intermedia en un alabeo: 16,0 → 0,2.
+- Guion de estrés: 26,72 → 27,06 dB.
+- Mapa: 1,87 → 1,23 de diferencia frente a la real.
+- Con hilos y sin ellos: 47 de 47 iguales.
+
+**SIN RESOLVER:** la costa del vídeo, que no se reprodujo en el PC.
+
+**Reproducir:** docs/11-etapa6.md, paso 9.
+
 ## 2026-10-17 — Terreno lejano en giros rápidos: fondo sin GTE, caras que se dan la vuelta (APK 1.4-alfa)
 
 **Informe:** con la 1.3, en giros rápidos aparecen parpadeos y "terreno
