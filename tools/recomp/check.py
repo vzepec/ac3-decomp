@@ -20,7 +20,10 @@ agotado en los dos lados). Los casos en que alguno agota el tiempo no cuentan.
 Uso:
     python3 tools/recomp/check.py data/exe/ace_eu.bin data/recomp [casos] [procesos] [funcion...]
     python3 tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay 1 data/exe/ovl/overlay1.exe [casos]
-Escribe data/recomp/<binario>_check.json y actualiza docs/progreso.json (recompiladas).
+Otra version (US): --region data/recomp_us/region.json (tools/recomp/region.py) pone sus
+direcciones (libreria, codigo propio, overlays, $gp, estado del juego).
+Escribe data/recomp/<binario>_check.json y actualiza docs/progreso.json (recompiladas; solo la
+version europea, la que cuenta la infografia).
 """
 import ctypes
 import json
@@ -38,6 +41,20 @@ LIB_LO, LIB_HI = 0x80099DE0, 0x800AE09C
 ARENA = 0x80180000          # zona de datos aleatorios para los punteros de los casos
 ARENA_SIZE = 0x40000
 G_STATE_PTR, G_STATE = 0x800BACD0, 0x800BD158
+OWN_LO, OWN_HI, LIB_MAIN, OVL_LO, OVL_HI, GP = 0x800252CC, 0x80099DE0, 0x80025214, 0x800C9DC0, 0x800F9E18, GP_EU
+REGION = None
+
+
+def apply_region(path):
+    """direcciones de otra version (perfil de tools/recomp/region.py)"""
+    global LIB_LO, LIB_HI, G_STATE_PTR, G_STATE, OWN_LO, OWN_HI, LIB_MAIN, OVL_LO, OVL_HI, GP, REGION
+    p = REGION = json.load(open(path))
+    LIB_LO, LIB_HI = p['lib']
+    G_STATE_PTR, G_STATE = p['g_state_ptr'], p['g_state']
+    OWN_LO, OWN_HI, LIB_MAIN = p['own_start'], p['lib'][0], p['extra_lib'][0]
+    OVL_LO, OVL_HI, GP = p['ovl_base'], max(p['ovl_end'].values()), p['gp']
+
+
 STATUS = {0: 'ok', 1: 'mem', 2: 'align', 3: 'break', 4: 'syscall', 5: 'ilegal', 6: 'timeout', 7: 'nofunc', 8: 'io', 9: 'badra'}
 
 
@@ -56,7 +73,9 @@ def stub_value(addr, a):
 
 
 class World:
-    def __init__(self, acebin, out_dir, ovl=None):
+    def __init__(self, acebin, out_dir, ovl=None, region=None):
+        if region:
+            apply_region(region)
         stem = os.path.splitext(os.path.basename(acebin))[0]
         self.lib = lib = ctypes.CDLL(os.path.join(out_dir, 'librecomp.so'))
         self.ram = (ctypes.c_uint8 * 0x200000).in_dll(lib, 'psx_ram')
@@ -68,12 +87,14 @@ class World:
         self.log = []
         self.cb = LIBCALL(self.libcall_c)
         lib.rc_set_libcall(self.cb)
+        lib.rc_set_region.argtypes = [ctypes.c_uint32] * 5
+        lib.rc_set_region(OVL_LO, LIB_LO, LIB_HI, LIB_MAIN, GP)
         self.gte_a = PsxGteLib(lib)                       # interprete
         self.gte_b = ctypes.create_string_buffer(256)     # recompilado
         ctypes.c_void_p.in_dll(lib, 'rc_gte').value = ctypes.addressof(self.gte_b)
-        self.m = Machine.from_acebin(acebin, ram=self.ram, scratch=self.scr, gte=self.gte_a)
+        self.m = Machine.from_acebin(acebin, gp=GP, ram=self.ram, scratch=self.scr, gte=self.gte_a)
         self.m.sw(G_STATE_PTR, G_STATE)
-        if ovl:   # overlay cargado en 0x800C9DC0, como lo hace el juego
+        if ovl:   # overlay cargado en su base (EU 0x800C9DC0), como lo hace el juego
             n, path = ovl
             d = open(path, 'rb').read()
             addr, size = struct.unpack_from('<II', d, 0x18)
@@ -89,14 +110,14 @@ class World:
         meta = json.load(open(os.path.join(out_dir, stem + '.json')))
         self.funcs = meta
         libaddrs = set()
-        scan = list(range(0x800252CC, 0x80099DE0, 4))
+        scan = list(range(OWN_LO, OWN_HI, 4))
         if ovl:
-            scan += list(range(0x800C9DC0, 0x800F9E18, 4))
+            scan += list(range(OVL_LO, OVL_HI, 4))
         for a in scan:
             w = self.m.lw(a)
             if w >> 26 == 3:
                 t = ((a + 4) & 0xF0000000) | ((w & 0x3FFFFFF) << 2)
-                if LIB_LO <= t < LIB_HI or t == 0x80025214:
+                if LIB_LO <= t < LIB_HI or t == LIB_MAIN:
                     libaddrs.add(t)
         for t in libaddrs:
             self.m.hooks[t] = self.libcall_py
@@ -126,7 +147,7 @@ class World:
             return rnd.getrandbits(32)
         regs = [val() for _ in range(32)]
         regs[0] = 0
-        regs[28] = GP_EU
+        regs[28] = GP
         regs[29] = 0x801FF000
         regs[31] = RETURN_MAGIC
         # zona de datos: palabras que en su mayoria son punteros validos a la propia zona o
@@ -190,9 +211,9 @@ class World:
 WORLD = None
 
 
-def init(acebin, out_dir, ovl=None):
+def init(acebin, out_dir, ovl=None, region=None):
     global WORLD
-    WORLD = World(acebin, out_dir, ovl)
+    WORLD = World(acebin, out_dir, ovl, region)
 
 
 def check_func(args):
@@ -216,7 +237,12 @@ def main():
     if len(sys.argv) < 3:
         sys.exit(__doc__)
     args = sys.argv[1:]
-    ovl = None
+    ovl, region = None, None
+    if '--region' in args:
+        i = args.index('--region')
+        region = args[i + 1]
+        args = args[:i] + args[i + 2:]
+        apply_region(region)
     if '--overlay' in args:   # --overlay N data/exe/ovl/overlayN.exe
         i = args.index('--overlay')
         ovl = (int(args[i + 1]), args[i + 2])
@@ -233,7 +259,7 @@ def main():
     results = {}
     pending = list(todo)
     while pending:   # si un proceso muere (fallo de C), se marca la funcion y se sigue
-        with cf.ProcessPoolExecutor(procs, initializer=init, initargs=(acebin, out_dir, ovl)) as ex:
+        with cf.ProcessPoolExecutor(procs, initializer=init, initargs=(acebin, out_dir, ovl, region)) as ex:
             futs = {ex.submit(check_func, t): t for t in pending}
             pending = []
             try:
@@ -258,7 +284,7 @@ def main():
                for a, v in sorted(results.items())}, open(os.path.join(out_dir, stem + '_check.json'), 'w'), indent=1)
     nval = sum(1 for a, r in results.items() if r[0] == 'VALIDADA' and a in ghidra)
     print('funciones de la lista de Ghidra validadas: %d de %d' % (nval, len(ghidra)))
-    if not only:   # progreso: funciones de Ghidra (las que cuenta tools/progress.py) validadas
+    if not only and not region:   # progreso: funciones de Ghidra (las que cuenta tools/progress.py) validadas
         p = os.path.join(ROOT, 'docs', 'progreso.json')
         if os.path.exists(p):
             d = json.load(open(p))

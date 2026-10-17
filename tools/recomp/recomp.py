@@ -32,6 +32,8 @@ Uso:
         [--from data/exe/ovl/overlay1.exe,...]
     python3 tools/recomp/recomp.py data/exe/ovl/overlay1.exe data/ghidra/all_overlay1.c data/recomp \
         --overlay 1 --resident data/recomp/ace_eu.json
+Otra version (US): --region data/recomp_us/region.json (tools/recomp/region.py) cambia los
+rangos de codigo propio, libreria y overlays; sin el, las direcciones son las de la EU.
 """
 import json
 import os
@@ -402,15 +404,31 @@ class Emitter:
         return body, len(seen), missing
 
 
+def apply_region(path):
+    """rangos de otra version de ACE.BIN (perfil de tools/recomp/region.py)"""
+    global OWN, LIB, EXTRA_LIB, OVL_END, OVL_BASE
+    p = json.load(open(path))
+    OWN = [(p['own_start'], p['lib'][0]), tuple(p['ulz'])]
+    LIB = tuple(p['lib'])
+    EXTRA_LIB = set(p['extra_lib'])
+    OVL_END = {int(k): v for k, v in p['ovl_end'].items()}
+    OVL_BASE = p['ovl_base']
+
+
+OVL_BASE = 0x800C9DC0
+
+
 def main():
     global OWN, PREFIX, STRICT_DATA
     if len(sys.argv) < 4:
         sys.exit(__doc__)
     args = sys.argv[1:]
+    if '--region' in args:
+        apply_region(args[args.index('--region') + 1])
     ovl, resident = None, []
     if '--overlay' in args:
         ovl = int(args[args.index('--overlay') + 1])
-        OWN = [(0x800C9DC0, OVL_END[ovl])]
+        OWN = [(OVL_BASE, OVL_END[ovl])]
         PREFIX = 'f%d' % ovl
         STRICT_DATA = True
     if '--resident' in args:

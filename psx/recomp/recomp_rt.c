@@ -24,7 +24,16 @@ static uint32_t g_fault_pc, g_fault_addr;
 
 void rc_register(const RcFunc *funcs, unsigned n) { g_funcs = funcs; g_nfuncs = n; }
 
-/* overlays: todos se cargan en 0x800C9DC0; el anfitrion dice cual esta cargado */
+/* direcciones de la version del juego (por defecto, la EU; la US las pone con rc_set_region,
+ * desde el perfil de tools/recomp/region.py) */
+static uint32_t g_ovl_base = 0x800C9DC0u, g_lib_lo = 0x80099DE0u, g_lib_hi = 0x800AE09Cu,
+                g_lib_main = 0x80025214u, g_gp = 0x800BA9F4u;
+void rc_set_region(uint32_t ovl_base, uint32_t lib_lo, uint32_t lib_hi, uint32_t lib_main, uint32_t gp) {
+    g_ovl_base = ovl_base; g_lib_lo = lib_lo; g_lib_hi = lib_hi; g_lib_main = lib_main; g_gp = gp;
+}
+
+/* overlays: todos se cargan en la base de los overlays (EU 0x800C9DC0); el anfitrion dice
+ * cual esta cargado */
 static const RcFunc *g_ovl[8];
 static unsigned g_novl[8];
 static int g_cur_ovl;
@@ -66,9 +75,9 @@ void rc_set_overlay_sigs(const uint8_t (*sigs)[64], int n) { g_sigs = sigs; g_ns
 
 static void (*lookup(uint32_t addr))(RCpu *) {
     void (*fn)(RCpu *) = find(g_funcs, g_nfuncs, addr);
-    if (!fn && addr >= 0x800C9DC0u) {
+    if (!fn && addr >= g_ovl_base) {
         if (g_sigs) {
-            const uint8_t *ram = psx_ram + 0xC9DC0;
+            const uint8_t *ram = psx_ram + (g_ovl_base & 0x1FFFFFu);
             g_cur_ovl = 0;
             for (int k = 0; k < g_nsigs; k++)
                 if (!memcmp(ram, g_sigs[k], 64)) { g_cur_ovl = k + 1; break; }
@@ -82,7 +91,7 @@ static void (*lookup(uint32_t addr))(RCpu *) {
 void rc_call(RCpu *c, uint32_t addr) {
     void (*fn)(RCpu *) = lookup(addr);
     if (fn) { fn(c); c->r[0] = 0; return; }
-    if (g_libcall && ((addr >= 0x80099DE0u && addr < 0x800AE09Cu) || addr == 0x80025214u)) { g_libcall(c, addr); return; }
+    if (g_libcall && ((addr >= g_lib_lo && addr < g_lib_hi) || addr == g_lib_main)) { g_libcall(c, addr); return; }
     rc_fault(RC_NOFUNC, 0, addr);
 }
 
@@ -123,7 +132,7 @@ void rc_host_callback(uint32_t addr, uint32_t a0, uint32_t a1) {
     RCpu cb;
     memset(&cb, 0, sizeof cb);
     cb.r[4] = a0; cb.r[5] = a1;
-    cb.r[28] = 0x800BA9F4u;
+    cb.r[28] = g_gp;
     cb.r[29] = 0x8000F000u - 0x800u * (uint32_t)depth;
     cb.r[31] = 0x8000FFF0u;
     uint32_t ret = rc_ret;
