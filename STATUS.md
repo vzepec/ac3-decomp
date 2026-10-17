@@ -67,24 +67,32 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-**Probar `data/android/ac3game-1.1-alfa.apk` en la Retroid** (uso personal):
-- fluidez de la misión con las imágenes intermedias (L3+R3 las activa o
-  desactiva, para comparar);
-- defectos visibles;
-- en `adb logcat -s AC3Game`, cuántas intermedias por paso mantiene ("imagenes
-  intermedias por paso").
+**Probar `data/android/ac3game-1.2-alfa.apk` en la Retroid** (uso personal).
+Las intermedias se dibujan ahora en hilos aparte y hay un contador arriba a
+la izquierda:
+- `FPS`: imágenes distintas por segundo;
+- `VEL`: velocidad del juego (100 % = la de la consola);
+- `INT`: intermedias por paso;
+- `CPU`: uso del hilo del juego.
 
-Después, según lo que se vea:
-1. dibujar las intermedias en hilos aparte (la Retroid tiene 4 núcleos
-   grandes);
-2. sprites colocados por la CPU (explosiones, humo);
-3. GPU por GLES (alta resolución y pantalla ancha);
-4. calibrar `BUDGET_PER_FRAME`.
+Anotar el contador en vuelo con y sin intermedias (L3+R3). Si es posible,
+guardar también `adb logcat -s AC3Game`: incluye el núcleo, los pasos
+saltados y los ms por paso.
+
+Después, según las cifras:
+1. si `VEL` < 100 % sin intermedias: el juego mismo no llega (calibrar
+   `BUDGET_PER_FRAME` y medir la recompilación en el aparato);
+2. si saltan pasos: abaratar el dibujo de las intermedias (por ejemplo,
+   redibujar solo lo que se mueve) o GPU por GLES;
+3. sprites colocados por la CPU (explosiones, humo);
+4. GPU por GLES (alta resolución y pantalla ancha).
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);
 - paso 2, salida de vídeo;
-- paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas).
+- paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas);
+- pasos 4-6: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
+  intermedias en hilos aparte y contador).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

@@ -16,7 +16,9 @@ static int sx11(uint32_t v) { return (int)((int32_t)(v << 21) >> 21); }   /* 11 
 
 /* ---- pixeles ---- */
 
-static int g_tri_cx, g_tri_by;   /* CLUT x y base y de la pagina del triangulo en curso */
+/* CLUT x y base y de la pagina del triangulo en curso (por hilo: las imagenes intermedias se
+ * dibujan en hilos aparte, cada uno con su PsxGpu) */
+static _Thread_local int g_tri_cx, g_tri_by;
 static const int DITHER[4][4] = {{-4, 0, -3, 1}, {2, -2, 3, -1}, {-3, 1, -4, 0}, {3, -1, 2, -2}};
 
 static int in_area(PsxGpu *g, int x, int y) {
@@ -523,7 +525,9 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w) {
     }
 }
 
-void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) {
+void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) { psx_gpu_draw_list_mem(g, addr, psx_ram, psx_scratch); }
+
+void psx_gpu_draw_list_mem(PsxGpu *g, uint32_t addr, const uint8_t *ram, const uint8_t *scratch) {
     /* una lista corrupta (o ciclica) colgaria la consola; aqui se corta (un fotograma real no
      * llega a 10.000 paquetes) */
     int guard = 0;
@@ -533,7 +537,8 @@ void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) {
             if (!warned++) fprintf(stderr, "gpu: lista de dibujo de mas de 200.000 paquetes: se corta\n");
             break;
         }
-        const uint32_t *p = (const uint32_t *)psx_ptr(addr);
+        const uint32_t *p = (addr & 0xFFFFFC00u) == PSX_SCRATCH_ADDR ? (const uint32_t *)(scratch + (addr & 0x3FC))
+                                                                    : (const uint32_t *)(ram + (addr & (PSX_RAM_SIZE - 4)));
         uint32_t tag = p[0];
         int n = tag >> 24;
         for (int i = 1; i <= n; i++) psx_gpu_gp0(g, p[i]);

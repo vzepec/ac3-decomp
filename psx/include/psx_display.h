@@ -17,5 +17,9 @@ int psx_display_frame(uint32_t *rgba, int max_pixels, int *w, int *h);
 /* igual, pero leyendo desde (ox, oy) de la VRAM con el tamano y modo de la pantalla
  * (para capturar el area de dibujo en lugar de la visible); ox < 0: el area visible */
 int psx_display_frame_at(int ox, int oy, uint32_t *rgba, int max_pixels, int *w, int *h);
+/* tamano, pantalla activa y modo (24 bits) de la salida actual */
+void psx_display_geom(int *w, int *h, int *on, int *rgb24);
+/* conversion de una VRAM cualquiera (p. ej. la copia de un hilo de dibujo) desde (x0, y0) */
+int psx_display_convert(const uint16_t *vram, int x0, int y0, int dw, int dh, int on, int rgb24, uint32_t *rgba);
 
 #endif

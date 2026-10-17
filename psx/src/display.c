@@ -20,8 +20,17 @@ int psx_display_frame_at(int ox, int oy, uint32_t *out, int max_pixels, int *w, 
     if (dw <= 0 || dh <= 0 || dw * dh > max_pixels) { *w = *h = 0; return 0; }
     *w = dw;
     *h = dh;
+    return psx_display_convert(((PsxGpu *)psx_gpu())->vram, x0, y0, dw, dh, on, rgb24, out);
+}
+
+void psx_display_geom(int *w, int *h, int *on, int *rgb24) {
+    int x0, y0, inter;
+    psx_gpu_display(&x0, &y0, w, h, on);
+    psx_gpu_display_mode(rgb24, &inter);
+}
+
+int psx_display_convert(const uint16_t *vram, int x0, int y0, int dw, int dh, int on, int rgb24, uint32_t *out) {
     if (!on) { for (int i = 0; i < dw * dh; i++) out[i] = 0xFF000000u; return 0; }
-    const uint16_t *vram = ((PsxGpu *)psx_gpu())->vram;
     for (int y = 0; y < dh; y++) {
         const uint16_t *row = vram + ((y0 + y) & (PSX_VRAM_H - 1)) * PSX_VRAM_W;
         uint32_t *o = out + y * dw;

@@ -414,3 +414,62 @@ Resultados:
 - el rendimiento en la Retroid;
 - objetos que el juego coloca con la CPU tras la GTE (sprites de explosiones);
   quedan en la posición del paso real.
+
+### Paso 6: intermedias en hilos aparte y contador (APK 1.2-alfa)
+
+**Problema observado en la Retroid (1.1-alfa):** con las intermedias activas,
+la misión baja a ~5-10 imágenes por segundo a ojo. En la 1.1, las
+intermedias se dibujaban dentro de `DrawOTag`, en el hilo del juego. Si ese
+trabajo no cabe en los 40 ms del paso, se frena el juego entero, no solo la
+imagen. La causa exacta en la Retroid está **SIN RESOLVER**: no hay
+mediciones del aparato. Hipótesis: el hilo del juego cae en un núcleo lento
+(Cortex-A55) o la GPU por software es allí bastante más lenta que en el PC.
+
+**Cambios** (`psx/src/interp.c`, `psx_interp_threads`):
+- En `DrawOTag`, el hilo del juego empareja vértices como antes. Después
+  guarda una instantánea del paso: RAM (2 MB), scratchpad, estado de la GPU
+  antes del dibujo real y la lista de coordenadas que se mueven.
+- Dibuja la imagen real y sigue con la lógica.
+- Cada hilo de dibujo (3 en el APK) copia la instantánea, aplica las
+  posiciones mezcladas de su fase *k* en su RAM privada y dibuja con
+  `psx_gpu_draw_list_mem` sobre su propio `PsxGpu`. Luego entrega la imagen
+  con la hora del paso.
+- **Pasos saltados:** si al llegar el paso siguiente algún hilo no ha
+  terminado, ese paso va sin intermedias y se cuenta como saltado. El juego
+  nunca espera a los hilos.
+- **Seguridad entre hilos:** el estado del rasterizador por triángulo
+  (`g_tri_cx`, `g_tri_by`) pasa a ser `_Thread_local`.
+- **Presentación:** la conversión de VRAM a RGBA sale a
+  `psx_display_convert`. El sumidero recibe la hora del paso (`t_step`), y la
+  hora de salida de cada imagen es `t_step + k/den · paso`.
+- El modo en el hilo del juego sigue disponible (`psx_interp_threads(0)`):
+  es el que usa la prueba de verdad conocida.
+
+**APK:**
+- El hilo del juego y los de dibujo se fijan a los núcleos rápidos: los de
+  frecuencia máxima ≥ 75 % de la mayor, leída de `/sys`.
+- La pantalla copia la imagen bajo el cerrojo y sube la textura fuera de él.
+- **Número de intermedias:**
+  - baja si más del 10 % de los pasos saltan o si el hilo del juego duerme
+    menos de 3 ms por VBlank;
+  - sube si no salta ninguno y cada hilo tarda menos de 25 ms.
+- **Contador** arriba a la izquierda:
+  - `FPS`: imágenes distintas mostradas por segundo, según un resumen de la
+    imagen;
+  - `VEL`: VBlank del juego por segundo frente a 50, es decir, si el juego va
+    a su velocidad;
+  - `INT`: intermedias por paso;
+  - `CPU`: uso del hilo del juego.
+- Cada segundo va a logcat una línea con esas cifras y, además, el núcleo
+  del juego, los pasos saltados y los ms por paso del juego y de cada hilo.
+
+**Validación** (PC, `make native` con `AC3_INTERP=3 AC3_INTERP_FROM=3900` y
+el guion de la misión, con y sin `AC3_INTERP_THREADS=3`):
+- Las intermedias y las reales de los pasos 225-228 son **idénticas byte a
+  byte** en los dos modos (13 de 13).
+- El paso 226 saltó sus intermedias con hilos. Sin ritmo de 50 Hz, el PC
+  dibuja más rápido que los hilos, y ese es el comportamiento previsto.
+- `make psx-check`: sin fallos y el mismo resumen de VRAM del banco de
+  pruebas.
+
+**SIN RESOLVER:** las cifras reales de la Retroid. Las dirá el contador.

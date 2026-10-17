@@ -38,6 +38,8 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w);
 /* Recorre una lista de dibujo (tabla de ordenacion) en la RAM de la PS1 desde la
  * direccion `addr` hasta el terminador 0xFFFFFF, enviando cada paquete a GP0. */
 void psx_gpu_draw_list(PsxGpu *g, uint32_t addr);
+/* Igual, leyendo los paquetes de copias de la RAM (2 MB) y del scratchpad (1 KB). */
+void psx_gpu_draw_list_mem(PsxGpu *g, uint32_t addr, const uint8_t *ram, const uint8_t *scratch);
 /* Acceso directo a la VRAM (LoadImage/StoreImage/ClearImage de libgpu). */
 void psx_gpu_load_image(PsxGpu *g, int x, int y, int w, int h, const uint16_t *src);
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);

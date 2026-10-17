@@ -1,6 +1,7 @@
 /* Interpolacion de imagenes entre pasos de logica (ver psx_interp.h). */
 #include <stdio.h>
 #include <math.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -155,10 +156,108 @@ static int16_t ddx[MAXREF], ddy[MAXREF];
 static uint8_t moved[MAXREF];
 static uint32_t img[1024 * 512];
 
+static double g_tstep;   /* hora del paso en curso (CLOCK_MONOTONIC, s) */
+
 static void capture(PsxGpu *g, int num, int den, int vb) {
     int w, h;
     psx_display_frame_at(g->area_x1, g->area_y1, img, 1024 * 512, &w, &h);
-    if (w && h) g_sink(img, w, h, num, den, vb);
+    if (w && h) g_sink(img, w, h, num, den, vb, g_tstep);
+}
+
+/* ---- hilos de dibujo (psx_interp_threads): el hilo del juego deja una instantanea del paso
+ * (RAM, scratchpad, estado de la GPU antes del dibujo real y la lista de coordenadas que se
+ * mueven) y sigue; cada hilo dibuja sus fases k sobre copias propias. Si al llegar el paso
+ * siguiente algun hilo no ha terminado, ese paso va sin intermedias (se cuenta). ---- */
+#define MAXW 4
+static struct {
+    pthread_mutex_t mu;
+    pthread_cond_t go, done;
+    uint32_t seq;                     /* numero de trabajo */
+    int pending;                      /* hilos que no han terminado el trabajo actual */
+    int nthreads;
+    void (*on_start)(void);
+    /* el trabajo */
+    uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
+    PsxGpu gpu;
+    uint32_t addr[MAXREF], orig[MAXREF];
+    int16_t dx[MAXREF], dy[MAXREF];
+    int n, den, interval, x0, y0, dw, dh, on, rgb24;
+    uint32_t ot;
+    double t;
+    PsxInterpSink sink;
+    /* rendimiento */
+    double worker_s, worker_max;
+    int jobs, skipped, steps;
+    double pair_s, snap_s, real_s;
+} J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER};
+
+static double tnow(void);
+
+static void *worker(void *arg) {
+    int id = (int)(intptr_t)arg;
+    if (J.on_start) J.on_start();
+    uint8_t *ram = malloc(PSX_RAM_SIZE), scratch[0x400];
+    PsxGpu *gpu = malloc(sizeof *gpu);
+    uint32_t *out = malloc(1024 * 512 * 4);
+    uint32_t seen = 0;
+    for (;;) {
+        pthread_mutex_lock(&J.mu);
+        while (J.seq == seen) pthread_cond_wait(&J.go, &J.mu);
+        seen = J.seq;
+        int nt = J.nthreads;
+        pthread_mutex_unlock(&J.mu);
+        if (id >= nt) continue;   /* hilo sobrante (se pidieron menos): no cuenta */
+        double t0 = tnow();
+        int copied = 0;
+        for (int k = id + 1; k < J.den; k += nt) {
+            if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
+            memcpy(gpu, &J.gpu, sizeof *gpu);
+            int den = J.den;
+            for (int i = 0; i < J.n; i++) {
+                uint32_t a = J.addr[i];
+                uint32_t *w = (uint32_t *)((a & 0xFFFFFC00u) == PSX_SCRATCH_ADDR ? scratch + (a & 0x3FC) : ram + (a & (PSX_RAM_SIZE - 4)));
+                int ddx = J.dx[i], ddy = J.dy[i];
+                int x = (int16_t)(J.orig[i] & 0xFFFF) + (ddx * (den - k) + (ddx >= 0 ? den / 2 : -den / 2)) / den;
+                int y = (int16_t)(J.orig[i] >> 16) + (ddy * (den - k) + (ddy >= 0 ? den / 2 : -den / 2)) / den;
+                *w = ((uint32_t)(uint16_t)y << 16) | (uint16_t)x;
+            }
+            psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
+            psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
+            J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
+        }
+        double dt = tnow() - t0;
+        pthread_mutex_lock(&J.mu);
+        J.worker_s += dt;
+        if (dt > J.worker_max) J.worker_max = dt;
+        if (--J.pending == 0) pthread_cond_broadcast(&J.done);
+        pthread_mutex_unlock(&J.mu);
+    }
+    return NULL;
+}
+
+void psx_interp_threads(int n, void (*on_start)(void)) {
+    static pthread_t th[MAXW];
+    n = n < 0 ? 0 : n > MAXW ? MAXW : n;
+    pthread_mutex_lock(&J.mu);
+    while (J.pending) pthread_cond_wait(&J.done, &J.mu);
+    J.on_start = on_start;
+    int had = 0;
+    for (int i = 0; i < MAXW; i++) had += th[i] != 0;
+    for (int i = had; i < n; i++) pthread_create(&th[i], NULL, worker, (void *)(intptr_t)i);
+    /* los hilos no se destruyen: con menos, los sobrantes se quedan parados */
+    J.nthreads = n;
+    pthread_mutex_unlock(&J.mu);
+}
+
+void psx_interp_perf(PsxInterpPerf *p, int reset) {
+    pthread_mutex_lock(&J.mu);
+    p->steps = J.steps; p->jobs = J.jobs; p->skipped = J.skipped; p->nfrac = g_nfrac; p->threads = J.nthreads;
+    int n = J.steps ? J.steps : 1;
+    p->pair_ms = J.pair_s * 1000 / n; p->snap_ms = J.snap_s * 1000 / n; p->real_ms = J.real_s * 1000 / n;
+    p->worker_ms = J.jobs ? J.worker_s * 1000 / (J.jobs * (J.nthreads ? J.nthreads : 1)) : 0;
+    p->worker_max_ms = J.worker_max * 1000;
+    if (reset) { J.steps = J.jobs = J.skipped = 0; J.pair_s = J.snap_s = J.real_s = J.worker_s = J.worker_max = 0; }
+    pthread_mutex_unlock(&J.mu);
 }
 
 static double tnow(void) { struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); return t.tv_sec + t.tv_nsec * 1e-9; }
@@ -311,6 +410,42 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     ncur = 0;
     occ_gen++;
     if (!ok) return 0;
+    g_tstep = ta;
+    if (J.nthreads > 0) {   /* hilos de dibujo */
+        double tb = tnow();
+        pthread_mutex_lock(&J.mu);
+        int busy = J.pending > 0;
+        J.steps++;
+        J.pair_s += tb - ta;
+        if (busy) J.skipped++;
+        pthread_mutex_unlock(&J.mu);
+        if (!busy) {
+            memcpy(J.ram, psx_ram, PSX_RAM_SIZE);
+            memcpy(J.scratch, psx_scratch, sizeof J.scratch);
+            memcpy(&J.gpu, g, sizeof J.gpu);
+            int n = 0;
+            for (int i = 0; i < nref; i++) {
+                if (!moved[i] || (!ddx[i] && !ddy[i])) continue;
+                J.addr[n] = psx_addr(ref[i]); J.orig[n] = orig[i]; J.dx[n] = ddx[i]; J.dy[n] = ddy[i];
+                n++;
+            }
+            J.n = n; J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
+            J.x0 = g->area_x1; J.y0 = g->area_y1;
+            psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
+            if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
+            pthread_mutex_lock(&J.mu);
+            if (J.dw > 0 && J.dh > 0) { J.pending = J.nthreads; J.seq++; J.jobs++; pthread_cond_broadcast(&J.go); }
+            pthread_mutex_unlock(&J.mu);
+        }
+        double tc = tnow();
+        psx_gpu_draw_list(g, ot);
+        capture(g, g_nfrac + 1, g_nfrac + 1, interval);
+        pthread_mutex_lock(&J.mu);
+        J.snap_s += tc - tb;
+        J.real_s += tnow() - tc;
+        pthread_mutex_unlock(&J.mu);
+        return 1;
+    }
     /* imagenes intermedias: la lista con las posiciones mezcladas, sobre una copia del estado */
     double tb = tnow(); tm_pair += tb - ta;
     static PsxGpu saved;
