@@ -59,9 +59,9 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 1 | Intérprete MIPS en C (`psx/recomp/mipsi.c`) | ✅ hecho |
 | 2 | Enlace con la librería sin bytes del juego (`hle_eu.c`, `hle_us.c`) | ✅ hecho |
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
-| 4 | APK libre (`REGION=libre android_game/build.sh`) y auditoría (`tools/apk_audit.py`) | ✅ generado, sin probar en la Retroid |
-| 5 | Rendimiento en la Retroid (caché de decodificación, bloques…) si hace falta | pendiente |
-| 6 | Release alfa en GitHub con el APK libre | pendiente (decisión del dueño) |
+| 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
+| 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa |
 
 ## Resultados
 
@@ -111,9 +111,20 @@ de `tools/acebin.py`: 700.416 B la europea y 704.512 B la americana.
 
 ## SIN RESOLVER
 
-- **Rendimiento del intérprete en la Retroid.** En el PC sobra. La CPU de la
-  Retroid debería ser parecida por núcleo, pero no está medido.
 - **Distribución:** la decisión de publicar es del dueño. `docs/06-legal.md`
   ya considera publicable "un APK que no contenga nada de Namco, que pida al
   usuario su propia copia del juego". La auditoría es la comprobación objetiva
   y hay que repetirla en cada release.
+
+## Primera release pública (1.7-alfa)
+
+Probado por el dueño en la Retroid: `VEL` 100 %, todo correcto. Desde ahora
+**solo se genera el APK publicable**:
+- `android_game/build.sh` usa por defecto `REGION=libre`;
+- sale `AC3Recomp-<versión>.apk`, con el paquete principal
+  `com.vzepec.ac3game`, así que sustituye a la app personal y conserva su
+  tarjeta de memoria.
+
+`etapa-7` se integra en `develop` y en `main`. La release `v1.7-alfa` adjunta
+el APK, con la auditoría a 0 y su SHA-256, y usa `INSTALAR.md` como texto.
+

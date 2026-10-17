@@ -1,4 +1,24 @@
-# AC3 Recomp — el juego recompilado en Android (etapa 6, paso 4)
+# AC3 Recomp en Android
+
+**Desde la 1.7-alfa solo se genera el APK publicable:**
+
+```bash
+sh android_game/build.sh   # -> data/android/AC3Recomp-<version>.apk
+```
+
+- Lleva solo código de este repositorio: intérprete MIPS (`psx/recomp/mipsi.c`),
+  capa `psx/`, este programa y el selector de disco.
+- Lee `ACE.BIN` del disco del usuario e interpreta el juego (etapa 7,
+  `docs/12-etapa7.md`). No necesita `data/`, salvo la clave de firma
+  `data/android/debug.keystore`.
+  - Guarda una copia de esa clave: las actualizaciones tienen que ir firmadas
+    con la misma.
+- Antes de publicarlo, `tools/apk_audit.py` debe dar 0 coincidencias.
+- Instalación, controles y requisitos para quien lo usa: [`INSTALAR.md`](../INSTALAR.md).
+
+---
+
+## Variantes personales (etapa 6)
 
 **Compilación personal. No se distribuye.** El APK enlaza el código del juego
 traducido a C (`data/recomp/*.c`) e incrusta `ACE.BIN`; los dos se generan

@@ -1,17 +1,17 @@
 #!/bin/sh
-# APK del JUEGO RECOMPILADO (etapa 6). COMPILACION PERSONAL: enlaza el codigo del juego traducido
-# a C (data/recomp*/*.c) e incrusta ACE.BIN (data/exe/ace_*.bin), generados desde el disco del
-# usuario. El APK queda en data/android/ (fuera de git) y NO SE DISTRIBUYE (docs/06-legal.md).
-# REGION:
-#   all (por defecto): APK universal con las dos versiones; la app elige la del disco por su
+# APK de AC3 Recomp. Por defecto (REGION=libre) el APK PUBLICABLE, el unico que se genera
+# normalmente: solo codigo de este repositorio (interprete + capa psx/); el juego (ACE.BIN) se lee
+# del disco del usuario. Salida: data/android/AC3Recomp-<version>.apk (paquete com.vzepec.ac3game).
+# Antes de publicarlo: tools/apk_audit.py debe dar 0 coincidencias (docs/06-legal.md).
+# Variantes PERSONALES (etapa 6; llevan codigo del juego traducido y ACE.BIN: NO se distribuyen):
+#   all: APK universal con las dos versiones; la app elige la del disco por su
 #        ejecutable de arranque. Requisitos: make native y make native-us.
 #        Salida: data/android/ac3game-<version>.apk (paquete com.vzepec.ac3game)
 #   eu / us: una sola version, ac3game-<version>-eu.apk / -us.apk, con paquete propio
 #        (com.vzepec.ac3game.eu / .us) para que convivan en el aparato.
-#   libre (etapa 7): APK DISTRIBUIBLE, solo con codigo del repositorio: sin codigo traducido ni
-#        ACE.BIN. Lee ACE.BIN del disco del usuario y ejecuta el juego con el interprete
-#        (psx/recomp/mipsi.c). No necesita data/ (salvo la clave de firma).
-#        Salida: data/android/ac3game-<version>-libre.apk (paquete com.vzepec.ac3game.libre)
+#   libre (por defecto, etapa 7): sin codigo traducido ni ACE.BIN; ejecuta el juego con el
+#        interprete (psx/recomp/mipsi.c). No necesita data/ salvo la clave de firma
+#        (data/android/debug.keystore: guardar copia, las actualizaciones deben ir firmadas igual).
 # Los simbolos del codigo traducido americano llevan el sufijo _us (llvm-objcopy) para no chocar
 # con los europeos (las funciones se llaman por su direccion: f_80025458...).
 set -e
@@ -19,13 +19,13 @@ cd "$(dirname "$0")"
 ROOT=$(cd .. && pwd)
 VERSION=$(sed -n 's/.*android:versionName="\([^"]*\)".*/\1/p' AndroidManifest.xml)
 OUT=$ROOT/data/android
-REGION=${REGION:-all}
+REGION=${REGION:-libre}
 case "$REGION" in
-    all) REGIONS="eu us"; APK="ac3game-$VERSION.apk"; PKG=; LABEL= ;;
+    all) REGIONS="eu us"; APK="ac3game-$VERSION-personal.apk"; PKG=com.vzepec.ac3game.personal; LABEL="AC3 Recomp (personal)" ;;
     eu) REGIONS=eu; APK="ac3game-$VERSION-eu.apk"; PKG=com.vzepec.ac3game.eu; LABEL="AC3 Recomp (EU)" ;;
     us) REGIONS=us; APK="ac3game-$VERSION-us.apk"; PKG=com.vzepec.ac3game.us; LABEL="AC3 Recomp (US)" ;;
-    libre) REGIONS=; APK="ac3game-$VERSION-libre.apk"; PKG=com.vzepec.ac3game.libre; LABEL="AC3 Recomp (libre)" ;;
-    *) echo "REGION debe ser all, eu, us o libre"; exit 1 ;;
+    libre) REGIONS=; APK="AC3Recomp-$VERSION.apk"; PKG=; LABEL= ;;
+    *) echo "REGION debe ser libre (por defecto), all, eu o us"; exit 1 ;;
 esac
 SDK=${ANDROID_HOME:-$HOME/tools/android-sdk}
 NDK=${NDK:-$SDK/ndk/30.0.16248370}

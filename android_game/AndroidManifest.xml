@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- AC3 Recomp: el juego recompilado (etapa 6). COMPILACION PERSONAL: contiene codigo
-     del juego traducido a C y ACE.BIN, generados desde el disco del usuario.
-     NO SE DISTRIBUYE (docs/06-legal.md). -->
+<!-- AC3 Recomp. Por defecto (build.sh, REGION=libre) es el APK publicable: solo codigo de este
+     repositorio; el juego se lee del disco del usuario y se interpreta (docs/12-etapa7.md).
+     Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3game"
-    android:versionCode="7"
-    android:versionName="1.6-alfa">
+    android:versionCode="8"
+    android:versionName="1.7-alfa">
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />

@@ -5,6 +5,34 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Primera release pública: AC3Recomp 1.7-alfa (APK libre)
+
+**Prueba del dueño en la Retroid:** el APK libre de la etapa 7 va a `VEL` 100 %
+y todo funciona.
+
+**Decisiones del dueño:**
+- desde ahora solo se genera el APK publicable;
+- se llama `AC3Recomp-<versión>.apk`;
+- se publica una primera release alfa con requisitos, pasos y la tabla de
+  controles (`INSTALAR.md`).
+
+**Hecho:**
+- `android_game/build.sh` genera por defecto `REGION=libre` con el paquete
+  principal;
+- auditoría: 0 coincidencias;
+- `etapa-7` integrada en `develop` y `main`;
+- etiqueta `v1.7-alfa`.
+
+**Controles en `INSTALAR.md`:** solo se describe la función en el juego de lo
+comprobado:
+- A/cruz acepta en los menús (guiones de `native_main`);
+- B/círculo dispara misil (captura del PC);
+- X/cuadrado mantenido abre el mapa, las palancas pilotan y mueven la cámara
+  (dueño);
+- Start pausa y Select cambia la vista (capturas del PC).
+
+**SIN DOCUMENTAR:** el resto de botones ("según el juego").
+
 ## 2026-10-17 — Etapa 7: APK libre (intérprete MIPS, ACE.BIN del disco), 0 bytes del juego
 
 **Decisión del dueño:** camino B. Un APK sin nada de Namco, como un

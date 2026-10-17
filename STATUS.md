@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-17 (etapa 6: discos EU y US, APK personal 1.5-alfa de los dos)
+**Última actualización:** 2026-10-17 (primera release pública: AC3Recomp 1.7-alfa, APK libre de la etapa 7)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -70,18 +70,21 @@ americana va más estable y con muchos menos artefactos que la europea.
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
-## Etapa 7 (rama `etapa-7`): APK libre
+## Etapa 7: APK libre — PUBLICADO (v1.7-alfa)
 
-`docs/12-etapa7.md`. Un APK sin nada de Namco: intérprete MIPS en C + capa
-`psx/`, que lee `ACE.BIN` del disco del usuario. Generado
-(`REGION=libre android_game/build.sh`, 140 KB), con 0 bytes del juego según
-`tools/apk_audit.py`, y en el PC idéntico al código traducido (40/40 EU,
-36/36 US).
+`docs/12-etapa7.md`. **El único APK que se genera:** `sh android_game/build.sh`
+→ `data/android/AC3Recomp-<versión>.apk`.
+- Intérprete MIPS en C y capa `psx/`; lee `ACE.BIN` del disco del usuario.
+- 0 bytes del juego según `tools/apk_audit.py`.
+- Probado en la Retroid: `VEL` 100 %.
+- Release alfa en GitHub con [`INSTALAR.md`](INSTALAR.md): requisitos,
+  instalación y controles.
 
-**Siguiente:** probar `data/android/ac3game-<versión>-libre.apk` en la
-Retroid, mirando `VEL` y `FPS`. Si no llega a tiempo real, toca el paso 5
-(rendimiento del intérprete). Después, la release alfa en GitHub con el APK
-libre, si el dueño la aprueba.
+**Siguiente:** seguir con lo pendiente de la etapa 6, sobre el APK libre:
+1. afinar la interpolación en la europea;
+2. sprites colocados por la CPU (explosiones, humo, llamas);
+3. GPU por GLES (alta resolución y pantalla ancha);
+4. documentar los botones "según el juego" de la tabla de controles.
 
 ## Siguiente tarea concreta (etapa 6)
 
@@ -92,12 +95,8 @@ por paso, y la europea tiene más pasos al límite del emparejamiento. Medirlo
 con el guion de estrés en las dos.
 
 Pendiente:
-1. **Probar el APK universal 1.6-alfa** con los dos discos: que elija la
-   versión correcta y que la US vaya a 60 Hz (`VEL` 100 %).
-2. **APK distribuible sin nada de Namco**, que lea el disco del usuario y
-   genere o interprete el código en el aparato. Es el único que se puede
-   publicar (docs/06-legal.md).
-3. Sprites colocados por la CPU (explosiones, humo, llamas de los motores).
+1. (Hecho en la etapa 7: el APK libre, el único que se genera.)
+2. Sprites colocados por la CPU (explosiones, humo, llamas de los motores).
 4. GPU por GLES (alta resolución y pantalla ancha).
 5. Calibrar `BUDGET_PER_FRAME` (también en NTSC).
 

@@ -21,16 +21,26 @@ hasta la primera misión y van en un APK personal universal para Android, con im
 intermedias a 60 fps en la misión. El código recompilado y los APK se generan
 desde el disco del usuario y **no se distribuyen** (llevan código de Namco).
 
-**Etapa 7 (rama `etapa-7`):** un **APK libre** que solo lleva código de este
-repositorio. Interpreta el juego desde el disco del usuario, como un emulador,
-así que sí se puede distribuir (`docs/12-etapa7.md`, `tools/apk_audit.py`).
+## Probar la alfa en Android
 
-### Generar los APK desde tu propio disco
+**[INSTALAR.md](INSTALAR.md)** explica todo lo necesario: requisitos, instalación
+y la tabla de controles. Basta con descargar `AC3Recomp-<versión>.apk` de las
+releases y tener tu propio disco (europeo o americano).
 
-Requisitos: los `.bin`/`.cue` en `Rom/`, Ghidra 12.1.4, el SDK y el NDK de
-Android (ver [`android_game/README.md`](android_game/README.md)).
+El APK **solo lleva código de este repositorio**: lee el juego del disco del
+usuario y lo interpreta, como un emulador (etapa 7, `docs/12-etapa7.md`). La
+herramienta `tools/apk_audit.py` comprueba que no contiene bytes del juego.
+
+### Compilar el APK
 
 ```bash
+sh android_game/build.sh   # APK publicable -> data/android/AC3Recomp-<version>.apk (sin necesitar el juego)
+make libre                 # el mismo juego en el PC, desde la imagen del disco (DISCO=...)
+```
+
+Las variantes personales de la etapa 6 llevan código del juego traducido y no se
+distribuyen. Se generan con `REGION=all|eu|us android_game/build.sh`, después de
+`make native`.bash
 make native                          # europea: recompila y prueba en el PC
 make us-prep ghidra-us native-us     # americana
 sh android_game/build.sh             # APK universal (los dos discos) -> data/android/ac3game-<version>.apk
