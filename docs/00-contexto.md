@@ -11,8 +11,8 @@ juego traducido o reescrito a C/C++ que se compila para ARM.
 
 - PC Linux. Toolchain de referencia: Android NDK (clang), Gradle/AGP.
 - Herramientas de análisis de este repositorio: Python 3 estándar.
-- Pendiente de instalar: **Ghidra** (no está en la máquina) con el loader de
-  PSX y soporte de COP2/GTE.
+- Ghidra 12.1.4 + `ghidra_psx_ldr` instalados en `~/tools` (ver
+  `09-codigo.md`).
 
 ## Hardware destino
 

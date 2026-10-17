@@ -19,3 +19,7 @@ __pycache__/
 *.pyc
 .venv/
 _to_delete/
+
+# salida de compilacion del APK
+android/build/
+psx/build/

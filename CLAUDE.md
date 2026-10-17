@@ -33,10 +33,15 @@ que **no** hay que repetir.
    reproducible con una herramienta de `tools/`. Marca las hipótesis como
    `SIN RESOLVER`.
 3. **Valida todo heurístico contra un caso positivo conocido** antes de
-   concluir nada con él. Ya nos costó un error: ver la última entrada de
-   `notes/bitacora.md`.
-4. **No construyas todavía** renderer, runtime ni proyecto Android. La etapa
-   actual es de análisis. Ver `docs/05-hoja-de-ruta.md`.
+   concluir nada con él. Ya nos costó dos errores: ver en `notes/bitacora.md`
+   las entradas del heurístico de prólogos MIPS y de los TIM "inexistentes".
+4. **Etapas 1-5 cerradas.** La etapa 5 dejó en `psx/` la capa de
+   compatibilidad PsyQ: reimplementa las funciones de Sony que usa el juego
+   (GTE, GPU, CD, mando, SPU, XA), validada función a función. No es todavía
+   el juego. La etapa 6 (recompilar el juego) no está abierta: la abre el
+   dueño del proyecto. La rebanada de `android/` sigue siendo una medición.
+   Ver `docs/05-hoja-de-ruta.md`.
+   Ramas: una por etapa (`etapa-N`), integradas en `develop`; `main` es la base.
 5. **No borres archivos del usuario.** Si algo sobra, muévelo a `_to_delete/`
    y avísale.
 
@@ -61,6 +66,7 @@ La hoja de ruta está dividida en etapas que valen por sí solas.
 | Plan por etapas | `docs/05-hoja-de-ruta.md` |
 | Qué se puede publicar | `docs/06-legal.md` |
 | Vocabulario de PS1 | `docs/07-glosario.md` |
+| Análisis del código (Ghidra) | `docs/09-codigo.md` |
 | Historial de hallazgos | `notes/bitacora.md` |
 
 ## Al terminar cualquier trabajo

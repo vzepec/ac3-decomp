@@ -46,6 +46,10 @@ make index             # cabeceras de los indices de assets (rapido)
 make records           # tipos de registro y tablas de seccion
 make inventory         # inventario completo de los 199 recursos
 make info              # cabeceras PS-EXE de los binarios del juego
+make extract-bpb       # extrae ACE.BPB a data/bpb/ (necesario para lo siguiente)
+make ulz-check         # valida el descompresor ULZ
+make models            # valida el formato de vertices
+make textures REC=0006 # TIM de un registro a PNG
 ```
 
 Las herramientas no necesitan dependencias: **Python 3 estándar, nada más**.
@@ -68,10 +72,20 @@ docs/
   06-legal.md        que se puede publicar y que no
   07-glosario.md     GTE, MDEC, SPU, overlay, PsyQ, TIM, VAG...
   08-continuar-por-consola.md  retomar el trabajo desde terminal
+  09-codigo.md       analisis estatico: Ghidra, modulos, funciones, bucle
 tools/
   psxiso.py          lectura de imagenes de disco PSX (libreria + CLI)
   acepack.py         indices y contenedores ACE.SPH/SPB y ACE.BPH/BPB
   psexe.py           cabeceras PS-EXE y la variante no estandar de ACE.BIN
+  ulz.py             descompresor ULZ de Namco (secciones de los registros)
+  acerec.py          secciones de los registros de ACE.BPB
+  tim2png.py         TIM a PNG
+  acemodel.py        modelos 3D del tipo 17 (terreno, objetos, aviones LOD)
+  acesnd.py          bancos de sonido del SPU (ADPCM a WAV)
+  acedat.py          demuestra que ACE.DAT es relleno
+  acebin.py          descompresor de ACE.BIN (modulo principal)
+  mipsref.py         referencias lui/addiu en codigo MIPS
+  ghidra/            scripts de Ghidra y analisis de firmas (etapa 3)
   README.md          que hace cada herramienta y como usarla
 notes/
   bitacora.md        registro append-only de hallazgos con fecha
@@ -93,11 +107,11 @@ de código en inglés, sin tildes dentro de los archivos `.py` (compatibilidad).
 
 ## 6. Qué NO hacer
 
-- No empieces a escribir un renderer, un runtime o un proyecto Android
-  todavía. La etapa actual es de análisis (ver `STATUS.md`). Construir el
-  armazón del port antes de entender los datos es la forma más rápida de
-  tirar meses.
-- No intentes decompilar `ACE.BIN` directamente: está comprimido. Primero
-  hay que desempaquetarlo (etapa 2).
+- No construyas más de lo que pide la etapa en curso (ver `STATUS.md`). La
+  etapa 5 (capa de compatibilidad `psx/`) está cerrada; recompilar el juego
+  es la etapa 6 y no se empieza sin que la abra el dueño del proyecto. Construir el armazón del port
+  antes de entender los datos es la forma más rápida de tirar meses.
+- `ACE.BIN` está comprimido en el disco: trabaja siempre sobre la salida de
+  `make acebin` (`data/exe/`), y nunca la subas a git.
 - No añadas dependencias a las herramientas sin una razón fuerte. Deben
   ejecutarse en cualquier Python 3 recién instalado.

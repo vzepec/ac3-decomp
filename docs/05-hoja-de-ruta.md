@@ -25,7 +25,7 @@ japonesa. Ver `03-versiones.md`.
 
 ---
 
-## Etapa 1 — Arqueología de assets 🔄 EN CURSO
+## Etapa 1 — Arqueología de assets ✅ CRITERIO DE SALIDA CUMPLIDO
 
 **Objetivo:** entender y documentar los contenedores de datos del disco.
 
@@ -34,10 +34,17 @@ japonesa. Ver `03-versiones.md`.
 | Lectura de imágenes `MODE2/2352` y tabla ISO9660 | ✅ `tools/psxiso.py` |
 | Formato de los índices `ACE.SPH` / `ACE.BPH` | ✅ resuelto, 100 % de cobertura |
 | Extracción de los 199 recursos | ✅ `make extract-bpb` |
-| Semántica del campo `tag` | ⬜ sin resolver |
-| Formato interno de los registros tipo `0x11` (geometría/texturas) | ⬜ siguiente |
-| Localizar y convertir TIM a PNG | ⬜ |
-| Contenido de `ACE.DAT` (42 MB) | ⬜ |
+| Semántica del campo `tag` | ✅ BPB (tamaño en `u32`) · ✅ SPB (modo, canal XA, longitud) |
+| Compresión de las secciones (ULZ) | ✅ `tools/ulz.py`, 659/659 |
+| Localizar y convertir TIM a PNG | ✅ `tools/tim2png.py` |
+| Vértices y caras de modelos del tipo 17 | ✅ `tools/acemodel.py`, 14.095/14.095 |
+| Mapa de teselas del terreno | ✅ índice de 9 bits, base 1 |
+| Contenido de `ACE.DAT` (42 MB) | ✅ relleno, `tools/acedat.py` |
+| Aviones de misión con LOD (tipo 17 s02/s03) | ✅ 578/578 |
+| Bancos de sonido del SPU | ✅ `tools/acesnd.py`, 63/63 |
+| `ACE.SPB`: qué es | ✅ audio XA + vídeo (subcabeceras) |
+| Modelo del avión del jugador | ✅ preludio del tipo 4; exportable con texturas |
+| ULZ variante 0 (tipo 13, interfaz) | ✅ con el descompresor del juego |
 
 **Criterio de salida:** poder extraer de `ACE.BPB` una textura y verla como
 PNG, y un modelo y listar sus vértices.
@@ -51,7 +58,7 @@ real.
 
 ---
 
-## Etapa 2 — Desempaquetar `ACE.BIN`
+## Etapa 2 — Desempaquetar `ACE.BIN` ✅ HECHO
 
 **Objetivo:** obtener los 700.416 bytes del módulo principal en claro.
 
@@ -72,9 +79,14 @@ especulación en planificable.
 
 **Esfuerzo:** días para la vía 1, semanas para la vía 2. **Riesgo:** bajo.
 
+**Resultado (2026-10-15):** hecho por una tercera vía, más rápida que las dos
+previstas: descifrar el formato directamente, siguiendo cadenas conocidas en
+el flujo comprimido. `tools/acebin.py` descomprime EU y US, y valida contra
+la suma de control de la cabecera. Ver `02-binarios.md`.
+
 ---
 
-## Etapa 3 — Análisis estático del código
+## Etapa 3 — Análisis estático del código ✅ CRITERIO CUMPLIDO
 
 **Prerrequisito:** instalar **Ghidra** (no está en la máquina) con el loader
 de PSX y soporte COP2/GTE.
@@ -95,11 +107,48 @@ atajo al objetivo.
 **Criterio de salida:** un documento con el número de funciones propias, el
 mapa de overlays y el bucle principal identificado.
 
+**Estado (2026-10-15):** `docs/09-codigo.md`. Ghidra 12.1.4 + `ghidra_psx_ldr`
+instalados. `ACE.BIN`: 2.011 funciones (~1.262 propias, 473 KB) más 5
+overlays de código (~580 funciones propias, 219 KB): **unas 1.840 funciones
+propias, ~690 KB**. Mapa de módulos y de modos resuelto; bucle principal y
+despachador de modos identificados.
+
+**Cierre (2026-10-16):** los 5 overlays identificados (menú, campaña,
+créditos y dos reproductores de música); ritmo de juego (25 ticks/s EU, 30
+US); formatos de efectos, cielo, guion de misión, superficies móviles, estelas
+y demos descifrados y validados (`tools/acefx.py`, `acesky.py`,
+`acescript.py`, `acesurf.py`, `acedemo.py`, `acevideo.py`); unas 160
+funciones con nombre en `tools/ghidra/names.tsv`. Quedan abiertos, sin
+bloquear: el color de las estelas y `h0` (necesitan emulador o ya están
+descartados en render), y nombrar el resto del árbol de llamadas, que
+continúa en las etapas siguientes según haga falta.
+
 **Esfuerzo:** meses. **Riesgo:** medio.
 
 ---
 
-## Etapa 4 — Rebanada vertical en Android ⬅️ LA PRUEBA DE LA VERDAD
+## Etapa 4 — Rebanada vertical en Android ⬅️ LA PRUEBA DE LA VERDAD ✅ CRITERIO CUMPLIDO
+
+**Estado (2026-10-15):** primera versión en `android/` (ver su README):
+NativeActivity en C + GLES3, VRAM del PS1 simulada en el shader, terreno de
+una misión y avión del jugador leídos del disco del usuario, vuelo arcade
+con el mando, sin tope de fps (objetivo 60). APK de 40 KB sin datos del
+juego, librería alineada a 16 KB. Render verificado en el PC (Mesa).
+**Probado por el usuario en la Retroid Pocket Flip 2: instala y corre** (APK
+0.2 y 0.3: selector de archivos, misiles, enemigos, HUD de fps).
+
+**Medición (el objetivo de esta etapa):** la rebanada se construyó en una
+sola sesión de trabajo (horas, no semanas), porque los formatos ya estaban
+resueltos y validados en las etapas 1-3: el port a C de las herramientas
+coincidió con Python a la primera. Según la regla de esta hoja de ruta, el
+proyecto merece seguir. Lo que separa la rebanada del aspecto del juego son
+efectos aún no localizados (explosiones, estelas) y parámetros sin descifrar
+(entorno de la misión): trabajo de análisis, no de plataforma.
+
+**APK 0.4** (tras una tanda de análisis de la etapa 3): cielo y niebla por
+misión, inicio, enemigos y objetos de tierra según el guion, explosiones y
+humo con las texturas y tiempos del juego, estelas, y superficies móviles.
+Confirma la medición: cada hallazgo de análisis se porta en horas.
 
 **Objetivo:** una cosa, pequeña y nativa, corriendo en el Flip 2:
 
@@ -121,7 +170,21 @@ no al cuarto año. Si cuesta 3 semanas, el proyecto merece seguir.
 
 ---
 
-## Etapa 5 — Capa de compatibilidad PsyQ
+## Etapa 5 — Capa de compatibilidad PsyQ ✅ CERRADA (2026-10-16)
+
+Plan, superficie de API y resultados en `docs/10-etapa5.md`; código en `psx/`.
+
+Resultado: libgte, libgpu (con GPU por software), libcd, libetc, libpad,
+libspu (con SPU por software) y audio XA. Validación:
+- contra el código original de Sony (oráculo MIPS);
+- ejecutando el código del propio juego sobre la capa: apertura de packs,
+  127/127 registros por streaming, mando, driver de efectos y música XA;
+- contra referencias independientes: texturas TIM, `acesnd`, libav para el
+  XA.
+
+Pendiente fuera del criterio de salida: interpolación gaussiana de la SPU,
+reverberación, filtro de remuestreo del XA, negociación DualShock y la salida
+GLES de la VRAM en Android. Todo marcado SIN HACER en las cabeceras de `psx/`.
 
 Reimplementar `libgpu` sobre GLES/Vulkan, `libgte` en punto fijo exacto,
 `libspu` sobre el audio de Android, `libcd` sobre lectura de archivos. Es el
@@ -131,7 +194,7 @@ equivalente de Psy-X. Es el verdadero motor del port.
 
 ---
 
-## Etapa 6 — El juego
+## Etapa 6 — El juego (sin abrir: la decide el dueño del proyecto)
 
 Decompilación o recompilación del módulo principal, módulo a módulo. Es la
 etapa de los años. Realista solo con colaboradores.

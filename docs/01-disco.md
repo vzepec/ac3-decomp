@@ -44,10 +44,14 @@ Total en archivos: 409.761.456 bytes (390,8 MiB).
 
 Total: 561.253.968 bytes (535,3 MiB).
 
-**Interpretación:** la versión europea reorganizó los datos sacando contenido
-de `ACE.SPB` a un `ACE.DAT` aparte, probablemente por el soporte de cinco
-idiomas. La USA concentra todo en el pack de streaming. El código es del mismo
-tamaño en ambas, lo que sugiere un motor común con datos distintos.
+**Interpretación (corregida el 2026-10-15):** se pensó que la versión europea
+había sacado contenido de `ACE.SPB` a `ACE.DAT`. **Es falso.** `ACE.DAT` es un
+archivo de relleno: de sus 20.672 sectores solo 40 tienen algún byte distinto
+de cero (`tools/acedat.py`). Está al final del disco y no contiene assets.
+
+La diferencia de tamaño de `ACE.SPB` (+196 MB en la USA) sigue `SIN RESOLVER`;
+el SPB americano tiene 88 entradas frente a 72 y más categorías (`0xF5`,
+`0xF8`), probablemente vídeo.
 
 ## Observación clave para el proyecto
 
