@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — APK 0.9: la capa PsyQ funcionando en el dispositivo
+
+Version de prueba con una demo (R3, o L2 + R2 + A) en la que todo sale de `psx/`:
+- las dos peliculas del juego (libpress, MDEC, VRAM de 24 bits, salida de video
+  y audio XA), sincronizadas con el audio;
+- el terreno de la mision dibujado por la GTE y la GPU por software a 320x240.
+
+Prueba de escritorio (`android/test/test_psxdemo.c`): 18,7 fotogramas distintos
+por segundo en la intro, a ritmo real y sin cortes de audio; terreno correcto.
+Pendiente de probar en la Retroid.
+
 ## 2026-10-16 — Etapa 6, paso 2: salida de vídeo
 
 El área visible de la VRAM pasa a RGBA (`psx/src/display.c`) y se presenta con

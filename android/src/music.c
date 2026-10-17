@@ -56,23 +56,28 @@ static void *worker(void *arg) {
     return NULL;
 }
 
-int music_start(Disc *d, int entry) {
-    music_stop();
+int sph_entry(Disc *d, int entry, uint32_t *start, uint32_t *count, uint8_t *chan) {
     if (entry < 0 || !d->f || d->sector_size != 2352) return -1;
     DiscFile sph, spb;
     if (disc_find(d, "ACE.SPH", &sph) || disc_find(d, "ACE.SPB", &spb)) return -1;
     uint8_t *idx = malloc(sph.size + 2048);
     if (!idx || disc_read(d, sph.lba, idx, sph.size)) { free(idx); return -1; }
-    uint32_t count = rd32(idx + 0x10);
-    if (memcmp(idx, "AC3E", 4) || (uint32_t)entry >= count) { free(idx); return -1; }
+    uint32_t n = rd32(idx + 0x10);
+    if (memcmp(idx, "AC3E", 4) || (uint32_t)entry >= n) { free(idx); return -1; }
     uint32_t tag = rd32(idx + 0x14 + 8 * entry), sec = rd32(idx + 0x18 + 8 * entry);
     free(idx);
     /* tag del SPH (tools/acepack.py spb_tag): canal en los bits 19-23, extension en sectores
      * = longitud (bits 0-18) << desplazamiento (bits 24-26) */
+    *start = spb.lba + sec;
+    *count = (tag & 0x7FFFF) << ((tag >> 24) & 7);
+    *chan = (uint8_t)((tag >> 19) & 31);
+    return 0;
+}
+
+int music_start(Disc *d, int entry) {
+    music_stop();
+    if (sph_entry(d, entry, &g_trk.start, &g_trk.count, &g_trk.chan)) return -1;
     g_trk.fd = fileno(d->f);
-    g_trk.start = spb.lba + sec;
-    g_trk.count = (tag & 0x7FFFF) << ((tag >> 24) & 7);
-    g_trk.chan = (uint8_t)((tag >> 19) & 31);
     atomic_store(&g_r, 0);
     atomic_store(&g_w, 0);
     atomic_store(&g_run, 1);
@@ -80,6 +85,23 @@ int music_start(Disc *d, int entry) {
     g_have_thread = 1;
     return 0;
 }
+
+void music_stream_begin(void) {
+    music_stop();
+    atomic_store(&g_r, 0);
+    atomic_store(&g_w, 0);
+}
+
+int music_push(const int16_t *st, int frames) {
+    uint32_t r = atomic_load(&g_r), w = atomic_load(&g_w);
+    if (RING - (w - r) < (uint32_t)frames) return 0;
+    for (int i = 0; i < frames; i++) { g_ring[(w + i) % RING][0] = st[2 * i]; g_ring[(w + i) % RING][1] = st[2 * i + 1]; }
+    atomic_store(&g_w, w + (uint32_t)frames);
+    return frames;
+}
+
+uint32_t music_pushed(void) { return atomic_load(&g_w); }
+uint32_t music_played(void) { return atomic_load(&g_r); }
 
 void music_stop(void) {
     atomic_store(&g_run, 0);

@@ -10,7 +10,8 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (rama `etapa-6`, plan en
 `docs/11-etapa6.md`): recompilación estática del código MIPS a C sobre la capa
 `psx/` de la etapa 5. Etapas 1-5 cerradas. Mientras, la rebanada de
-Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
+Android sigue como medición: **APK 0.9** (demo de la capa PsyQ en el dispositivo:
+películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Hecho
 
