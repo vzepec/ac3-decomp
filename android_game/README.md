@@ -6,25 +6,31 @@ desde el disco del usuario. Por eso el APK se escribe en `data/android/`,
 fuera de git (ver `docs/06-legal.md`). Este directorio solo contiene código
 nuestro: el programa principal y el puente Java del selector de disco.
 
+**APK universal (1.6-alfa):** una sola app para los dos discos, el europeo
+(`SCES_020.66`) y el americano (`SLUS_009.72`).
+- La app elige la versión al abrir el disco, por su ejecutable de arranque. Si
+  el disco no es de ninguna de las dos, vuelve a pedirlo.
+- Lleva las dos traducciones y los dos `ACE.BIN` (unos 7 MB).
+- Las direcciones de cada versión son una tabla
+  (`src/ac3_regions.h`, `src/regions.c`).
+- Los símbolos del código americano llevan el sufijo `_us`, porque las
+  funciones se llaman por su dirección (`f_80025458`…) y chocarían con las
+  europeas.
+
 ```bash
-make native              # genera data/recomp/ (traduccion + enlace) y prueba en el PC
-android_game/build.sh    # -> data/android/ac3game-<version>.apk
+make native                          # europea: data/recomp/ y prueba en el PC
+make us-prep ghidra-us native-us     # americana: data/recomp_us/ y prueba en el PC
+android_game/build.sh                # universal -> data/android/ac3game-<version>.apk
+REGION=eu android_game/build.sh      # solo la europea   -> ac3game-<version>-eu.apk
+REGION=us android_game/build.sh      # solo la americana -> ac3game-<version>-us.apk
 ```
 
-**Versión americana** (disco `SLUS_009.72`, ver `docs/11-etapa6.md`, «ROM
-americana»):
-
-```bash
-make us-prep ghidra-us   # ACE.BIN US, overlays, perfil de direcciones y Ghidra
-make native-us           # data/recomp_us/ y prueba en el PC hasta la mision
-REGION=us android_game/build.sh   # -> data/android/ac3game-<version>-us.apk
-```
-
-- Paquete `com.vzepec.ac3game.us` («AC3 Recomp (US)»): convive con la
-  europea en el aparato, con su propia tarjeta de memoria.
-- Ritmo NTSC: 60 VBlank/s, 735 muestras de audio por VBlank; `VEL` 100 % = 60.
-- Al elegir el disco se comprueba que lleva `SLUS_009.72`. Si no, se vuelve a
-  pedir (la europea no comprueba nada, como antes).
+- **Paquetes:** el universal usa `com.vzepec.ac3game` y sustituye a la app
+  europea de antes, con la misma tarjeta de memoria. Las versiones sueltas
+  usan `com.vzepec.ac3game.eu` («AC3 Recomp (EU)») y `com.vzepec.ac3game.us`
+  («AC3 Recomp (US)»), así que conviven con él.
+- **Ritmo:** PAL va a 50 VBlank/s y 882 muestras de audio por VBlank; NTSC, a
+  60 y 735. `VEL` 100 % es el ritmo de la versión del disco.
 
 ## Cómo funciona
 
