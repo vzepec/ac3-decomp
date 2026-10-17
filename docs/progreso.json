@@ -22,8 +22,8 @@
  },
  "pasos": {
   "total": 8,
-  "hechos": 1,
-  "actual": "Paso 2: salida de video (VRAM a GLES)"
+  "hechos": 2,
+  "actual": "Paso 3: recompilador MIPS a C"
  },
  "recorrido": {
   "total": 46,

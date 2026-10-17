@@ -75,7 +75,7 @@ uint16_t GetTPage(int tp, int abr, int x, int y) {
 /* ---- funciones que usan la GPU ---- */
 
 static PsxGpu g_gpu;
-static int g_disp_x, g_disp_y, g_disp_w = 320, g_disp_h = 240, g_disp_on;
+static int g_disp_x, g_disp_y, g_disp_w = 320, g_disp_h = 240, g_disp_on, g_disp_24, g_disp_inter;
 
 void *psx_gpu(void) { return &g_gpu; }
 
@@ -141,8 +141,12 @@ DISPENV *PutDispEnv(DISPENV *env) {
     g_disp_y = env->disp.y;
     g_disp_w = env->disp.w;
     g_disp_h = env->disp.h;
+    g_disp_24 = env->isrgb24;
+    g_disp_inter = env->isinter;
     return env;
 }
+
+void psx_gpu_display_mode(int *rgb24, int *interlaced) { *rgb24 = g_disp_24; *interlaced = g_disp_inter; }
 
 void psx_gpu_display(int *x, int *y, int *w, int *h, int *enabled) {
     *x = g_disp_x; *y = g_disp_y; *w = g_disp_w; *h = g_disp_h; *enabled = g_disp_on;

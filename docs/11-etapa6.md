@@ -63,8 +63,8 @@ distribuido (`docs/06-legal.md`).
 | Paso | Qué | Estado |
 |---|---|---|
 | 1 | Completar la capa: lo que el juego llama y `psx/` no tiene (tabla abajo) | ✅ 152/152 funciones de Sony que llama el juego (residente y overlays) |
-| 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ⏳ siguiente |
-| 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ⏳ |
+| 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
+| 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ⏳ siguiente |
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ⏳ |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ⏳ |
@@ -173,3 +173,40 @@ Sin hacer (anotado en las cabeceras):
 - aritmética exacta de la conversión YUV→RGB del hardware;
 - `ClearImage2` en modo entrelazado;
 - si la BIOS redondea las lecturas y escrituras de tarjeta a 128 bytes.
+
+**Paso 2 (2026-10-16): salida de vídeo.** Rama `etapa-6-paso-2`.
+
+- `psx/src/display.c` (`psx_display.h`) convierte el área visible de la VRAM
+  (la del último `PutDispEnv`, que ahora guarda también el modo de 24 bits y
+  el entrelazado) a RGBA:
+  - 15 bits: expansión (c << 3) | (c >> 2);
+  - 24 bits: R, G, B empaquetados en medias palabras, como las películas;
+  - con `SetDispMask(0)`, negro.
+- `psx/gl/psx_present.c` (aparte de `libpsx`, para que la capa no dependa de
+  OpenGL) sube la imagen como textura de GLES 3 y la dibuja en tres modos:
+  4:3 con barras (el televisor), escala entera o 1:1. Filtrado al vecino más
+  cercano o lineal.
+
+Validación (`make psx-display`):
+1. `psx/test/test_display.c`, 15 comprobaciones:
+   - la conversión, calculada desde los datos de origen, sin leer la VRAM; con
+     el área en distintas posiciones, dando la vuelta por los bordes y con x
+     impar en 24 bits;
+   - la pantalla apagada;
+   - con OpenGL (EGL pbuffer, Mesa): `glReadPixels` idéntico píxel a píxel a
+     1:1 y a escala entera, y barras laterales en 4:3.
+2. `tools/psxcheck_display.py`: fotogramas de las dos películas montados en la
+   VRAM como lo hace el reproductor del juego (MDEC en 24 bits, `DecDCTout`
+   por columnas de 16 píxeles y `LoadImage` de cada una). La salida de 24 bits
+   es **idéntica al RGB del MDEC**.
+3. `make psx-scene` saca ahora su imagen por este camino.
+4. `make psx-android`: la capa y la presentación compilan para arm64 con el
+   NDK, sin avisos.
+
+Mutaciones detectadas: orden de bytes en 24 bits y expansión de 5 bits.
+
+Pendiente:
+- la prueba en la Retroid, que necesita un APK con la capa (llegará con el
+  arranque, paso 4, o antes si se pide);
+- el recorte y la posición en el televisor (`DISPENV.screen`) y el
+  entrelazado.

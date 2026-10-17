@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-16 — Etapa 6, paso 2: salida de vídeo
+
+El área visible de la VRAM pasa a RGBA (`psx/src/display.c`) y se presenta con
+GLES 3 (`psx/gl/psx_present.c`). Validado:
+- conversión exacta en 15 y 24 bits;
+- `glReadPixels` idéntico píxel a píxel;
+- fotogramas reales de las películas, montados en la VRAM como lo hace el
+  juego, iguales al RGB del MDEC;
+- compila para Android arm64.
+
+Reproducir: `make psx-display`, `make psx-android`.
+
 ## 2026-10-16 — Etapa 6, paso 1: la capa cubre las 152 funciones de Sony que llama el juego
 
 El inventario de la apertura (por nombres con firma) se quedaba corto: faltaban

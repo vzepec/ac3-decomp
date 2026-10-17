@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress
+.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -33,6 +33,8 @@ help:
 	@echo "make psyq-api   - etapa 5: API PsyQ que usa el juego"
 	@echo "make psx-scene  - etapa 5: terreno de la mision 6 dibujado con la capa PsyQ (GTE + GPU)"
 	@echo "make progress   - etapa 6: recalcula docs/progreso.json y la infografia del README"
+	@echo "make psx-display - etapa 6: salida de video (VRAM a RGBA y GLES) con pruebas"
+	@echo "make psx-android - etapa 6: compila la capa para Android (arm64) con el NDK"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -142,6 +144,7 @@ psx-check:
 	@$(PY) tools/psyqcheck_press.py "$(EU)" data/exe/ace_eu.bin 8
 	@$(PY) tools/psxcheck_mdec.py "$(EU)" 4
 	@$(PY) tools/psxcheck_card.py data/exe/ace_eu.bin data/exe/ovl/overlay1.exe
+	@$(MAKE) -s psx-display
 	@$(PY) tools/psyqcheck.py data/exe/ace_eu.bin
 	@$(PY) tools/psyqcheck_gte.py data/exe/ace_eu.bin 300
 	@$(PY) tools/psyqcheck_gpu.py data/exe/ace_eu.bin 500
@@ -157,3 +160,24 @@ psx-scene:
 
 progress:
 	@$(PY) tools/progress.py count "$(GHIDRA)"
+
+# cabeceras de EGL/GLES del NDK para las pruebas de escritorio (se enlaza con Mesa)
+NDK ?= $(HOME)/tools/android-sdk/ndk/30.0.16248370
+GLINC = android/build/inc
+GLLIBS = /usr/lib/x86_64-linux-gnu/libEGL.so.1 /usr/lib/x86_64-linux-gnu/libGLESv2.so.2
+
+$(GLINC)/GLES3/gl3.h:
+	@mkdir -p $(GLINC)
+	@cp -r $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/EGL $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/GLES3 $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/KHR $(GLINC)/
+
+psx-display: $(GLINC)/GLES3/gl3.h
+	@mkdir -p psx/build
+	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include -I$(GLINC) psx/test/test_display.c psx/gl/psx_present.c psx/src/*.c $(GLLIBS) -lm -o psx/build/test_display
+	@psx/build/test_display
+	@$(PY) tools/psxcheck_display.py "$(EU)" 4
+
+psx-android:
+	@rm -rf psx/build/android && mkdir -p psx/build/android
+	@for f in psx/src/*.c psx/gl/psx_present.c; do $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang -O2 -fPIC -Wall -Wextra -Wno-unused-parameter -Ipsx/include -c $$f -o psx/build/android/$$(basename $$f .c).o || exit 1; done
+	@$(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/llvm-ar rcs psx/build/android/libpsx.a psx/build/android/*.o
+	@echo "psx/build/android/libpsx.a (arm64) compilada"
