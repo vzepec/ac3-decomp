@@ -21,8 +21,9 @@ emulador, en la rama `etapa-7` (docs/12-etapa7.md).
 - auditoría `tools/apk_audit.py`.
 
 **Validación:**
-- Comparador frente a `tools/mipsemu.py`, 8 casos: 1.252 validadas y 0
-  distintas en el residente europeo.
+- Comparador frente a `tools/mipsemu.py`, 24 casos, residente y 5 overlays
+  europeos: 2.260 entradas validadas y **0 distintas**. Funciones de Ghidra:
+  1.672 de 1.821, igual que el código traducido.
 - Arranque solo con el intérprete: 40/40 capturas idénticas al código
   traducido en la europea (también con el binario compilado solo con el
   repositorio) y 36/36 en la americana.

@@ -69,8 +69,18 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 la etapa 6, con las mismas entradas que el código traducido.
 - Primera pasada, 8 casos por función, residente europeo: 2.037 entradas,
   1.252 validadas, **0 distintas**.
-- La pasada completa (24 casos, residente y 5 overlays) se anota en la
-  bitácora.
+- **Pasada completa** (24 casos, residente y 5 overlays): 3.365 entradas,
+  2.260 validadas y **0 distintas**. Funciones de Ghidra validadas: **1.672 de
+  1.821**, la misma cifra que el código traducido.
+
+  | Módulo | Validadas de Ghidra |
+  |---|---|
+  | residente | 1130/1237 |
+  | overlay 1 | 142/144 |
+  | overlay 2 | 362/401 |
+  | overlay 3 | 20/21 |
+  | overlay 4 | 10/10 |
+  | overlay 5 | 8/8 |
 
 **Arranque completo en el PC** (`native_main`; capturas cada 100
 fotogramas):
@@ -103,7 +113,6 @@ de `tools/acebin.py`: 700.416 B la europea y 704.512 B la americana.
 
 - **Rendimiento del intérprete en la Retroid.** En el PC sobra. La CPU de la
   Retroid debería ser parecida por núcleo, pero no está medido.
-- **La pasada completa** del comparador (24 casos, overlays).
 - **Distribución:** la decisión de publicar es del dueño. `docs/06-legal.md`
   ya considera publicable "un APK que no contenga nada de Namco, que pida al
   usuario su propia copia del juego". La auditoría es la comprobación objetiva
