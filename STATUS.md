@@ -66,19 +66,17 @@ Android sigue como medición: **APK 0.8** (música XA y afinación corregida).
 
 ## Siguiente tarea concreta
 
-Etapa 6, paso 1 de `docs/11-etapa6.md`: **completar la capa**. Orden propuesto:
-1. libapi/BIOS (eventos, contadores, interrupciones, `InitHeap`) y el resto
-   de libc y libsn: el bucle principal los necesita para arrancar.
-2. libgpu restante (`OpenTIM`, `ReadTIM`, `GetGraphDebug`), con oráculo.
-3. libpress y el MDEC (vídeos de la intro y las cinemáticas).
-4. libcard (guardar partida).
+Etapa 6, paso 2 de `docs/11-etapa6.md` (rama `etapa-6-paso-2`): **salida de
+vídeo**.
+- El área visible de la VRAM (la de `PutDispEnv`) a pantalla con GLES, 1:1,
+  primero en el PC (EGL, como `android/test/test_render.c`) y después en
+  Android.
+- Modos de 15 y 24 bits (las películas usan 24 bits si el juego lo pide).
+- Prueba: `make psx-scene` mostrado en ventana o volcado igual píxel a píxel
+  a la VRAM.
 
-Antes de implementar las funciones `_spu_*`, `_pad*` y `CD_*` de la tabla,
-comprobar que las llama código propio; si solo las llama la librería, no
-hacen falta.
-
-APK de la rebanada: 0.8 probada en la Retroid (funciona). Pendiente
-menor: la pista de partida que elige el guion (`FUN_800550F0`).
+Paso 1 hecho: la capa cubre las 152 funciones de Sony que llama el juego
+(residente y overlays), todas validadas.
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

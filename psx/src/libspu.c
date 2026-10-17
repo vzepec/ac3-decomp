@@ -200,6 +200,12 @@ uint32_t SpuRead(uint8_t *addr, uint32_t size) {
 
 int32_t SpuIsTransferCompleted(int32_t flag) { return 1; }
 
+int32_t SpuReadDecodedData(SpuDecodedData *d, int32_t flag) {
+    if (flag == 6) memcpy(d->voice1, g_spu.ram + 0x800, 0x800);
+    else memcpy(d, g_spu.ram, flag == 5 ? 0x800 : 0x1000);
+    return (rd(0x1AE) & 0x800) != 0;
+}
+
 int32_t SpuSetReverb(int32_t on_off) {
     if (on_off == 0) { L.reverb_on = 0; wr(0x1AA, rd(0x1AA) & ~0x80); return 0; }
     if (on_off != 1) return L.reverb_on;

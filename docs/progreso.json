@@ -1,6 +1,6 @@
 {
  "funciones": {
-  "residente": 1236,
+  "residente": 1237,
   "overlay 1": 144,
   "overlay 2": 401,
   "overlay 3": 21,
@@ -16,27 +16,14 @@
   "overlay 5": 0
  },
  "capa": {
-  "necesarias": 127,
-  "hechas": 115,
-  "faltan": [
-   "DecDCTReset",
-   "DecDCTin",
-   "DecDCTout",
-   "DecDCToutCallback",
-   "DecDCToutSync",
-   "DecDCTvlc2",
-   "DecDCTvlcBuild",
-   "DecDCTvlcSize2",
-   "InitCARD",
-   "StartCARD",
-   "StopCARD",
-   "_bu_init"
-  ]
+  "necesarias": 152,
+  "hechas": 152,
+  "faltan": []
  },
  "pasos": {
   "total": 8,
-  "hechos": 0,
-  "actual": "Paso 1: completar la capa"
+  "hechos": 1,
+  "actual": "Paso 2: salida de video (VRAM a GLES)"
  },
  "recorrido": {
   "total": 46,

@@ -9,7 +9,7 @@ controles físicos. Desarrollo desde Linux.
 ![Progreso de la recompilación](docs/img/progreso.svg)
 
 La barra verde mide el juego **recompilado a C y validado** contra el código
-original: las 1.820 funciones propias del juego, del residente y los 5 overlays.
+original: las 1.821 funciones propias del juego, del residente y los 5 overlays.
 Se regenera con `make progress`. Plan en
 [`docs/11-etapa6.md`](docs/11-etapa6.md).
 

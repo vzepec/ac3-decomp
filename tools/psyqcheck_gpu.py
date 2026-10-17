@@ -21,7 +21,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mipsemu import Machine  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-SIZES = {'D': 92, 'P': 20, 'T': 8, 'A': 12, 'R': 8, 'W': 4}
+SIZES = {'D': 92, 'P': 20, 'T': 8, 'A': 12, 'R': 8, 'W': 4, 'Q': 12}
 FUNCS = {   # nombre: (direccion EU, argumentos, devuelve valor)
     'SetDefDrawEnv': (0x800AAA98, 'Diiii', True),
     'SetDefDispEnv': (0x800AAB58, 'Piiii', True),
@@ -29,6 +29,8 @@ FUNCS = {   # nombre: (direccion EU, argumentos, devuelve valor)
     'SetDrawArea': (0x800A73F0, 'AR', False),
     'CatPrim': (0x800AABD8, 'WW', False),
     'GetTPage': (0x800AAB98, 'iiii', True),
+    'SetDrawMode': (0x800AAC38, 'QiiiR', False),
+    'SetDrawMode(tw=0)': (0x800AAC38, 'QiiiZ', False),
 }
 BASE = 0x100000
 
@@ -47,6 +49,48 @@ def rint(rnd):
                        rnd.getrandbits(32) - (1 << 31)))
 
 
+def check_tim(m, lib, ram, base_ptr, rnd, n):
+    """OpenTIM + dos ReadTIM sobre la misma secuencia de TIM (validos, sin CLUT, basura)"""
+    lib.ReadTIM.restype = ctypes.c_void_p
+    OPEN, READ = 0x800A9218, 0x800A9228
+    buf, out = 0x00120000, 0x00128000
+    bad = ex = 0
+    for _ in range(n):
+        data = b''
+        for _k in range(2):
+            kind = rnd.randrange(4)
+            if kind == 3:
+                data += struct.pack('<I', rnd.getrandbits(32)) + bytes(rnd.randrange(256) for _ in range(28))
+                continue
+            mode = rnd.choice((8, 9, 2, 3)) if kind else rnd.getrandbits(32)
+            blk = b''
+            if mode & 8:
+                cw = rnd.randrange(1, 9)
+                blk += struct.pack('<I4h', 12 + 2 * 16 * cw, 0, 480, 16, cw) + bytes(32 * cw)
+            iw = rnd.randrange(1, 9)
+            blk += struct.pack('<I4h', 12 + 2 * iw * 4, 640, 0, iw, 4) + bytes(8 * iw)
+            data += struct.pack('<II', 0x10, mode) + blk
+        data += b'\0' * 64
+        m.ram[buf:buf + len(data)] = data
+        ctypes.memmove(base_ptr + buf, data, len(data))
+        res_o, res_c = [], []
+        m.call(OPEN, [0x80000000 | buf])
+        lib.OpenTIM(ctypes.c_void_p(base_ptr + buf))
+        for k in range(2):
+            o = out + 0x40 * k
+            m.ram[o:o + 20] = b'\xAA' * 20
+            ctypes.memmove(base_ptr + o + 0x400, b'\xAA' * 20, 20)
+            r = m.call(READ, [0x80000000 | o])
+            rc = lib.ReadTIM(ctypes.c_void_p(base_ptr + o + 0x400))
+            res_o.append(((r & 0xFFFFFF) and (r - o) & 0xFFFFFF, bytes(m.ram[o:o + 20])))
+            res_c.append(((rc or 0) and (rc - base_ptr - o - 0x400) & 0xFFFFFF, bytes(ram[o + 0x400:o + 0x414])))
+        if res_o != res_c:
+            bad += 1
+            ex = ex or (res_o, res_c)
+    print('%-14s %4d casos, %d diferencias%s' % ('Open/ReadTIM', n, bad, ('  ej.: %s' % (ex,)) if bad else ''))
+    return bad
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -58,7 +102,7 @@ def main():
     rnd = random.Random(7)
     total = 0
     for name, (addr, kinds, has_ret) in FUNCS.items():
-        f = getattr(lib, name)
+        f = getattr(lib, name.split('(')[0])
         f.restype = ctypes.c_int32
         bad, ex = 0, None
         for _ in range(n):
@@ -70,6 +114,10 @@ def main():
             lib.psx_gpu_set_vram_size(1024, 512)
             regions, oargs, cargs = [], [], []
             for k, kind in enumerate(kinds):
+                if kind == 'Z':   # puntero nulo
+                    oargs.append(0)
+                    cargs.append(ctypes.c_void_p(0))
+                    continue
                 if kind == 'i':
                     v = rint(rnd) if name not in ('SetDrawTPage', 'GetTPage') else rnd.getrandbits(16)
                     oargs.append(v & 0xFFFFFFFF)
@@ -100,6 +148,7 @@ def main():
                     ex = 'ret %s/%s, regiones distintas %s' % (r_o, r_c, [i for i, (a, b) in enumerate(zip(out_o, out_c)) if a != b])
         total += bad
         print('%-14s %4d casos, %d diferencias%s' % (name, n, bad, ('  ej.: ' + ex) if bad else ''))
+    total += check_tim(m, lib, ram, base_ptr, rnd, n)
     print('TODO IDENTICO' if not total else 'HAY DIFERENCIAS')
     return 0 if not total else 1
 

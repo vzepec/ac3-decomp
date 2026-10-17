@@ -44,6 +44,7 @@ typedef struct {
     int16_t cd[PSX_SPU_CD_BUF][2];
     uint32_t cd_r, cd_w;
     uint32_t samples;       /* muestras generadas (contador para pruebas) */
+    uint32_t cap;           /* posicion de captura (0..0x1FF) en los 4 KB iniciales de la RAM */
 } PsxSpu;
 
 void psx_spu_reset(PsxSpu *s);

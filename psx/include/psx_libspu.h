@@ -56,6 +56,11 @@ typedef struct {
     int32_t delay, feedback;
 } SpuReverbAttr;            /* 20 bytes */
 
+typedef struct { int16_t cd_left[0x200], cd_right[0x200], voice1[0x200], voice3[0x200]; } SpuDecodedData;
+/* SpuReadDecodedData (0x8009F358): flag 5 = solo CD, 6 = solo voces, otro = todo; devuelve la
+ * mitad de captura que se esta escribiendo (SPUSTAT bit 11) */
+int32_t SpuReadDecodedData(SpuDecodedData *d, int32_t flag);
+
 /* la SPU que usa la libreria (para el mezclador del anfitrion y las pruebas) */
 PsxSpu *psx_spu(void);
 

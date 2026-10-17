@@ -1,6 +1,8 @@
+#include <stdio.h>
 /* libgpu: funciones que solo escriben en memoria. Reimplementadas a partir de ACE.BIN EU
  * (direcciones en tools/psyqcheck_gpu.py) y validadas contra el codigo original. */
 #include "psx_libgpu.h"
+#include "psx_libetc.h"
 #include "psx_gpu.h"
 #include "psx_mem.h"
 
@@ -144,4 +146,63 @@ DISPENV *PutDispEnv(DISPENV *env) {
 
 void psx_gpu_display(int *x, int *y, int *w, int *h, int *enabled) {
     *x = g_disp_x; *y = g_disp_y; *w = g_disp_w; *h = g_disp_h; *enabled = g_disp_on;
+}
+
+/* ---- TIM en memoria (0x800A9218/0x800A9228 y su lector 0x800A9574 en EU) ---- */
+static uint32_t g_tim;      /* siguiente TIM (0x800C9A30 en la original) */
+static int g_graph_debug;
+
+int SetGraphDebug(int level) { int o = g_graph_debug; g_graph_debug = level; return o; }
+int GetGraphDebug(void) { return g_graph_debug; }
+
+int OpenTIM(uint32_t *addr) { g_tim = psx_addr(addr); return 0; }
+
+TIM_IMAGE *ReadTIM(TIM_IMAGE *t) {
+    uint32_t p = g_tim;
+    if (*(uint32_t *)psx_ptr(p) != 0x10) return 0;
+    p += 4;
+    t->mode = *(uint32_t *)psx_ptr(p);
+    p += 4;
+    if (g_graph_debug == 2) printf("id  =%08x\nmode=%08x\ntimaddr=%08x\n", 0x10u, t->mode, p);
+    uint32_t cw = 0;
+    if (t->mode & 8) {
+        uint32_t n = *(uint32_t *)psx_ptr(p);
+        t->crect = p + 4;
+        t->caddr = p + 12;
+        cw = n >> 2;
+        p += cw * 4;
+    } else {
+        t->crect = t->caddr = 0;
+    }
+    uint32_t n = *(uint32_t *)psx_ptr(p);
+    t->prect = p + 4;
+    t->paddr = p + 12;
+    g_tim += (cw + (n >> 2) + 2) * 4;
+    return t;
+}
+
+int ClearImage2(RECT *r, uint8_t r0, uint8_t g0, uint8_t b0) { return ClearImage(r, r0, g0, b0); }
+int StoreImage2(RECT *r, uint32_t *p) { return StoreImage(r, p); }
+
+int MoveImage(RECT *r, int x, int y) {
+    if (!r->w) return -1;
+    if (!r->h) return 0;
+    psx_gpu_gp0(&g_gpu, 0x80000000u);
+    psx_gpu_gp0(&g_gpu, ((uint32_t)(uint16_t)r->y << 16) | (uint16_t)r->x);
+    psx_gpu_gp0(&g_gpu, ((uint32_t)(uint16_t)y << 16) | (uint16_t)x);
+    psx_gpu_gp0(&g_gpu, ((uint32_t)(uint16_t)r->h << 16) | (uint16_t)r->w);
+    return 0;
+}
+
+int GetODE(void) { return VSync(-1) & 1; }
+
+/* SetDrawMode (0x800AAC38): E1 (pagina, tramado, dibujo en el area visible) y E2 (ventana) */
+void SetDrawMode(DR_MODE *p, int dfe, int dtd, int tpage, RECT *tw) {
+    ((uint8_t *)&p->tag)[3] = 2;
+    p->code[0] = (dtd ? 0xE1000200u : 0xE1000000u) | ((uint32_t)tpage & 0x9FF) | (dfe ? 0x400u : 0);
+    if (tw)
+        p->code[1] = (uint32_t)(uint8_t)((uint8_t)tw->y >> 3) << 15 | (uint32_t)(uint8_t)((uint8_t)tw->x >> 3) << 10 |
+                     0xE2000000u | ((uint32_t)(-(int)tw->h) & 0xF8u) << 2 | ((uint32_t)(-(int)tw->w) & 0xFFu) >> 3;
+    else
+        p->code[1] = 0;
 }

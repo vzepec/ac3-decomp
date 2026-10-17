@@ -1,6 +1,7 @@
 /* Pruebas de libetc (psx/src/libetc.c): VSync y callback de VSync.
  *   psx/build/test_etc */
 #include <stdio.h>
+#include "psx_libapi.h"
 #include "psx_libetc.h"
 
 static int fails, checks;
@@ -35,6 +36,18 @@ int main(void) {
     psx_set_refresh(60);
     VSync(0);
     CHECK(VSync(1) == 0 && VSync(0) == 263, "NTSC: 263 lineas por fotograma");
+    /* contadores raiz: el 1 cuenta lineas (313 por fotograma en PAL) desde ResetRCnt */
+    psx_set_refresh(50);
+    SetRCnt(RCntCNT1, 0x1E00, 0x2000);
+    StartRCnt(RCntCNT1);
+    ResetRCnt(RCntCNT1);
+    CHECK(GetRCnt(RCntCNT1) == 0, "GetRCnt tras ResetRCnt: %d", GetRCnt(RCntCNT1));
+    VSync(0); VSync(0);
+    CHECK(GetRCnt(RCntCNT1) == 626, "GetRCnt tras 2 fotogramas: %d", GetRCnt(RCntCNT1));
+    ResetRCnt(RCntCNT1);
+    CHECK(GetRCnt(RCntCNT1) == 0, "ResetRCnt");
+    CHECK(GetRCnt(RCntCNT2) == 0 && SetRCnt(0x1234, 0, 0) == 0, "contadores sin modelo y especificador invalido");
+    CHECK(psx_divdi3(INT64_MIN, -1) == INT64_MIN && psx_udivdi3(10, 3) == 3, "division de 64 bits en los bordes");
     printf("%d comprobaciones, %d fallos\n", checks, fails);
     return fails ? 1 : 0;
 }

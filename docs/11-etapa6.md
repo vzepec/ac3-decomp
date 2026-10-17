@@ -52,7 +52,7 @@ distribuido (`docs/06-legal.md`).
   en ella al terminar el paso. `etapa-6` se integra en `develop`.
 - `make progress` (`tools/progress.py`) recalcula `docs/progreso.json` (solo
   números) y la infografía `docs/img/progreso.svg` del README:
-  - funciones propias recompiladas y validadas, sobre 1.820: residente 1.236,
+  - funciones propias recompiladas y validadas, sobre 1.821: residente 1.237,
     overlays 144 / 401 / 21 / 10 / 8;
   - funciones de Sony cubiertas por la capa;
   - pasos de la etapa;
@@ -62,8 +62,8 @@ distribuido (`docs/06-legal.md`).
 
 | Paso | Qué | Estado |
 |---|---|---|
-| 1 | Completar la capa: lo que el juego llama y `psx/` no tiene (tabla abajo) | ⏳ siguiente |
-| 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ⏳ |
+| 1 | Completar la capa: lo que el juego llama y `psx/` no tiene (tabla abajo) | ✅ 152/152 funciones de Sony que llama el juego (residente y overlays) |
+| 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ⏳ siguiente |
 | 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ⏳ |
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ⏳ |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ |
@@ -112,4 +112,64 @@ programa directamente, y el **ejecutable de arranque** (`SCES_002.47` /
 
 ## Resultados
 
-(vacío: la etapa acaba de abrirse)
+**Paso 1 (2026-10-16): capa completa, 152/152.** Rama `etapa-6-paso-1`.
+
+*El inventario inicial se quedaba corto.* Contaba solo nombres con firma PsyQ
+y se le escapaban dos cosas:
+- **funciones sin firma** que el juego llama, identificadas por su código:
+  `SetGeomOffset`, `SetGeomScreen`, `ReadGeomScreen`, `NormalClip`,
+  `TransMatrix`, las de libpress que controlan el MDEC (`DecDCTReset/in/out/
+  outSync/outCallback`), `strlen` y las secciones críticas;
+- **las llamadas de los overlays**, que en su volcado aparecen como
+  `FUN_<dirección del residente>`: eventos de la BIOS, archivos de la tarjeta,
+  `StoreImage2`, `ClearImage2`, `MoveImage`, `SetDrawMode`, `GetODE`,
+  `CompMatrix`, `RotMatrix_gte`, `sprintf`, `SpuReadDecodedData`…
+
+`tools/progress.py count` resuelve ahora las direcciones de los overlays y
+cuenta cualquier función de la zona de librerías a la que llame código propio.
+
+| Bloque | Implementación | Validación |
+|---|---|---|
+| libgte (8 más) | `libgte.c` | oráculo: idénticas en registros GTE y memoria |
+| libgpu (`OpenTIM`/`ReadTIM`, `SetDrawMode`, `MoveImage`, `ClearImage2`, `StoreImage2`, `GetODE`) | `libgpu.c` | oráculo (`ReadTIM`, `SetDrawMode`); prueba de GP0 0x80 |
+| contadores raíz, `InitHeap`, secciones críticas, eventos | `libapi.c` | `psx/test/test_etc.c`; los eventos, con el código del juego (tarjeta) |
+| `printf` y `sprintf` | `libapi.c` | oráculo: **dos formateadores distintos en PsyQ**, ambos idénticos en 5.075 formatos |
+| `__divdi3`, `__udivdi3` | `libapi.c` | oráculo |
+| libpress `DecDCTvlc2` | `libpress.c` | oráculo: 120 fotogramas reales idénticos |
+| MDEC | `libpress.c` | libav `mdec`: ≥ 49,5 dB |
+| tarjeta de memoria | `libcard.c` | código de guardado del juego (overlay 1) |
+
+Hallazgos:
+- **`printf` y `sprintf` de PsyQ no comparten formateador.**
+  - En `printf`: la precisión cuenta el signo y el prefijo; el `0` rellena
+    también `%c` y `%s`; `h` extiende el signo desde 16 bits en todo salvo
+    `%p`; `%%` no se rellena.
+  - En `sprintf`: casi C estándar, pero `%p` sale con 8 cifras en mayúsculas,
+    `%#p` lleva el prefijo `0p` y `%#s` es una **cadena Pascal** (longitud en
+    el primer byte).
+  - El juego solo usa `%d`/`%s` (con ancho y relleno), que ya coincidían.
+- **Vídeo.** Las películas (solo las entradas 0 y 1 del SPB, de 304×224 y
+  320×176) usan sectores con una cabecera propia de Namco y el flujo de bits
+  de **versión 3**. El fin de fotograma es un código de 10 unos en la
+  posición del DC; después, `DecDCTvlc2` rellena con `0xFE00`.
+- **Tablas del MDEC por fórmula,** comprobadas contra el ACE.BIN:
+  cuantización = matriz intra de MPEG-1 en zigzag con q[0] = 2; IDCT =
+  ⌊32768·C(u)·cos((2x+1)uπ/16)⌋.
+- **Referencia de color.** Para comparar con libav hay que usar su salida YUV:
+  su conversión a RGB es de rango limitado (×1,164 − 18), y el MDEC trabaja
+  en rango completo.
+- **Tarjeta.** El juego guarda `BESCESP02066AC3PAL` (1 bloque, 0x11FC bytes)
+  con escrituras asíncronas y espera el evento SwCARD EvSpIOE.
+
+Validación de la tarjeta (`tools/psxcheck_card.py`), con el código del
+overlay 1 en el intérprete: formatear, listar (15 libres), crear, guardar,
+cargar y listar otra vez (1 archivo, 14 libres). La carga pasa la
+comprobación del propio juego y los datos vuelven idénticos. La imagen `.mcd`
+es válida: firma, sumas XOR y directorio.
+
+Sin hacer (anotado en las cabeceras):
+- `DecDCTvlcSize2` con límite (el juego usa 0, sin límite) y la versión 2 del
+  flujo sin probar (el disco no la usa);
+- aritmética exacta de la conversión YUV→RGB del hardware;
+- `ClearImage2` en modo entrelazado;
+- si la BIOS redondea las lecturas y escrituras de tarjeta a 128 bytes.

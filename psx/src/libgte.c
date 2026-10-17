@@ -54,6 +54,18 @@ void ReadGeomOffset(int32_t *ofx, int32_t *ofy) {
     *ofy = (int32_t)CFC(25) >> 16;
 }
 
+/* sin firma en el ACE.BIN (0x800A55E8, 0x800A5608, 0x800A55B8, 0x800A58E8 en EU) */
+void SetGeomOffset(int32_t ofx, int32_t ofy) { CTC(24, (uint32_t)ofx << 16); CTC(25, (uint32_t)ofy << 16); }
+void SetGeomScreen(int32_t h) { CTC(26, (uint32_t)h); }
+int32_t ReadGeomScreen(void) { return (int32_t)CFC(26); }
+int32_t NormalClip(int32_t sxy0, int32_t sxy1, int32_t sxy2) {
+    MTC(12, (uint32_t)sxy0);
+    MTC(14, (uint32_t)sxy2);
+    MTC(13, (uint32_t)sxy1);
+    CMD(0x1400006);
+    return (int32_t)MFC(24);
+}
+
 void SetRotMatrix(MATRIX *m) { load_matrix(0, m); }
 void SetLightMatrix(MATRIX *m) { load_matrix(8, m); }
 void SetColorMatrix(MATRIX *m) { load_matrix(16, m); }
@@ -328,4 +340,74 @@ int32_t VectorNormalSS(SVECTOR *v0, SVECTOR *v1) {
     v1->vy = (int16_t)((int32_t)MFC(26) >> sh);
     v1->vz = (int16_t)((int32_t)MFC(27) >> sh);
     return sum;
+}
+
+/* TransMatrix (sin firma, 0x800A53A8 en EU): copia el vector en la traslacion */
+MATRIX *TransMatrix(MATRIX *m, VECTOR *v) {
+    m->t[0] = v->vx; m->t[1] = v->vy; m->t[2] = v->vz;
+    return m;
+}
+
+/* CompMatrix (0x800A4C18): m2 = m0 * m1 (rotacion) y m2.t = m0.R * m1.t + m0.t, con las
+ * peculiaridades del original: m1.t se carga truncada a 16 bits, y el SWC2 de IR3 escribe
+ * los 32 bits (el relleno tras m2[2][2] queda con el signo extendido). */
+MATRIX *CompMatrix(MATRIX *m0, MATRIX *m1, MATRIX *m2) {
+    const uint8_t *a = (const uint8_t *)m0, *b = (const uint8_t *)m1;
+    uint8_t *c = (uint8_t *)m2;
+    for (int i = 0; i < 5; i++) CTC(i, w32(a + 4 * i));
+    uint32_t ir[3][3];
+    uint32_t vxy[3] = {(uint32_t)(w32(b) & 0xFFFF) | (w32(b + 4) & 0xFFFF0000u),
+                       (uint32_t)(w32(b) >> 16) | (w32(b + 8) << 16),
+                       (uint32_t)(w32(b + 4) & 0xFFFF) | (w32(b + 8) & 0xFFFF0000u)};
+    uint32_t vz[3] = {w32(b + 12), (uint32_t)(int32_t)(int16_t)(w32(b + 12) >> 16), w32(b + 16)};
+    for (int k = 0; k < 3; k++) {
+        MTC(0, vxy[k]);
+        MTC(1, vz[k]);
+        CMD(C_RTV0);
+        for (int r = 0; r < 3; r++) ir[k][r] = MFC(9 + r);
+    }
+    put32(c + 0, (ir[1][0] << 16) | (ir[0][0] & 0xFFFF));
+    put32(c + 12, (ir[1][2] << 16) | (ir[0][2] & 0xFFFF));
+    put32(c + 16, ir[2][2]);
+    put32(c + 4, (ir[0][1] << 16) | (ir[2][0] & 0xFFFF));
+    put32(c + 8, (ir[2][1] << 16) | (ir[1][1] & 0xFFFF));
+    MTC(0, (w32(b + 20) & 0xFFFF) | (w32(b + 24) << 16));
+    MTC(1, w32(b + 28));
+    CMD(C_RTV0);
+    for (int r = 0; r < 3; r++) put32(c + 20 + 4 * r, MFC(25 + r) + w32(a + 20 + 4 * r));
+    return m2;
+}
+
+/* RotMatrix_gte (0x800A5E78): la misma matriz que RotMatrix pero con productos hechos por
+ * la GTE (GPF, sf=1) en el mismo orden que el original, para que tambien coincida el
+ * estado final de la GTE. Solo escribe 16 bits en m[2][2] (no toca el relleno). */
+#define C_GPF 0x198003Du
+static void gpf(int32_t ir0, int32_t a, int32_t b, int32_t c, int32_t *r1, int32_t *r2, int32_t *r3) {
+    MTC(8, (uint32_t)ir0); MTC(9, (uint32_t)a); MTC(10, (uint32_t)b); MTC(11, (uint32_t)c);
+    CMD(C_GPF);
+    *r1 = (int32_t)MFC(9); *r2 = (int32_t)MFC(10); *r3 = (int32_t)MFC(11);
+}
+MATRIX *RotMatrix_gte(SVECTOR *r, MATRIX *m) {
+    int32_t sx, cx, sy, cy, sz, cz;
+    sc(r->vx < 0 ? -r->vx : r->vx, &sx, &cx); if (r->vx < 0) sx = -sx;
+    sc(r->vy < 0 ? -r->vy : r->vy, &sy, &cy); if (r->vy < 0) sy = -sy;
+    sc(r->vz < 0 ? -r->vz : r->vz, &sz, &cz); if (r->vz < 0) sz = -sz;
+    sx = (int16_t)sx; sy = (int16_t)sy; sz = (int16_t)sz;
+    int32_t cxsy, cxsz, cxcz, sxsy, sxsz, sxcz, czcy, czsxsy, czcxsy, szcy, szsxsy, szcxsy;
+    gpf(cx, sy, sz, cz, &cxsy, &cxsz, &cxcz);
+    int32_t cycx = cy * cx;
+    gpf(sx, sy, sz, cz, &sxsy, &sxsz, &sxcz);
+    m->m[2][2] = (int16_t)(cycx >> 12);
+    int32_t cysx = cy * sx;
+    gpf(cz, cy, sxsy, cxsy, &czcy, &czsxsy, &czcxsy);
+    gpf(sz, cy, sxsy, cxsy, &szcy, &szsxsy, &szcxsy);
+    m->m[0][2] = (int16_t)sy;
+    m->m[1][0] = (int16_t)(czsxsy + cxsz);
+    m->m[0][0] = (int16_t)czcy;
+    m->m[0][1] = (int16_t)-szcy;
+    m->m[1][1] = (int16_t)(cxcz - szsxsy);
+    m->m[1][2] = (int16_t)-(cysx >> 12);
+    m->m[2][0] = (int16_t)(sxsz - czcxsy);
+    m->m[2][1] = (int16_t)(sxcz + szcxsy);
+    return m;
 }

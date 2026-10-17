@@ -174,6 +174,29 @@ def check_driver(lib, acebin, bank, raw, wav):
     return bad
 
 
+def check_capture(lib):
+    """captura de la SPU (SpuReadDecodedData): la entrada de CD aparece en cd_left/cd_right"""
+    spu = ctypes.c_void_p(lib.psx_spu())
+    lib.SpuInit()
+    w = lib.psx_spu_write16
+    w(spu, 0x1AA, 0xC001)                       # SPU encendida y entrada de CD activa
+    w(spu, 0x1B0, 0x7FFF); w(spu, 0x1B2, 0x7FFF)
+    n = 0x180
+    st = (ctypes.c_int16 * (2 * n))(*[v for i in range(n) for v in (i * 37 - 3000, -i * 11)])
+    lib.psx_spu_cd_push(spu, st, n)
+    out = (ctypes.c_int16 * (2 * n))()
+    lib.psx_spu_render(spu, out, n)
+    d = ctypes.create_string_buffer(0x1000)
+    half = lib.SpuReadDecodedData(d, 0)
+    cdl = struct.unpack_from('<512h', d.raw, 0)
+    cdr = struct.unpack_from('<512h', d.raw, 0x400)
+    want_l = [(i * 37 - 3000) * 0x7FFF >> 15 for i in range(n)]
+    want_r = [(-i * 11) * 0x7FFF >> 15 for i in range(n)]
+    ok = list(cdl[:n]) == want_l and list(cdr[:n]) == want_r and half == 1
+    print('captura de la SPU (SpuReadDecodedData): %s' % ('bien' if ok else 'MAL'))
+    return 0 if ok else 1
+
+
 def main():
     if len(sys.argv) < 2:
         sys.exit(__doc__)
@@ -183,6 +206,7 @@ def main():
     raw = Record.from_file(glob.glob(os.path.join(ROOT, 'data', 'bpb', '0000_*'))[0]).section(3)
     bank = SoundBank(raw)
     fails = check_decode(lib, bank)
+    fails += check_capture(lib)
     fails += check_driver(lib, sys.argv[1], bank, raw, sys.argv[2] if len(sys.argv) > 2 else None)
     print('TODO BIEN' if not fails else 'HAY FALLOS (%d)' % fails)
     return 1 if fails else 0

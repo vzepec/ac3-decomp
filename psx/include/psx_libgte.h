@@ -35,6 +35,13 @@ void *psx_gte_get_context(void);
 
 void InitGeom(void);
 void ReadGeomOffset(int32_t *ofx, int32_t *ofy);
+void SetGeomOffset(int32_t ofx, int32_t ofy);
+void SetGeomScreen(int32_t h);
+int32_t ReadGeomScreen(void);
+int32_t NormalClip(int32_t sxy0, int32_t sxy1, int32_t sxy2);
+MATRIX *TransMatrix(MATRIX *m, VECTOR *v);
+MATRIX *CompMatrix(MATRIX *m0, MATRIX *m1, MATRIX *m2);
+MATRIX *RotMatrix_gte(SVECTOR *r, MATRIX *m);
 void SetRotMatrix(MATRIX *m);
 void SetTransMatrix(MATRIX *m);
 void SetLightMatrix(MATRIX *m);
