@@ -14,5 +14,8 @@
 /* escribe en rgba (hasta max_pixels) la imagen visible; devuelve 1 si la pantalla esta
  * activa (SetDispMask) y 0 si no (imagen negra); ancho y alto en *w, *h */
 int psx_display_frame(uint32_t *rgba, int max_pixels, int *w, int *h);
+/* igual, pero leyendo desde (ox, oy) de la VRAM con el tamano y modo de la pantalla
+ * (para capturar el area de dibujo en lugar de la visible); ox < 0: el area visible */
+int psx_display_frame_at(int ox, int oy, uint32_t *rgba, int max_pixels, int *w, int *h);
 
 #endif

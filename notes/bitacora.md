@@ -5,6 +5,56 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-17 — Imágenes intermedias por vértices y GPU por software exacta 2× más rápida
+
+**Interpolación** (`psx/src/interp.c`):
+- La GTE anota modelo → pantalla y `DrawOTag` reconoce esas coordenadas en la
+  lista de dibujo.
+- Se dibujan imágenes intermedias con las posiciones mezcladas con el paso
+  anterior.
+- **Primer intento fallido:** emparejar por "n-ésima aparición" de las
+  coordenadas de modelo. Más de la mitad se repiten (casillas del terreno) y
+  salían astillas en el horizonte.
+- **Arreglo:** un modelo afín del movimiento global, ajustado con las claves
+  únicas, que decide entre los candidatos.
+
+**Validación** (`AC3_INTERP_TEST=1 AC3_INTERP=1 PSX_VSYNC_MAX=1`, binario de
+`make native`): la intermedia de *k* y *k+2* frente al *k+1* real da 28,7 dB,
+frente a 27,5 y 27,8 dB de los vecinos, en 390 casos.
+
+**Medición que cambió el plan:**
+- Una imagen de la misión costaba ~8 ms: 138.000 píxeles a 58 ns.
+- El rasterizador recalculaba las aristas y hacía divisiones de 64 bits por
+  cada píxel del rectángulo envolvente.
+- Reescrito (tramos exactos, cociente + resto incremental): 3,3 ms y el
+  arranque completo al doble de velocidad.
+- Idéntico byte a byte: 84 capturas, resumen de VRAM, `test_gpu`.
+- Banco de pruebas: `psx/test/bench_gpu.c` sobre `data/bench/mision.gpu`
+  (`PSX_GPU_DUMP`).
+
+## 2026-10-17 — Los 25 fps son del juego, y su lógica va atada a las imágenes
+
+En la misión, el bucle principal (`ac3_main`) llama a `VSync(n)` con `n`
+leído de `[DAT_800bacb8]+0x14`. Vale 1 en los menús y 2 en la misión, lo que
+da **25 imágenes por segundo en PAL** (30 en NTSC).
+
+Con `PSX_FPSDBG=1` se miden los `DrawOTag` por cada 100 VBlank: 100 en los
+menús y 50 en la misión.
+
+Experimento con `PSX_VSYNC_MAX=1`, que hace esperar 1 VBlank por imagen:
+- La misión dibuja 100 imágenes cada 100 VBlank.
+- El reloj del HUD avanza 4 s por cada 2 s reales (00:07 → 00:27 frente a
+  00:02 → 00:12, en los fotogramas 3700 → 4200).
+- **La lógica avanza un paso por imagen.** El juego no usa el valor que
+  devuelve `VSync` como tiempo transcurrido.
+
+Consecuencia: para ver 60 fps sin acelerar el juego hay dos caminos:
+- **interpolar** imágenes intermedias entre dos pasos de lógica;
+- **partir el paso** de toda la lógica: física, IA, animaciones y relojes.
+
+Reproducir con `make native` (el binario de `data/recomp/native/`) y esas
+variables de entorno.
+
 ## 2026-10-17 — APK personal 1.0-alfa con el juego recompilado
 
 `android_game/build.sh` empaqueta el juego recompilado con la capa en una app

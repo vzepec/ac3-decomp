@@ -34,6 +34,11 @@ android_game/build.sh    # -> data/android/ac3game-<version>.apk
 
 - `BUDGET_PER_FRAME` no está calibrado. Si un fotograma del juego exige más
   trabajo que el presupuesto, el reloj avanza a mitad de fotograma.
-- La imagen se presenta a 50 Hz tal cual: aún no hay 60 fps ni pantalla
-  ancha.
+- Imágenes intermedias (1.1-alfa): en la misión, 25 pasos de lógica por
+  segundo se muestran con hasta 3 imágenes intermedias por paso, interpoladas
+  por vértices (`psx/src/interp.c`).
+  - Un paso de retraso.
+  - L3+R3 las activa o desactiva.
+  - Su número se adapta al tiempo libre del hilo del juego.
+- Aún no hay pantalla ancha.
 - Solo se ha probado hasta la primera misión en el PC (`make native`).
