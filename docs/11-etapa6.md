@@ -518,3 +518,103 @@ el guion de la misión, con y sin `AC3_INTERP_THREADS=3`):
   mal. No se pudo reproducir en el PC sin el mando real.
 - **Sprites colocados por la CPU:** las llamas de los motores y las
   explosiones saltan al ritmo de 25.
+
+### Paso 8: terreno lejano en giros rápidos (APK 1.4-alfa)
+
+**Informe de la Retroid (1.3-alfa):** con la interpolación activa, en giros
+rápidos de avión o de cámara, aparecen parpadeos y "terreno negro" en el
+terreno lejano.
+
+**Reproducción en el PC:**
+- La prueba de verdad conocida admite ahora `AC3_INTERP_TEST=S`: se
+  interpola entre *k* y *k+S+1* y se compara con el paso real del medio.
+  - S=3 y S=5 simulan movimientos de 2 y 3 veces la velocidad de la misión.
+  - La prueba informa además de los píxeles casi negros de la intermedia que
+    no lo son en las reales ("agujeros"), con la misma medida en el paso
+    real del medio como ruido.
+- `tools/interp_holes.py` hace la misma medida sobre las capturas de
+  `AC3_INTERP_FROM`/`AC3_INTERP_LEN`.
+  - Su prueba con un agujero sintético cuenta 80 de 80 píxeles.
+  - Sobre las capturas del guion da 6-9 píxeles por imagen, lo mismo que
+    tres reales seguidas (9,3). **Con los giros del guion no hay grietas:**
+    esa medida es solo textura que se mueve.
+- **Sonda** (`PSX_INTERP_PROBE=vb,x,y`): en el paso indicado, la intermedia se
+  dibuja paquete a paquete y se anotan los paquetes que escriben el píxel.
+  `PSX_INTERP_PRIMDUMP` vuelca las coordenadas de la lista con su estado y su
+  desplazamiento de dibujo.
+
+**Hallazgos:**
+1. **El fondo (cielo, bruma) no sale de la GTE.**
+   - Es un cuadrilátero que cubre la pantalla, con el horizonte calculado por
+     la CPU según la orientación de la cámara.
+   - El terreno 3D va con el desplazamiento de dibujo 160,384, centrado; el
+     HUD, con 0,256.
+   - En las intermedias el fondo no se movía, mientras el terreno sí.
+2. **Puntos oscuros en la silueta del terreno**, encontrados con la sonda en
+   un caso con S=5.
+   - Son caras de las laderas: de espaldas en el paso anterior (el juego no
+     las dibujaba) y de cara en este.
+   - Al mover cada vértice en línea recta quedan de cara antes de tiempo y
+     muestran su textura oscura sobre la bruma.
+3. **Parejas equivocadas en vértices repetidos:**
+   - Los vértices del terreno con coordenadas de modelo repetidas se
+     emparejaban con la predicción del movimiento global, que en giros
+     fuertes falla.
+   - Resultado: vértices casi juntos en pantalla recibían desplazamientos
+     muy distintos.
+4. **Grietas posibles en vértices compartidos:** un vértice sin pareja se
+   movía con la media de cada primitiva por separado, y en primitivas
+   distintas recibía valores distintos.
+
+**Cambios** (`psx/src/interp.c`):
+- **Parejas en dos fases.** Primero las claves únicas. Después las repetidas,
+  con la predicción de sus vecinos: la media de los vértices únicos de sus
+  mismos polígonos (tolerancia de 8 px); el movimiento global queda como
+  último recurso.
+- **Desplazamientos grandes:** los saltos de hasta 128 px se admiten si
+  cuadran con la predicción. El límite sin predicción sigue en 48 px.
+- **Vértices sin pareja:** un único desplazamiento por punto de pantalla,
+  la media de lo que proponen todas sus primitivas.
+- **Fondo:** las primitivas grandes (≥ 128 px) sin GTE en el espacio 3D se
+  reconocen en el paso anterior por comando, textura y orden de aparición, y
+  se interpolan con sus propios vértices.
+  - Si no se reconocen, se mueven con el movimiento global, deslizando sobre
+    su borde los vértices que están en el borde de la pantalla.
+- **Polígonos que se dan la vuelta:** si la superficie con signo cambia entre
+  los dos pasos, el polígono no se dibuja en las intermedias antes de la
+  fracción estimada del giro, |a₀|/(|a₀|+|aₖ|).
+  - Tampoco se dibuja si en la intermedia queda de espaldas o crece más del
+    doble de lo que mide en los dos pasos reales.
+- **Base de las intermedias:** cada intermedia se dibuja sobre la imagen real
+  del paso. El juego no borra la pantalla (`isbg` = 0 y sin rellenos en la
+  lista), así que si queda un hueco se ve terreno real y no memoria antigua.
+- La aplicación de cada fase (`apply_phase`, `PhaseList`) es una sola
+  función para los dos modos, con hilos y sin ellos.
+
+**Validación (PSNR de la intermedia frente al paso real del medio; entre
+paréntesis, el mejor vecino real):**
+
+| | 1.3 | 1.4 |
+|---|---|---|
+| S=1 (393 casos) | 28,34 dB (27,57) | 28,47 dB |
+| S=3 (191-192 casos) | 26,96 dB (25,71) | 26,89 dB |
+| S=5 (126-127 casos) | 26,14 dB (24,78) | 26,18 dB |
+
+- Interpolar el fondo con sus propios vértices mejora 9 de 127 casos con S=5,
+  hasta +1,4 dB, y no empeora ninguno.
+- En el caso de la sonda, los píxeles oscuros sobre la bruma bajan de 145 a
+  100.
+- Con hilos y sin ellos: 44 de 44 capturas idénticas.
+- `make psx-check` sin fallos.
+- Emparejar cuesta 0,5 ms por paso (antes 0,35).
+- **Peor caso con S=5:** un choque con la pantalla temblando. El propio juego
+  deja una franja negra al desplazar la imagen, y la intermedia la interpola.
+  No es un defecto.
+
+**SIN RESOLVER:**
+- No se pudo reproducir en el PC el giro rápido de la Retroid: el guion solo
+  tiene la cruceta, sin la palanca de la cámara.
+- Con movimientos muy grandes (S=5), interpolar en línea recta un alabeo de
+  ~60° coloca mal la silueta del terreno. Es el límite de la interpolación
+  2D: quedan caras de ladera oscuras donde la imagen real del medio ya
+  muestra cielo.

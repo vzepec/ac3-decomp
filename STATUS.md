@@ -67,10 +67,10 @@ películas y terreno 1:1; R3 o L2 + R2 + A).
 
 ## Siguiente tarea concreta
 
-**Probar `data/android/ac3game-1.3-alfa.apk` en la Retroid** (uso personal).
-La 1.2 iba a 60 FPS, pero en pruebas de estrés titilaba. La 1.3 corrige los
-pasos sin intermedias que no llegaban a la pantalla (docs/11-etapa6.md, paso
-7).
+**Probar `data/android/ac3game-1.4-alfa.apk` en la Retroid** (uso personal):
+¿quedan parpadeos o "terreno negro" en el terreno lejano en giros rápidos?
+(docs/11-etapa6.md, paso 8). La 1.3 corrigió el titileo de los pasos sin
+intermedias (paso 7).
 Las intermedias se dibujan ahora en hilos aparte y hay un contador arriba a
 la izquierda:
 - `FPS`: imágenes distintas por segundo;
@@ -94,9 +94,9 @@ Hecho en la etapa 6:
 - paso 1, capa completa (152/152);
 - paso 2, salida de vídeo;
 - paso 3, recompilador (1.672/1.821 funciones validadas, 0 distintas);
-- pasos 4-7: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
+- pasos 4-8: APK personal (1.0 arranque y misión; 1.1 intermedias; 1.2
   intermedias en hilos aparte y contador; 1.3 sin titileo en pasos sin
-  parejas).
+  parejas; 1.4 terreno lejano en giros rápidos).
 
 Hecho en la etapa 5:
 - inventario de API, oráculo MIPS con GTE y emulador de la GTE;

@@ -139,8 +139,8 @@ void DrawOTag(uint32_t *ot) {
 DRAWENV *PutDrawEnv(DRAWENV *env) {
     if (getenv("PSX_DISPDBG")) {
         static int n;
-        if (n++ % 50 == 0) fprintf(stderr, "PutDrawEnv clip=(%d,%d,%d,%d) ofs=(%d,%d) dfe=%d\n", env->clip.x, env->clip.y, env->clip.w, env->clip.h,
-                                   env->ofs[0], env->ofs[1], env->dfe);
+        if (n++ % 50 == 0) fprintf(stderr, "PutDrawEnv clip=(%d,%d,%d,%d) ofs=(%d,%d) dfe=%d isbg=%d rgb=(%d,%d,%d)\n", env->clip.x, env->clip.y,
+                                   env->clip.w, env->clip.h, env->ofs[0], env->ofs[1], env->dfe, env->isbg, env->r0, env->g0, env->b0);
     }
     int x2 = env->clip.x + env->clip.w - 1, y2 = env->clip.y + env->clip.h - 1;
     psx_gpu_gp0(&g_gpu, area_cmd(0xE3000000u, env->clip.x, env->clip.y));

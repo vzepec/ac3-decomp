@@ -82,12 +82,24 @@ static void frame_check(void) {
 
 /* prueba de la interpolacion (AC3_INTERP=n): cada 100 fotogramas, estadisticas; entre
  * AC3_INTERP_FROM y +8 fotogramas, todas las imagenes (intermedias y reales) a las capturas */
-static int interp_from;
-/* prueba con verdad conocida (AC3_INTERP_TEST=1): PSNR de la intermedia de k y k+2 frente al
- * k+1 real, y de los vecinos reales frente al k+1 (lo que se veria sin interpolar) */
+static int interp_from, interp_len = 8;   /* AC3_INTERP_FROM, AC3_INTERP_LEN (VBlank) */
+/* prueba con verdad conocida (AC3_INTERP_TEST=S, S impar): PSNR de la intermedia de k y k+S+1
+ * frente al paso real del medio, y de los vecinos reales frente a el (lo que se veria sin
+ * interpolar). S = 1: k, k+2 frente a k+1; S = 3: movimientos el doble de rapidos */
 static uint32_t t_prev[640 * 512], t_mid[640 * 512], t_int[640 * 512];
 static int t_have_prev, t_have_mid, t_n, t_fresh;
 static double t_sum_int, t_sum_prev, t_sum_next, t_min_gain = 1e9;
+static long t_holes_int, t_holes_mid, t_holes_max, t_holes_max_f, t_dark;
+/* agujeros (como tools/interp_holes.py): pixeles casi negros en b donde a y c no lo son */
+static int holes(const uint32_t *a, const uint32_t *b, const uint32_t *c, int n) {
+    int k = 0;
+    for (int i = 0; i < n; i++) {
+#define MX(v) ((int)((v) & 255) > (int)(((v) >> 8) & 255) ? ((int)((v) & 255) > (int)(((v) >> 16) & 255) ? (int)((v) & 255) : (int)(((v) >> 16) & 255)) : ((int)(((v) >> 8) & 255) > (int)(((v) >> 16) & 255) ? (int)(((v) >> 8) & 255) : (int)(((v) >> 16) & 255)))
+        if (MX(b[i]) < 16 && MX(a[i]) >= 40 && MX(c[i]) >= 40) k++;
+#undef MX
+    }
+    return k;
+}
 static double psnr(const uint32_t *a, const uint32_t *b, int n) {
     double e = 0;
     for (int i = 0; i < n; i++)
@@ -98,11 +110,19 @@ static double psnr(const uint32_t *a, const uint32_t *b, int n) {
 static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
     int n = w * h;
     if (n > 640 * 512) return;
-    if (den == 0) { memcpy(t_mid, rgba, n * 4); t_have_mid = 1; return; }
+    if (den == 0) { if (num == (psx_interp_skip_test + 1) / 2) { memcpy(t_mid, rgba, n * 4); t_have_mid = 1; } return; }
     if (num < den) { memcpy(t_int, rgba, n * 4); t_fresh = 1; return; }
     if (t_have_prev && t_have_mid && den == 2 && t_fresh) {
         double pi = psnr(t_int, t_mid, n), pp = psnr(t_prev, t_mid, n), pn = psnr(rgba, t_mid, n);
         t_sum_int += pi; t_sum_prev += pp; t_sum_next += pn; t_n++;
+        int hi_ = holes(t_prev, t_int, rgba, n), hm = holes(t_prev, t_mid, rgba, n);
+        t_holes_int += hi_; t_holes_mid += hm;
+        for (int i = 0; i < n; i++) {   /* oscuro sobre claro: intermedia oscura donde la real del medio es clara */
+            int bi = (int)(t_int[i] & 255), gi = (int)((t_int[i] >> 8) & 255), ri = (int)((t_int[i] >> 16) & 255);
+            int bm = (int)(t_mid[i] & 255), gm = (int)((t_mid[i] >> 8) & 255), rm = (int)((t_mid[i] >> 16) & 255);
+            if (bi < 40 && gi < 40 && ri < 40 && bm >= 70 && gm >= 70 && rm >= 70) t_dark++;
+        }
+        if (hi_ - hm > t_holes_max) { t_holes_max = hi_ - hm; t_holes_max_f = last_vcount; }
         double gain = pi - (pp > pn ? pp : pn);
         if (gain < t_min_gain) t_min_gain = gain;
         if (getenv("AC3_INTERP_TEST_DUMP") && shots && abs(last_vcount - atoi(getenv("AC3_INTERP_TEST_DUMP"))) <= 1) {
@@ -158,7 +178,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         k = nsteps & 7;
         seen_t[k] = t_step;
         seen_step[k] = nsteps++;
-        seen_save[k] = last_vcount >= interp_from && last_vcount < interp_from + 8;
+        seen_save[k] = last_vcount >= interp_from && last_vcount < interp_from + interp_len;
     }
     int step = seen_step[k], save = seen_save[k];
     pthread_mutex_unlock(&sink_mu);
@@ -247,7 +267,8 @@ int main(int argc, char **argv) {
     rc_set_frame_hook(on_vsync_frame);
     if (getenv("AC3_INTERP")) {
         interp_from = getenv("AC3_INTERP_FROM") ? atoi(getenv("AC3_INTERP_FROM")) : 0;
-        psx_interp_skip_test = getenv("AC3_INTERP_TEST") != NULL;
+        if (getenv("AC3_INTERP_LEN")) interp_len = atoi(getenv("AC3_INTERP_LEN"));
+        psx_interp_skip_test = getenv("AC3_INTERP_TEST") ? atoi(getenv("AC3_INTERP_TEST")) : 0;
         psx_interp_config(atoi(getenv("AC3_INTERP")), psx_interp_skip_test ? 1 : 2, interp_sink);
         if (getenv("AC3_INTERP_THREADS")) psx_interp_threads(atoi(getenv("AC3_INTERP_THREADS")), NULL);
     }
@@ -272,6 +293,9 @@ int main(int argc, char **argv) {
     if (t_n) printf("prueba de interpolacion (%d casos): PSNR frente al paso intermedio real: interpolada %.2f dB, "
                     "anterior real %.2f dB, siguiente real %.2f dB; peor ganancia %.2f dB\n", t_n, t_sum_int / t_n,
                     t_sum_prev / t_n, t_sum_next / t_n, t_min_gain);
+    if (t_n) printf("oscuro sobre claro por imagen: %.1f\n", (double)t_dark / t_n);
+    if (t_n) printf("agujeros negros por imagen: interpolada %.1f, real del medio %.1f (ruido de la medida); peor exceso %ld (fotograma %ld)\n",
+                    (double)t_holes_int / t_n, (double)t_holes_mid / t_n, t_holes_max, t_holes_max_f);
     printf("%d fotogramas en %.2f s de CPU (%.0f fotogramas/s; tiempo real del juego: %.1f s a 50 Hz)\n", last_vcount, dt,
            last_vcount / (dt > 0 ? dt : 1), last_vcount / 50.0);
     return 0;
