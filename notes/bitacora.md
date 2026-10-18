@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-18 — Se trabaja con la versión americana; ramas limpias
+
+**Decisión del dueño:** la versión americana pasa a ser la referencia, porque
+en la Retroid es más estable con las imágenes intermedias. La interpolación
+europea queda aparcada. La europea se mantiene compilando como prueba de
+regresión.
+
+**Ramas:** se borran `etapa-6` y `etapa-7`, en local y en origin, tras
+comprobar que tienen 0 commits fuera de `main`. Quedan `main` y `develop`.
+
+**Siguiente:** el recorrido completo del juego en la americana (STATUS.md).
+
 ## 2026-10-17 — Primera release pública: AC3Recomp 1.7-alfa (APK libre)
 
 **Prueba del dueño en la Retroid:** el APK libre de la etapa 7 va a `VEL` 100 %

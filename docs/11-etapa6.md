@@ -65,10 +65,10 @@ distribuido (`docs/06-legal.md`).
 | 1 | Completar la capa: lo que el juego llama y `psx/` no tiene (tabla abajo) | ✅ 152/152 funciones de Sony que llama el juego (residente y overlays) |
 | 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
 | 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ✅ 1.672/1.821 funciones validadas con estados aleatorios, 0 distintas; el resto, con estados reales en el paso 4 |
-| 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ⏳ siguiente |
-| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ |
-| 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ⏳ |
-| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | ⏳ |
+| 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
+| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ **siguiente** (con la versión americana): solo está comprobado hasta la primera misión |
+| 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
+| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (la americana, estable; la europea, aparcada); sprites de la CPU, alta resolución y panorámico ⏳ |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
 
 **Criterio de salida:** el juego completo, jugable de principio a fin en la

@@ -1,22 +1,21 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-17 (primera release pública: AC3Recomp 1.7-alfa, APK libre de la etapa 7)
+**Última actualización:** 2026-10-18 (se trabaja con la versión americana; ramas fusionadas borradas)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
 
 ## Etapa actual
 
-**Etapa 6 — El juego, nativo: EN CURSO** (rama `etapa-6`, plan en
-`docs/11-etapa6.md`): recompilación estática del código MIPS a C sobre la capa
-`psx/` de la etapa 5. Etapas 1-5 cerradas.
+**Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
+juego corre nativo sobre la capa `psx/`, en las versiones europea y
+americana, hasta la primera misión. Falta el recorrido completo (paso 5).
+**Etapa 7 — APK libre: publicada** (`v1.7-alfa`, `docs/12-etapa7.md`). Desde
+ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
+juego desde el disco del usuario. Etapas 1-5 cerradas.
 
-**Compatible con los discos europeo y americano.** Los dos se recompilan
-(0 funciones distintas del original), arrancan en el PC hasta la primera
-misión y tienen APK personal: en la 1.5, una app por versión, probadas en la
-Retroid; desde la 1.6, el universal `ac3game-1.6-alfa.apk`, con las dos
-versiones y la del disco elegida al abrirlo (sin probar aún en la Retroid). Según el dueño, la
-americana va más estable y con muchos menos artefactos que la europea.
+**Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
+rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
 
 ## Hecho
 
@@ -80,30 +79,46 @@ americana va más estable y con muchos menos artefactos que la europea.
 - Release alfa en GitHub con [`INSTALAR.md`](INSTALAR.md): requisitos,
   instalación y controles.
 
-**Siguiente:** seguir con lo pendiente de la etapa 6, sobre el APK libre:
-1. afinar la interpolación en la europea;
-2. sprites colocados por la CPU (explosiones, humo, llamas);
-3. GPU por GLES (alta resolución y pantalla ancha);
-4. documentar los botones "según el juego" de la tabla de controles.
+**Desde 2026-10-18 se trabaja con la versión americana** (`SLUS-00972`).
+Según el dueño, en la Retroid es mucho más estable. La europea se mantiene
+compilando, pero no se afina. Pruebas de referencia: `make libre
+DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
-## Siguiente tarea concreta (etapa 6)
+## Siguiente tarea concreta
 
-**Afinar la interpolación en la europea** con lo que se vea en la Retroid. En
-la americana va bastante mejor. Hipótesis **SIN RESOLVER**: la americana
-dibuja 30 pasos por segundo en vez de 25, con desplazamientos un 17 % menores
-por paso, y la europea tiene más pasos al límite del emparejamiento. Medirlo
-con el guion de estrés en las dos.
+**Recorrido completo del juego, 1:1** (paso 5 de `docs/11-etapa6.md`, el
+criterio de salida de la etapa 6). Hoy solo está comprobada la primera
+misión. Falta jugar o guionizar en la americana:
+- título, menús, briefings, misiones y finales;
+- películas, música y textos;
+- guardar y cargar en la tarjeta de memoria;
+- compararlo con DuckStation.
 
-Pendiente:
-1. (Hecho en la etapa 7: el APK libre, el único que se genera.)
-2. Sprites colocados por la CPU (explosiones, humo, llamas de los motores).
-4. GPU por GLES (alta resolución y pantalla ancha).
-5. Calibrar `BUDGET_PER_FRAME` (también en NTSC).
+Cada fallo que aparezca es una tarea: una función de la capa que falta o un
+fallo de `rc_fault` en el registro.
 
-El contador de la app (arriba a la izquierda) da `FPS`, `VEL` (100 % = la
-velocidad de la consola), `INT` (intermedias por paso) y `CPU`. L3+R3 activa o
-desactiva las intermedias, y `adb logcat -s AC3Game` da el detalle por
-segundo.
+## Pendiente
+
+| Qué | Etapa / paso | Estado |
+|---|---|---|
+| Juego completo jugable de principio a fin, 1:1 (americana) | 6 / paso 5 | ⏳ siguiente |
+| Sprites que coloca la CPU (explosiones, humo, llamas de los motores) a 60 fps | 6 / paso 7 | ⏳ |
+| GPU por GLES: alta resolución con la precisión de nuestra GTE y panorámico | 6 / paso 7 | ⏳ |
+| Calibrar `BUDGET_PER_FRAME` (reloj del juego), sobre todo en NTSC | 6 | ⏳ |
+| Documentar los botones "según el juego" de `INSTALAR.md` | 7 | ⏳ |
+| APK reproducible en GitHub Actions y copia de seguridad de la clave de firma | 7 | ⏳ |
+| `record.py` / `boot.py` (comparador con estados reales) y `names.tsv` para la americana | 6 | ⏳ menor |
+| Interpolación de la europea | 6 / paso 7 | ⏸ aparcada por el dueño |
+| Pasar a C legible las partes que se quieran modificar | 6 / paso 8 | opcional |
+
+El contador de la app (arriba a la izquierda) da:
+- `FPS`: imágenes distintas por segundo;
+- `VEL`: velocidad del juego (100 % = la de la consola);
+- `INT`: intermedias por paso;
+- `CPU`: uso del hilo del juego.
+
+L3+R3 activa o desactiva las intermedias, y `adb logcat -s AC3Game` da el
+detalle por segundo.
 
 Hecho en la etapa 6:
 - paso 1, capa completa (152/152);
