@@ -1134,3 +1134,48 @@ antitemblores.**
   (`SW 16:9`, como la 1.8) → software 4:3 (`SW 4:3`) → original (`ORIG`).
 - **Escala:** la entera que quepa en la pantalla, hasta ×4.
 - Los menús a 60 imágenes por segundo siguen por software.
+
+#### 5. Rendimiento (APK 1.9.1-alfa)
+
+**En la Retroid, la 1.9-alfa se ve bien pero va lenta:** 10-20 imágenes por
+segundo en `GLX4 16:9`, según los objetos y el mapa.
+
+**Causa, medida en el PC** (`test_hw` imprime las llamadas por imagen a
+escala 4): **1.141 a 1.433 llamadas de dibujo por imagen**, casi dos por
+primitiva, cada una con su propia subida de vértices. En un móvil cada
+llamada cuesta decenas de microsegundos, y la app dibuja hasta 60 imágenes por
+segundo. Venía de:
+- semitransparencia en dos pasadas con estados distintos;
+- stencil en dos pasadas en todas las texturas, en cuanto la lista comprueba
+  la máscara (el radar: todas las imágenes de misión);
+- una subida de vértices por lote.
+
+**Corrección** (`psx/gl/psx_hw.c`):
+- **Mezcla única** `ONE, ONE_MINUS_SRC_ALPHA`: el shader saca color
+  premultiplicado y alfa según el modo (opaco 1; abr 0: F/2 con alfa 0,5;
+  abr 1: F con alfa 0; abr 3: F/4 con alfa 0). Solo la resta (abr 2) tiene
+  su propio estado.
+- **Stencil exacto (dos pasadas) solo en lo necesario:** primitivas
+  anteriores a la última que comprueba la máscara y que tocan su zona.
+- **Lotes:** las llamadas se encolan con su estado y los vértices de cada
+  tramo (entre subidas de VRAM) suben de una vez.
+- **Texturas:** la VRAM va en 3 texturas que se turnan, y solo se suben las
+  franjas de 16 filas que cambian.
+- **App:** el hilo de pantalla intercambia los búferes con la ranura en vez
+  de copiarlos.
+
+| Fotograma | Llamadas antes | Llamadas ahora |
+|---|---|---|
+| Prueba | 1.141 | 104 |
+| Misión 2 | 1.433 | 106 |
+| Túnel | 224 | 51 |
+
+**Mismo resultado:**
+- mismos dB a escala 1;
+- comparador sin bloques malos en la misión 2 (con intermedias) y en la 21;
+- `test_hwlines` 5043/5043.
+
+**Contador:** en `GLX4` hay una tercera línea, `GL x.x  SWAP y.y`: ms por
+imagen en el dibujo (CPU) y en `eglSwapBuffers`. También va a logcat, con
+llamadas y subidas por imagen. Sirve para ver si sigue limitando la CPU del
+hilo de pantalla o la GPU (`SIN RESOLVER` hasta probarlo).

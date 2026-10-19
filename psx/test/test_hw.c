@@ -96,6 +96,10 @@ int main(int argc, char **argv) {
             uint16_t c = g.vram[(y0 + y) * 1024 + x0 + x];
             sw[y * w + x] = (uint32_t)x5(c & 31) | (uint32_t)x5((c >> 5) & 31) << 8 | (uint32_t)x5((c >> 10) & 31) << 16 | 0xFF000000u;
         }
+    extern int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
+    psx_hw_stat_draws = psx_hw_stat_uploads = psx_hw_stat_verts = 0;
+    psx_hw_frame(&list, bg, x0, y0, w, h, 4);
+    printf("medicion (escala 4): %d llamadas de dibujo, %d subidas, %d vertices\n", psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts);
     psx_hw_dither(getenv("HW_SIN_TRAMADO") == NULL);   /* a escala 1, con el tramado del software */
     psx_hw_frame(&list, bg, x0, y0, w, h, 1);
     psx_hw_read(hw);

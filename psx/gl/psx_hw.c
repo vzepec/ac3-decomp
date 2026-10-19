@@ -44,11 +44,17 @@ static const char *FS =
     "float dith(int flags) { if (u_dither == 0 || (flags & 16) == 0) return 0.0;\n"
     "  ivec2 p = ivec2(floor(v_pos - u_delta * (dFdx(v_pos) + dFdy(v_pos)) + 0.001)); return DITHER[(p.y & 3) * 4 + (p.x & 3)]; }\n"
     "out vec4 o;\n"
+    "/* salida con la semitransparencia de la primitiva (abr) resuelta por el alfa: la mezcla es\n"
+    " * siempre ONE, ONE_MINUS_SRC_ALPHA (opaco: alfa 1; abr 0: F/2 + B/2; 1: F + B; 3: F/4 + B);\n"
+    " * abr 2 (B - F) va con su propia mezcla (resta) */\n"
+    "void put(vec3 c, bool semi, int abr) {\n"
+    "  if (!semi || abr == 2) o = vec4(c, 1.0); else if (abr == 0) o = vec4(c * 0.5, 0.5);\n"
+    "  else if (abr == 1) o = vec4(c, 0.0); else o = vec4(c * 0.25, 0.0); }\n"
     "uint fetch(int x, int y) { return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r; }\n"
     "vec3 x5(uint c) { vec3 v = vec3(float(c & 31u), float((c >> 5) & 31u), float((c >> 10) & 31u));\n"
     "  return (v * 8.0 + floor(v / 4.0)) / 255.0; }\n"
     "void main() {\n"
-    "  int flags = v_tex.z >> 4, depth = v_tex.z & 15;\n"
+    "  int flags = (v_tex.z >> 4) & 255, depth = v_tex.z & 15, abr = (v_tex.z >> 12) & 3; bool semi = (flags & 4) != 0;\n"
     "  vec2 uv = v_uv - u_delta * (dFdx(v_uv) + dFdy(v_uv));\n"
     "  if ((flags & 128) == 0) uv = clamp(uv, v_uvr.xy, v_uvr.zw);   /* sin salirse de la textura del poligono */\n"
     "  vec3 col = v_col - u_delta * (dFdx(v_col) + dFdy(v_col));\n"
@@ -56,7 +62,7 @@ static const char *FS =
     "    if ((u_pass == 1 && s) || (u_pass == 2 && !s)) discard; o = vec4(x5(d), 1.0); return; }\n"
     "  if ((flags & 1) == 0) {\n"
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
-    "    o = vec4((c * 8.0 + floor(c / 4.0)) / 255.0, 1.0); return; }\n"
+    "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
     "  int u = int(floor(uv.x + 0.001)) & 255, v = int(floor(uv.y + 0.001)) & 255;\n"
     "  int tw = v_tex.w, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
     "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
@@ -69,20 +75,29 @@ static const char *FS =
     "  bool stp = (t & 0x8000u) != 0u;\n"
     "  if (u_pass == 1 && stp) discard;\n"
     "  if (u_pass == 2 && !stp) discard;\n"
-    "  if ((flags & 2) != 0) { o = vec4(x5(t), 1.0); return; }\n"
+    "  if ((flags & 2) != 0) { put(x5(t), semi && stp, abr); return; }\n"
     "  vec3 tc = vec3(float(t & 31u), float((t >> 5) & 31u), float((t >> 10) & 31u)) * 8.0;\n"
     "  vec3 c = floor(clamp(floor(tc * floor(col + 0.001) / 128.0) + dith(flags), 0.0, 255.0) / 8.0);\n"
-    "  o = vec4((c * 8.0 + floor(c / 4.0)) / 255.0, 1.0);\n"
+    "  put((c * 8.0 + floor(c / 4.0)) / 255.0, semi && stp, abr);\n"
     "}\n";
 
 static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
+/* la VRAM como textura: tres que se turnan (la que se rellena no la esta leyendo la GPU para una
+ * imagen anterior) y, de cada una, una copia de lo que tiene, para subir solo las franjas de 16
+ * filas que cambian */
+#define NVTEX 3
+static GLuint g_vtex[NVTEX];
+static uint16_t *g_shadow[NVTEX];
+static int g_ring;
 static GLint u_origin, u_size, u_vram, u_pass, u_dither, u_shift, u_delta;
 static int g_dither;
 void psx_hw_dither(int on) { g_dither = on; }
 static int g_ow, g_oh, g_scale, g_x0, g_y0;
 static HwVert *g_buf;
 static int g_n, g_cap;
-static int g_sc[4] = {-1, -1, -1, -1}, g_blend = -1, g_pass = -1, g_st = -2;
+/* zona que alguna primitiva comprueba con la mascara (VRAM, inclusiva) y la ultima que lo hace:
+ * solo las primitivas anteriores que la tocan necesitan el bit 15 exacto en el stencil */
+static int g_cx1, g_cy1, g_cx2, g_cy2, g_clast;
 /* bit de mascara (bit 15 de la VRAM): el stencil de la imagen lo lleva pixel a pixel. Solo si la
  * lista tiene alguna primitiva que lo comprueba (g_track); si no, no hace falta y no se paga */
 static int g_track;
@@ -131,11 +146,16 @@ int psx_hw_init(void) {
     glEnableVertexAttribArray(4);
     glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, sizeof(HwVert), (void *)offsetof(HwVert, uvr));
     glBindVertexArray(0);
-    glGenTextures(1, &g_vram);
-    glBindTexture(GL_TEXTURE_2D, g_vram);
-    glTexStorage2D(GL_TEXTURE_2D, 1, GL_R16UI, 1024, 512);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glGenTextures(NVTEX, g_vtex);
+    for (int i = 0; i < NVTEX; i++) {
+        glBindTexture(GL_TEXTURE_2D, g_vtex[i]);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R16UI, 1024, 512);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        free(g_shadow[i]);
+        g_shadow[i] = NULL;   /* sin copia: la primera vez se sube entera */
+    }
+    g_vram = g_vtex[0];
     glGenFramebuffers(1, &g_fbo);
     return 0;
 }
@@ -144,7 +164,8 @@ void psx_hw_shutdown(void) {
     glDeleteProgram(g_prog);
     glDeleteVertexArrays(1, &g_vao);
     glDeleteBuffers(1, &g_vbo);
-    glDeleteTextures(1, &g_vram);
+    glDeleteTextures(NVTEX, g_vtex);
+    for (int i = 0; i < NVTEX; i++) { free(g_shadow[i]); g_shadow[i] = NULL; }
     if (g_out) glDeleteTextures(1, &g_out);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
     glDeleteFramebuffers(1, &g_fbo);
@@ -152,18 +173,62 @@ void psx_hw_shutdown(void) {
     g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_stencil = 0; g_ow = g_oh = 0;
 }
 
-static void flush(void) {
-    if (!g_n) return;
-    glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)g_n * (GLsizeiptr)sizeof(HwVert), g_buf, GL_STREAM_DRAW);
-    glDrawArrays(GL_TRIANGLES, 0, g_n);
-    g_n = 0;
+int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;   /* medicion: llamadas por imagen */
+
+/* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
+ * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
+ * en vez de una o dos por primitiva (en la Retroid, cada llamada cuesta) */
+typedef struct { int first, sc[4], cls, pass, st; } Cmd;
+static Cmd *g_cmd;
+static int g_ncmd, g_capcmd;
+/* estado aplicado a GL: recorte, mezcla (0 la comun, 1 resta), pasada, stencil */
+static int g_asc[4], g_acls, g_apass, g_ast;
+
+static void apply(const Cmd *c) {
+    if (c->st != g_ast) {
+        if (c->st < 0) glDisable(GL_STENCIL_TEST);
+        else {
+            int val = c->st & 1, chk = c->st >> 1;
+            glEnable(GL_STENCIL_TEST);
+            glStencilMask(1);
+            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+            /* comprobando: pasa donde el stencil es 0 (con 1 a escribir, "1 > s"; con 0, "0 == s") */
+            if (chk) glStencilFunc(val ? GL_GREATER : GL_EQUAL, val, 1);
+            else glStencilFunc(GL_ALWAYS, val, 1);
+        }
+        g_ast = c->st;
+    }
+    if (memcmp(c->sc, g_asc, sizeof g_asc)) { glScissor(c->sc[0], c->sc[1], c->sc[2], c->sc[3]); memcpy(g_asc, c->sc, sizeof g_asc); }
+    if (c->cls != g_acls) {
+        if (c->cls == 1) { glBlendEquation(GL_FUNC_REVERSE_SUBTRACT); glBlendFunc(GL_ONE, GL_ONE); }
+        else { glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); }
+        g_acls = c->cls;
+    }
+    if (c->pass != g_apass) { glUniform1i(u_pass, c->pass); g_apass = c->pass; }
 }
 
-/* recorte (area de dibujo, en VRAM, inclusiva; ax2 < 0: sin recorte), mezcla (-1 ninguna,
- * 0-3 = abr), pasada (0 normal, 1 texeles con el bit 15 a 0, 2 con el bit 15 a 1) y mascara
- * (st: -1 sin stencil; si no, bit 0 = valor del bit 15 que se escribe, bit 1 = comprobar: solo se
- * dibuja donde el bit 15 esta a 0) */
-static void state(int ax1, int ay1, int ax2, int ay2, int blend, int pass, int st) {
+/* dibuja lo encolado */
+static void flush(void) {
+    if (g_n) {
+        psx_hw_stat_verts += g_n;
+        glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)g_n * (GLsizeiptr)sizeof(HwVert), g_buf, GL_STREAM_DRAW);
+        for (int i = 0; i < g_ncmd; i++) {
+            int end = i + 1 < g_ncmd ? g_cmd[i + 1].first : g_n;
+            if (end <= g_cmd[i].first) continue;
+            apply(&g_cmd[i]);
+            glDrawArrays(GL_TRIANGLES, g_cmd[i].first, end - g_cmd[i].first);
+            psx_hw_stat_draws++;
+        }
+    }
+    g_n = 0;
+    g_ncmd = 0;
+}
+
+/* estado de lo que se encola a continuacion: recorte (area de dibujo, en VRAM, inclusiva; ax2 < 0:
+ * sin recorte), mezcla (cls: 0 la comun, 1 resta), pasada (0 normal, 1 texeles con el bit 15 a
+ * 0, 2 con el bit 15 a 1) y mascara (st: -1 sin stencil; si no, bit 0 = valor del bit 15 que se
+ * escribe, bit 1 = comprobar: solo se dibuja donde el bit 15 esta a 0) */
+static void state(int ax1, int ay1, int ax2, int ay2, int cls, int pass, int st) {
     int sc[4];
     if (ax2 < 0) { sc[0] = 0; sc[1] = 0; sc[2] = g_ow; sc[3] = g_oh; }
     else {
@@ -175,36 +240,19 @@ static void state(int ax1, int ay1, int ax2, int ay2, int blend, int pass, int s
         if (y2 > g_oh) y2 = g_oh;
         sc[0] = x1; sc[1] = y1; sc[2] = x2 > x1 ? x2 - x1 : 0; sc[3] = y2 > y1 ? y2 - y1 : 0;
     }
-    if (!memcmp(sc, g_sc, sizeof sc) && blend == g_blend && pass == g_pass && st == g_st) return;
-    flush();
-    if (st != g_st) {
-        if (st < 0) glDisable(GL_STENCIL_TEST);
-        else {
-            int val = st & 1, chk = st >> 1;
-            glEnable(GL_STENCIL_TEST);
-            glStencilMask(1);
-            glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-            /* comprobando: pasa donde el stencil es 0 (con 1 a escribir, "1 > s"; con 0, "0 == s") */
-            if (chk) glStencilFunc(val ? GL_GREATER : GL_EQUAL, val, 1);
-            else glStencilFunc(GL_ALWAYS, val, 1);
-        }
-        g_st = st;
+    if (g_ncmd > 0) {
+        Cmd *c = &g_cmd[g_ncmd - 1];
+        if (!memcmp(sc, c->sc, sizeof sc) && cls == c->cls && pass == c->pass && st == c->st) return;
+        if (c->first == g_n) { memcpy(c->sc, sc, sizeof sc); c->cls = cls; c->pass = pass; c->st = st; return; }
     }
-    if (memcmp(sc, g_sc, sizeof sc)) { glScissor(sc[0], sc[1], sc[2], sc[3]); memcpy(g_sc, sc, sizeof sc); }
-    if (blend != g_blend) {
-        if (blend < 0) glDisable(GL_BLEND);
-        else {
-            glEnable(GL_BLEND);
-            switch (blend) {
-            case 0: glBlendColor(0, 0, 0, 0.5f); glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_CONSTANT_ALPHA, GL_CONSTANT_ALPHA); break;
-            case 1: glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_ONE, GL_ONE); break;
-            case 2: glBlendEquation(GL_FUNC_REVERSE_SUBTRACT); glBlendFunc(GL_ONE, GL_ONE); break;
-            default: glBlendColor(0, 0, 0, 0.25f); glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE); break;
-            }
-        }
-        g_blend = blend;
+    if (g_ncmd == g_capcmd) {
+        g_capcmd = g_capcmd * 2 + 256;
+        g_cmd = realloc(g_cmd, (size_t)g_capcmd * sizeof *g_cmd);
     }
-    if (pass != g_pass) { glUniform1i(u_pass, pass); g_pass = pass; }
+    Cmd *c = &g_cmd[g_ncmd++];
+    c->first = g_n;
+    memcpy(c->sc, sc, sizeof sc);
+    c->cls = cls; c->pass = pass; c->st = st;
 }
 
 static HwVert *push(int k) {
@@ -220,7 +268,7 @@ static HwVert *push(int k) {
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
     t[0] = p->tp_x | p->tp_y << 16;
     t[1] = p->clut_x | p->clut_y << 16;
-    t[2] = (p->depth & 15) | flags << 4;
+    t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
     t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15;
 }
 
@@ -254,22 +302,62 @@ static void set_uvr(int k) {
     for (int i = 0; i < k; i++) memcpy(v[i].uvr, r, sizeof r);
 }
 
+/* la VRAM de partida a la siguiente textura del turno: solo las franjas que difieren de lo que ya
+ * tiene */
 static void upload(const uint16_t *v) {
+    g_ring = (g_ring + 1) % NVTEX;
+    g_vram = g_vtex[g_ring];
     glBindTexture(GL_TEXTURE_2D, g_vram);
     glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1024, 512, GL_RED_INTEGER, GL_UNSIGNED_SHORT, v);
+    uint16_t *sh = g_shadow[g_ring];
+    if (!sh) {
+        sh = g_shadow[g_ring] = malloc(1024 * 512 * 2);
+        if (sh) memcpy(sh, v, 1024 * 512 * 2);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, 1024, 512, GL_RED_INTEGER, GL_UNSIGNED_SHORT, v);
+        psx_hw_stat_uploads++;
+        return;
+    }
+    for (int y = 0; y < 512;) {   /* franjas de 16 filas; las seguidas que cambian, de una vez */
+        if (!memcmp(sh + y * 1024, v + y * 1024, 16 * 1024 * 2)) { y += 16; continue; }
+        int y2 = y + 16;
+        while (y2 < 512 && memcmp(sh + y2 * 1024, v + y2 * 1024, 16 * 1024 * 2)) y2 += 16;
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, y, 1024, y2 - y, GL_RED_INTEGER, GL_UNSIGNED_SHORT, v + y * 1024);
+        memcpy(sh + y * 1024, v + y * 1024, (size_t)(y2 - y) * 1024 * 2);
+        psx_hw_stat_uploads++;
+        y = y2;
+    }
 }
 
 /* una primitiva en las pasadas que necesite */
 static const PsxHwList *g_list;
 
-static void draw_prim(const PsxHwPrim *p) {
+/* caja de la primitiva en la VRAM (inclusiva) */
+static void bbox(const PsxHwPrim *p, int *x1, int *y1, int *x2, int *y2) {
+    if (p->kind == PSX_HW_TRI || p->kind == PSX_HW_LINE) {
+        int n = p->kind == PSX_HW_TRI ? 3 : 2;
+        *x1 = *x2 = p->x[0]; *y1 = *y2 = p->y[0];
+        for (int i = 1; i < n; i++) {
+            if (p->x[i] < *x1) *x1 = p->x[i];
+            if (p->x[i] > *x2) *x2 = p->x[i];
+            if (p->y[i] < *y1) *y1 = p->y[i];
+            if (p->y[i] > *y2) *y2 = p->y[i];
+        }
+        *x2 += 1; *y2 += 1;
+    } else { *x1 = p->x[0]; *y1 = p->y[0]; *x2 = p->x[0] + p->x[1]; *y2 = p->y[0] + p->y[1]; }
+}
+
+static void draw_prim(const PsxHwPrim *p, int index) {
     if (p->kind == PSX_HW_UPLOAD) {   /* la VRAM del software cambio fuera de la imagen: a la textura */
         flush();
         glBindTexture(GL_TEXTURE_2D, g_vram);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
         glTexSubImage2D(GL_TEXTURE_2D, 0, p->x[0], p->y[0], p->x[1], p->y[1], GL_RED_INTEGER, GL_UNSIGNED_SHORT,
                         g_list->data + p->data_off);
+        psx_hw_stat_uploads++;
+        uint16_t *sh = g_shadow[g_ring];   /* la copia sigue a la textura */
+        if (sh && p->x[0] >= 0 && p->y[0] >= 0 && p->x[0] + p->x[1] <= 1024 && p->y[0] + p->y[1] <= 512)
+            for (int y = 0; y < p->y[1]; y++)
+                memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
         return;
     }
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
@@ -280,21 +368,32 @@ static void draw_prim(const PsxHwPrim *p) {
      * mascara (las copias y los rellenos no la usan). Con stencil, las texturas van en dos pasadas
      * para escribir cada valor */
     int vram = p->kind == PSX_HW_VRAM, fill = p->kind == PSX_HW_FILL;
-    if ((semi && tex) || (g_track && (vram || (tex && !mset)))) { passes[np++] = 1; passes[np++] = 2; }
+    /* el bit 15 exacto (dos pasadas en las texturas) solo antes de la ultima primitiva que comprueba
+     * la mascara y si toca su zona */
+    int exact = 0;
+    if (g_track && index <= g_clast && (tex || vram)) {
+        int x1, y1, x2, y2;
+        bbox(p, &x1, &y1, &x2, &y2);
+        exact = x2 >= g_cx1 && x1 <= g_cx2 && y2 >= g_cy1 && y1 <= g_cy2;
+    }
+    /* la semitransparencia va en el shader (una pasada), salvo la resta (abr 2) con textura: sus
+     * texeles opacos con la mezcla comun y los semitransparentes con la resta */
+    int sub = semi && p->abr == 2;
+    if ((sub && tex) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
     for (int k = 0; k < np; k++) {
-        int pass = passes[k], blend = semi && (!tex || pass == 2) ? p->abr : -1;
+        int pass = passes[k], cls = sub && (!tex || pass == 2) ? 1 : 0;
         int st = -1;
         if (g_track) {
             if (fill) st = 0;
             else if (vram) st = pass == 2;
             else st = (mset || pass == 2) | (mchk ? 2 : 0);
         }
-        if (fill || (vram && p->ax2 < 0)) state(0, 0, -1, -1, -1, 0, st);
-        else state(p->ax1, p->ay1, p->ax2, p->ay2, blend, pass, st);
+        if (fill || (vram && p->ax2 < 0)) state(0, 0, -1, -1, 0, 0, st);
+        else state(p->ax1, p->ay1, p->ax2, p->ay2, cls, pass, st);
         switch (p->kind) {
         case PSX_HW_TRI: {
-            tex_of(p, (tex ? 1 : 0) | (f & PSX_HWF_RAW ? 2 : 0) | (f & PSX_HWF_DITHER ? 16 : 0), t);
+            tex_of(p, (tex ? 1 : 0) | (f & PSX_HWF_RAW ? 2 : 0) | (semi ? 4 : 0) | (f & PSX_HWF_DITHER ? 16 : 0), t);
             HwVert *v = push(3);
             for (int i = 0; i < 3; i++) {
                 int r = p->r[i], g = p->g[i], b = p->b[i];
@@ -305,7 +404,7 @@ static void draw_prim(const PsxHwPrim *p) {
             break;
         }
         case PSX_HW_RECT:
-            tex_of(p, (tex ? 1 : 0) | (f & PSX_HWF_RAW ? 2 : 0), t);
+            tex_of(p, (tex ? 1 : 0) | (f & PSX_HWF_RAW ? 2 : 0) | (semi ? 4 : 0), t);
             quad(p->x[0], p->y[0], p->x[0] + p->x[1], p->y[0] + p->y[1], p->u[0], p->v[0], p->u[0] + p->x[1],
                  p->v[0] + p->y[1], p->r[0], p->g[0], p->b[0], t);
             set_uvr(6);
@@ -326,7 +425,7 @@ static void draw_prim(const PsxHwPrim *p) {
              * pixel de grueso cuyo borde sigue esa recta (pendiente d menor / d mayor), alargado un
              * pixel en el eje mayor para cubrir el ultimo, y desplazado en el menor para redondear
              * igual que la GPU (con el muestreo en la esquina de u_shift) */
-            tex_of(p, f & PSX_HWF_DITHER ? 16 : 0, t);
+            tex_of(p, (semi ? 4 : 0) | (f & PSX_HWF_DITHER ? 16 : 0), t);
             float ax = p->x[0], ay = p->y[0], bx = p->x[1], by = p->y[1];
             int gr = (f & PSX_HWF_GOURAUD) != 0;
             int r1 = gr ? p->r[1] : p->r[0], g1 = gr ? p->g[1] : p->g[0], b1 = gr ? p->b[1] : p->b[0];
@@ -406,10 +505,26 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glBindVertexArray(g_vao);
     glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
     glEnable(GL_SCISSOR_TEST);
-    g_sc[0] = g_sc[1] = g_sc[2] = g_sc[3] = -1;
-    g_blend = -2; g_pass = -1; g_st = -2;
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glDisable(GL_STENCIL_TEST);
+    g_asc[0] = g_asc[1] = g_asc[2] = g_asc[3] = -1;
+    g_acls = 0; g_apass = -1; g_ast = -1;
+    g_n = 0; g_ncmd = 0;
     g_track = 0;
-    for (int i = 0; i < l->n && !g_track; i++) g_track = (l->p[i].flags & PSX_HWF_MASKCHK) && l->p[i].kind != PSX_HW_UPLOAD;
+    g_cx1 = g_cy1 = 1 << 20; g_cx2 = g_cy2 = -(1 << 20); g_clast = -1;
+    for (int i = 0; i < l->n; i++)
+        if ((l->p[i].flags & PSX_HWF_MASKCHK) && l->p[i].kind != PSX_HW_UPLOAD) {
+            int x1, y1, x2, y2;
+            bbox(&l->p[i], &x1, &y1, &x2, &y2);
+            if (x1 < g_cx1) g_cx1 = x1;
+            if (y1 < g_cy1) g_cy1 = y1;
+            if (x2 > g_cx2) g_cx2 = x2;
+            if (y2 > g_cy2) g_cy2 = y2;
+            g_clast = i;
+            g_track = 1;
+        }
     static int nomask = -1;   /* prueba del comparador (caso positivo conocido): sin bit de mascara */
     if (nomask < 0) nomask = getenv("PSX_HW_NOMASK") != NULL;
     if (nomask) g_track = 0;
@@ -417,12 +532,12 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     upload(bg);
     int32_t t[4] = {0, 0, F_DIRECT << 4, 0};
     for (int pass = g_track ? 1 : 0; pass <= (g_track ? 2 : 0); pass++) {
-        state(0, 0, -1, -1, -1, pass, g_track ? pass == 2 : -1);
+        state(0, 0, -1, -1, 0, pass, g_track ? pass == 2 : -1);
         quad((float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), (float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), 0, 0, 0, t);
     }
     flush();
     /* primitivas; las UPLOAD actualizan la textura en su sitio */
-    for (int i = 0; i < l->n; i++) draw_prim(&l->p[i]);
+    for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
     flush();
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);

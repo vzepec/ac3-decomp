@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Rendimiento del dibujo por GLES: de ~1.400 llamadas por imagen a ~100 (APK 1.9.1-alfa)
+
+**Problema:** en la Retroid, `GLX4` iba a 10-20 fps.
+
+**Causa, medida en el PC** (`test_hw`): 1.141-1.433 llamadas de dibujo por
+imagen, cada una con su subida de vértices. Venía de la semitransparencia en
+dos pasadas y del stencil en dos pasadas en todas las texturas de misión (el
+radar comprueba la máscara).
+
+**Corrección:**
+- mezcla única con color premultiplicado (la resta, aparte);
+- stencil exacto solo en la zona que se comprueba;
+- lotes por tramo;
+- VRAM en 3 texturas en turno, con subidas por franjas.
+
+**Resultado:** 104 llamadas en el fotograma de prueba, con el mismo
+resultado (dB, comparador, líneas).
+
 ## 2026-10-19 — Alta resolución por GLES con comparador (paso 17, APK 1.9-alfa sin publicar)
 
 **Comparador** (`psx/gl/psx_hwcmp.c`, `tools/hwcmp.py`, `make hwcmp`): cada

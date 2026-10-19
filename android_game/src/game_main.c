@@ -537,6 +537,7 @@ static const struct { char c; uint8_t row[7]; } FONT[] = {
     {':', {0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00}},
     {'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0a}},
     {'X', {0x11, 0x11, 0x0a, 0x04, 0x0a, 0x11, 0x11}},
+    {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c}},
     {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
     {'G', {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}},
 };
@@ -665,17 +666,19 @@ void android_main(struct android_app *app) {
         uint32_t seq = 0;
         if (best >= 0 && G.q[best].hw) {
             hw = 1; wide = G.q[best].wide; seq = G.q[best].seq;
-            if (seq != hw_seq) {
-                if (hl.max < G.q[best].np) { free(hl.p); hl.max = G.q[best].np + 1024; hl.p = malloc((size_t)hl.max * sizeof(PsxHwPrim)); }
-                if (hl.maxdata < G.q[best].nd) { free(hl.data); hl.maxdata = G.q[best].nd + 16384; hl.data = malloc((size_t)hl.maxdata * 2); }
-                if (!hbg) hbg = malloc(1024 * 512 * 2);
-                if (hl.p && hl.data && hbg) {
-                    memcpy(hl.p, G.q[best].prims, (size_t)G.q[best].np * sizeof(PsxHwPrim));
-                    memcpy(hl.data, G.q[best].data, (size_t)G.q[best].nd * 2);
-                    memcpy(hbg, G.q[best].bg, 1024 * 512 * 2);
-                    hl.n = G.q[best].np; hl.ndata = G.q[best].nd;
-                    hx0 = G.q[best].x0; hy0 = G.q[best].y0; hw_w = G.q[best].w; hw_h = G.q[best].h;
-                } else { hw = 0; hl.max = hl.maxdata = 0; }
+            if (seq != hw_seq) {   /* se intercambian los buferes con la ranura (sin copiar) */
+                PsxHwPrim *tp = hl.p; int tcp = hl.max;
+                uint16_t *td = hl.data; int tcd = hl.maxdata;
+                uint16_t *tb = hbg;
+                hl.p = G.q[best].prims; hl.max = G.q[best].capp;
+                hl.data = G.q[best].data; hl.maxdata = G.q[best].capd;
+                hbg = G.q[best].bg;
+                hl.n = G.q[best].np; hl.ndata = G.q[best].nd;
+                hx0 = G.q[best].x0; hy0 = G.q[best].y0; hw_w = G.q[best].w; hw_h = G.q[best].h;
+                G.q[best].prims = tp; G.q[best].capp = tcp;
+                G.q[best].data = td; G.q[best].capd = tcd;
+                G.q[best].bg = tb;
+                G.q[best].np = G.q[best].nd = 0;
             }
         } else if (best >= 0) { sw = G.q[best].w; sh = G.q[best].h; wide = G.q[best].wide; seq = G.q[best].seq; memcpy(G.show, G.q[best].px, (size_t)sw * sh * 4); }
         else if (G.fw && G.fh) { sw = G.fw; sh = G.fh; wide = G.frame_wide; memcpy(G.show, G.frame, (size_t)sw * sh * 4); }
@@ -684,7 +687,9 @@ void android_main(struct android_app *app) {
         static double c_t0;
         static uint32_t c_last, c_vb0;
         static int c_new, c_fps, c_vel;
-        static char line1[48], line2[48];
+        static char line1[48], line2[48], line3[48];
+        static double c_hw_ms, c_swap_ms;   /* GL: ms en el dibujo (CPU) y en eglSwapBuffers, por segundo */
+        static int c_hw_n;
         if (seq) { if (seq != last_seq) { c_new++; last_seq = seq; } }
         else if (sw && sh) {
             uint32_t hsh = frame_hash(G.show, sw, sh);
@@ -707,24 +712,41 @@ void android_main(struct android_app *app) {
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, cada hilo de dibujo %.1f; modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu, G.st_core,
                     G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, md);
+            extern int psx_hw_stat_draws, psx_hw_stat_uploads;
+            if (c_hw_n) {
+                snprintf(line3, sizeof line3, "GL %.1f  SWAP %.1f", c_hw_ms / c_hw_n, c_swap_ms / c_hw_n);
+                LOG("GLES: %d imagenes, %.1f ms de dibujo y %.1f de eglSwapBuffers por imagen; %d llamadas y %d subidas por imagen",
+                    c_hw_n, c_hw_ms / c_hw_n, c_swap_ms / c_hw_n, psx_hw_stat_draws / c_hw_n, psx_hw_stat_uploads / c_hw_n);
+            } else line3[0] = 0;
+            c_hw_ms = c_swap_ms = 0; c_hw_n = 0;
+            psx_hw_stat_draws = psx_hw_stat_uploads = 0;
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
+        int hw_drawn = 0;
         if (hw) {
-            if (seq != hw_seq) { psx_hw_frame(&hl, hbg, hx0, hy0, hw_w, hw_h, scale); hw_seq = seq; }
+            if (seq != hw_seq) {
+                double a = now();
+                psx_hw_frame(&hl, hbg, hx0, hy0, hw_w, hw_h, scale);
+                c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
+                hw_seq = seq;
+            }
             int tw, th;
             unsigned tex = psx_hw_texture(&tw, &th);
             psx_present_texture(tex, tw, th, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 1);
             if (line1[0]) {   /* el contador encima, como textura con transparencia */
-                static uint32_t ov[128 * 20];
+                static uint32_t ov[128 * 29];
                 memset(ov, 0, sizeof ov);
-                draw_text(ov, 128, 20, 1, 1, line1);
-                draw_text(ov, 128, 20, 1, 10, line2);
-                psx_present_overlay(ov, 128, 20, hw_w, hw_h);
+                draw_text(ov, 128, 29, 1, 1, line1);
+                draw_text(ov, 128, 29, 1, 10, line2);
+                if (line3[0]) draw_text(ov, 128, 29, 1, 19, line3);
+                psx_present_overlay(ov, 128, 29, hw_w, hw_h);
             }
         } else if (sw && sh) {
             if (line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
+        double sa = now();
         eglSwapBuffers(G.dpy, G.surf);
+        if (hw_drawn) c_swap_ms += (now() - sa) * 1000;
     }
 }

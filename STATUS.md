@@ -86,8 +86,11 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.9-alfa** (`data/android/AC3Recomp-1.9-alfa.apk`,
+**Probar en la Retroid el APK 1.9.1-alfa** (`data/android/AC3Recomp-1.9.1-alfa.apk`,
 rama `etapa-6-paso-17`, sin fusionar ni subir).
+- La 1.9-alfa se veía bien, pero iba a 10-20 fps en `GLX4`.
+- La 1.9.1 baja las llamadas de dibujo de ~1.400 a ~100 por imagen.
+- El contador muestra `GL` / `SWAP` en ms.
 - Es la alta resolución por GLES, sin antitemblores, comprobada antes con el
   comparador (`docs/11-etapa6.md`, paso 17).
 - **L3+R3** recorre `GLX4 16:9` → `SW 16:9` → `SW 4:3` → `ORIG`.
