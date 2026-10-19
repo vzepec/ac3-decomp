@@ -753,6 +753,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
      * proponen todas, igual en cada una. Con un valor por primitiva, los vertices compartidos
      * se separaban y asomaba el fondo entre los poligonos (grietas negras al girar rapido) */
     drag_gen++;
+    int sky_exact = 0, sky_model = 0, sky_none = 0;   /* medicion: como se mueve el fondo (PSX_INTERP_SKY) */
     /* bordes del area de dibujo en coordenadas de ese espacio */
     int o3x = ((ofs3d & 0x7FF) ^ 0x400) - 0x400, o3y = (((ofs3d >> 11) & 0x7FF) ^ 0x400) - 0x400;
     int bx0 = g->area_x1 - o3x, bx1 = g->area_x2 - o3x, by0 = g->area_y1 - o3y, by1 = g->area_y2 - o3y;
@@ -804,6 +805,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
                     int dx = lo(pp_xy[q + i - a]) - lo(orig[i]), dy = hi(pp_xy[q + i - a]) - hi(orig[i]);
                     if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) exact = 0;
                 }
+                if (exact) sky_exact++;
                 if (exact)
                     for (int i = a; i < b; i++) {
                         int px = lo(pp_xy[q + i - a]) - lo(orig[i]), py = hi(pp_xy[q + i - a]) - hi(orig[i]);
@@ -814,6 +816,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
                         moved[i] = 3; st_backdrop++;
                     }
             }
+            int big = b - a >= 3 && (x1 - x0 >= BACKDROP || y1 - y0 >= BACKDROP);
+            if (big && !exact) { if (model) sky_model++; else sky_none++; }
             if (!exact && model && b - a >= 3 && (x1 - x0 >= BACKDROP || y1 - y0 >= BACKDROP))
                 for (int i = a; i < b; i++) {
                     int x = lo(orig[i]), y = hi(orig[i]);
@@ -832,6 +836,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         }
         a = b;
     }
+    if (getenv("PSX_INTERP_SKY") && (sky_exact || sky_model || sky_none))
+        fprintf(stderr, "cielo: VBlank %d, exactas %d, por el modelo %d, quietas %d\n", VSync(-1), sky_exact, sky_model, sky_none);
     for (int i = 0; i < nref; i++) {
         if (moved[i] != 3) continue;
         Slot *d = slot(dragt, drag_gen, mix(orig[i] | (2ull << 40)), 0);
