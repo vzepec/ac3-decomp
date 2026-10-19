@@ -5,6 +5,20 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Etapa 8, paso 1: dibujo por la GPU a escala 1 (APK 1.10.1-alfa)
+
+- **GLES vuelve a la app** con la interpolación nueva. Las intermedias solo
+  se anotan en el hilo de dibujo, sin rasterizarlas en la CPU.
+- **Comparador**, 41 misiones con la interpolación nueva y 16:9:
+  - 140.538 listas, 4 con bloques malos;
+  - una estela de triángulos finos (misión 7, VBlank 2763, se reproduce);
+  - 3 puntos en menús que no se reproducen (`SIN RESOLVER`).
+- **Medida en el PC** (`AC3_PACE=60`, `AC3_HW_NULL=1`): el hilo de dibujo 0
+  baja de ~17 ms a ~9,5 ms por paso en la ciudad de la misión 0. El
+  rasterizado por software de la intermedia es ~7,6 ms; el redibujo, ~8,8.
+- **Error de medida evitado:** `AC3_HW_NULL=` vacío también activa el modo
+  (`getenv` no es NULL); la primera comparación salió igual por eso.
+
 ## 2026-10-19 — Release v1.9-alfa: interpolación nueva
 
 - **Probado en la Retroid (1.9.6):** "funciona mucho mejor", más estable;

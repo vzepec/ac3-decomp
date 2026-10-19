@@ -89,20 +89,21 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Rendimiento** (petición del dueño tras la `v1.9-alfa`): bajones de fps
-mirando ciudades muy pobladas.
-- **Primero, análisis:** ¿conviene llevar el dibujo a la GPU (GLES) en lugar
-  de la GPU por software? Base: el comparador `psx_hwcmp` y el dibujo por
-  GLES ya validado en la rama `gles-alta-resolucion` (pasos 17-20 de la
-  etapa 6).
-- **Medir antes de decidir:** en qué se va el tiempo de cada hilo en la
-  Retroid (juego, redibujo, dibujo por software).
+**Etapa 8, paso 1 (rama `etapa-8-paso-1`, sin publicar):** probar en la
+Retroid el APK 1.10.1-alfa (`data/android/AC3Recomp-1.10.1-alfa.apk`).
+- **Dibujo por la GPU a escala 1** (la misma imagen que por software).
+- L3+R3: `GPU 16:9` → `SW 16:9` → `GPU 4:3` → `ORIG`.
+- **Qué mirar:**
+  - `FPS` en ciudades, `GPU 16:9` frente a `SW 16:9`;
+  - que la imagen sea igual;
+  - `adb logcat -s AC3Game`: hilo de dibujo 0 y redibujo, ms de GLES.
+- **Después:** la imagen real solo en la GPU (quita ~7 ms al hilo del juego);
+  luego la alta resolución.
 
-**Después:**
-- objetos móviles por su identidad (aviones, misiles);
+**Pendiente de etapa 8:**
+- objetos móviles por su identidad;
 - orientación de los objetos del arreglo;
-- la europea (las 2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
-- la comparación con DuckStation, al final.
+- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`).
 
 ## Pendiente
 
