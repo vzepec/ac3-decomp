@@ -8,9 +8,19 @@ controles físicos. Desarrollo desde Linux.
 
 ![Progreso de la recompilación](docs/img/progreso.svg)
 
-La barra verde mide el juego **recompilado a C y validado** contra el código
-original: las 1.821 funciones propias del juego, del residente y los 5 overlays.
-Se regenera con `make progress`. Plan en
+La barra verde mide el **código del juego validado** en la versión americana
+(la de referencia): las 1.824 funciones propias del residente y los 5 overlays.
+Una función cuenta si el intérprete que lleva el APK da exactamente lo mismo
+que el intérprete de referencia, con estados aleatorios o con estados de
+partidas reales, y nunca algo distinto. Las demás barras:
+- funciones que se ejecutan en las 41 misiones;
+- capa PsyQ;
+- pasos de la etapa 6;
+- recorrido: lo que funciona y lo comparado con DuckStation.
+
+Las pruebas están registradas en [`docs/pruebas/`](docs/pruebas/README.md). Se
+regenera con `tools/progress.py version us <cobertura.json>` y
+`tools/progress.py svg`. Plan en
 [`docs/11-etapa6.md`](docs/11-etapa6.md).
 
 **Estado:** etapas 1-5 cerradas (formatos, código, rebanada de Android y capa

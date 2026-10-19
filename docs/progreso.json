@@ -22,12 +22,69 @@
  },
  "pasos": {
   "total": 8,
-  "hechos": 3,
-  "actual": "Paso 4: arranque nativo en el PC (pantalla de titulo)"
+  "hechos": 5,
+  "actual": "paso 5, recorrido 1:1 (41/41 misiones)"
  },
  "recorrido": {
   "total": 46,
-  "validadas": 0,
-  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final"
- }
+  "funcionan": 45,
+  "duckstation": 0,
+  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final; funcionan: cargan y se vuelan sin fallos (make misiones, docs/pruebas/)"
+ },
+ "us": {
+  "funciones": {
+   "residente": 1239,
+   "overlay 1": 143,
+   "overlay 2": 402,
+   "overlay 3": 22,
+   "overlay 4": 10,
+   "overlay 5": 8
+  },
+  "validadas": {
+   "residente": 1193,
+   "overlay 1": 142,
+   "overlay 2": 375,
+   "overlay 3": 22,
+   "overlay 4": 10,
+   "overlay 5": 8
+  },
+  "ejecutadas": {
+   "residente": 848,
+   "overlay 1": 77,
+   "overlay 2": 140,
+   "overlay 3": 0,
+   "overlay 4": 0,
+   "overlay 5": 0
+  },
+  "distintas": 0
+ },
+ "eu": {
+  "funciones": {
+   "residente": 1237,
+   "overlay 1": 144,
+   "overlay 2": 401,
+   "overlay 3": 21,
+   "overlay 4": 10,
+   "overlay 5": 8
+  },
+  "validadas": {
+   "residente": 1200,
+   "overlay 1": 143,
+   "overlay 2": 373,
+   "overlay 3": 20,
+   "overlay 4": 10,
+   "overlay 5": 8
+  },
+  "ejecutadas": {
+   "residente": 836,
+   "overlay 1": 82,
+   "overlay 2": 140,
+   "overlay 3": 0,
+   "overlay 4": 0,
+   "overlay 5": 0
+  },
+  "distintas": 0,
+  "misiones": "41/41"
+ },
+ "release": "v1.7-alfa"
 }

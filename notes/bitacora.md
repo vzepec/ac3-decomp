@@ -5,6 +5,33 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-18 — Estados reales: 95,9 % del código validado (US), 96,3 % (EU); misiones EU 41/41
+
+**Pregunta del dueño:** la infografía seguía en 91 % recompilado y 0 en el
+recorrido.
+
+- **Las 41 misiones europeas:** 41/41 sin fallos (`make misiones-eu`, guion
+  propio porque la europea tiene menú de idioma).
+- **Cobertura** (`AC3_COVERAGE`): en las 41 misiones se ejecutan 1.065
+  funciones (US) y 1.058 (EU).
+  - 90 (US) y 86 (EU) de ellas quedaron *sin caso* con estados aleatorios.
+- **Estados reales** (`AC3_STATES`, `tools/estados.py`): se captura un estado
+  de cada una.
+  - `check.py --states`: 79 (US) y 82 (EU) validadas, **0 distintas**.
+- **Interprete con estados aleatorios en la americana** (`make
+  mipsi-check-us`): 1.671/1.824, 0 distintas.
+- **Total:** US 1.750/1.824 (95,9 %), EU 1.754/1.821 (96,3 %).
+- **Infografía nueva** (`tools/progress.py version`): mide la americana y el
+  intérprete del APK. El recorrido se divide en dos barras: funciona (45/46)
+  y DuckStation (0/46).
+
+**Registro:** `docs/pruebas/`.
+
+**SIN RESOLVER:**
+- 63 funciones por versión que no se ejecutan en vuelo;
+- finales;
+- DuckStation.
+
 ## 2026-10-18 — Las 41 misiones cargan y se vuelan sin fallos (americana)
 
 **Mecanismo:** la misión actual es el `short` de `g_state + 0x390`. La función

@@ -16,6 +16,7 @@
  * Presupuesto del reloj (RC_BUDGET) en los mismos sitios que el codigo traducido: al entrar en
  * una funcion (jal/jalr) y en los saltos hacia atras. Modo mixto: si hay una funcion traducida
  * registrada para el destino de un jal/jalr, se llama a ella (rc_find). */
+#include <stdlib.h>
 #include <string.h>
 
 #include "recomp_rt.h"
@@ -31,6 +32,51 @@ uint64_t mipsi_steps;
 static uint32_t g_hook_addr;
 static void (*g_hook)(RCpu *);
 void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) { g_hook_addr = addr; g_hook = fn; }
+
+/* medicion (etapa 6, paso 12): funciones en las que se entra (un bit por palabra de la RAM) y
+ * vigilancia de una lista de entradas (captura de estados reales para el comparador) */
+static uint8_t *g_entered, *g_watched;
+static void (*g_watch_fn)(RCpu *, uint32_t);
+void mipsi_coverage(int on) {
+    if (on && !g_entered) g_entered = calloc(PSX_RAM_SIZE / 32, 1);
+}
+int mipsi_entered(uint32_t a) { uint32_t i = (a & (PSX_RAM_SIZE - 1)) >> 2; return g_entered && (g_entered[i >> 3] >> (i & 7) & 1); }
+void mipsi_watch(const uint32_t *addrs, int n, void (*fn)(RCpu *, uint32_t)) {
+    if (!g_watched) g_watched = calloc(PSX_RAM_SIZE / 32, 1);
+    for (int k = 0; k < n; k++) { uint32_t i = (addrs[k] & (PSX_RAM_SIZE - 1)) >> 2; g_watched[i >> 3] |= (uint8_t)(1u << (i & 7)); }
+    g_watch_fn = fn;
+}
+/* en la zona de overlays la direccion no basta: se anota con un resumen (FNV-1a) de los 64
+ * primeros bytes cargados en la base, que identifica el overlay (como las firmas de la etapa 6) */
+uint32_t rc_ovl_base(void);
+#define OVL_SET 65536
+static struct { uint32_t addr, sig; } g_ovl_entries[OVL_SET];
+static int g_novl_entries;
+static uint32_t ovl_sig(void) {
+    const uint8_t *p = psx_ram + (rc_ovl_base() & (PSX_RAM_SIZE - 1));
+    uint32_t h = 2166136261u;
+    for (int k = 0; k < 64; k++) h = (h ^ p[k]) * 16777619u;
+    return h;
+}
+int mipsi_ovl_entries(uint32_t *addr, uint32_t *sig, int max) {
+    int n = 0;
+    for (int k = 0; k < OVL_SET && n < max; k++)
+        if (g_ovl_entries[k].addr) { addr[n] = g_ovl_entries[k].addr; sig[n] = g_ovl_entries[k].sig; n++; }
+    return n;
+}
+static inline void on_entry(RCpu *c, uint32_t a) {
+    uint32_t i = (a & (PSX_RAM_SIZE - 1)) >> 2;
+    if (g_entered) {
+        g_entered[i >> 3] |= (uint8_t)(1u << (i & 7));
+        if (a >= rc_ovl_base() && g_novl_entries < OVL_SET / 2) {
+            uint32_t sg = ovl_sig(), h = (a * 2654435761u ^ sg) & (OVL_SET - 1);
+            while (g_ovl_entries[h].addr && !(g_ovl_entries[h].addr == a && g_ovl_entries[h].sig == sg)) h = (h + 1) & (OVL_SET - 1);
+            if (!g_ovl_entries[h].addr) { g_ovl_entries[h].addr = a; g_ovl_entries[h].sig = sg; g_novl_entries++; }
+        }
+    }
+    if (g_watched && (g_watched[i >> 3] >> (i & 7) & 1)) g_watch_fn(c, a);
+    if (g_hook && a == g_hook_addr) g_hook(c);
+}
 
 static inline uint32_t fetch(uint32_t pc) {
     uint8_t *p = rc_ptr(pc, pc);
@@ -115,7 +161,7 @@ static inline uint32_t call_to(RCpu *c, uint32_t tgt, uint32_t link) {
     if (rc_is_lib(tgt)) { rc_libcall(c, tgt); return link; }
     void (*fn)(RCpu *) = rc_find(tgt);
     if (fn) { rc_ret = link; fn(c); c->r[0] = 0; return link; }
-    if (g_hook && tgt == g_hook_addr) g_hook(c);
+    if (g_entered || g_watched || g_hook) on_entry(c, tgt);
     RC_BUDGET(tgt);
     return tgt;
 }
@@ -125,7 +171,7 @@ void mipsi_call(RCpu *c, uint32_t addr) {
     uint32_t pc = addr;
     /* entrar en la funcion: como un salto a ella (libreria, traducida o interpretada) */
     if (rc_is_lib(pc)) { rc_libcall(c, pc); return; }
-    if (g_hook && pc == g_hook_addr) g_hook(c);
+    if (g_entered || g_watched || g_hook) on_entry(c, pc);
     RC_BUDGET(pc);
     while (pc != ret) {
         uint32_t w = fetch(pc);

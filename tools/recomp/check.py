@@ -23,12 +23,18 @@ Uso:
 Interprete en C (etapa 7): --interp psx/build/libmipsi.so ejecuta en B el interprete
 psx/recomp/mipsi.c (biblioteca sin codigo traducido: make mipsi) sobre las mismas entradas;
 escribe <binario>_check_interp.json.
+Estados reales (etapa 6, paso 12): --states DIR toma como casos los estados que guarda el
+binario libre al entrar en las funciones de una lista (AC3_STATES: registros, hi/lo, GTE,
+scratchpad y RAM de una partida real), en vez de estados aleatorios. El overlay cargado se
+reconoce por los 64 primeros bytes de su base (--ovl-dir data/exe/ovl...). Escribe
+states_check[_interp].json en el directorio de salida, con el veredicto por modulo y funcion.
 Otra version (US): --region data/recomp_us/region.json (tools/recomp/region.py) pone sus
 direcciones (libreria, codigo propio, overlays, $gp, estado del juego).
 Escribe data/recomp/<binario>_check.json y actualiza docs/progreso.json (recompiladas; solo la
 version europea, la que cuenta la infografia).
 """
 import ctypes
+import glob
 import json
 import concurrent.futures as cf
 import os
@@ -47,6 +53,8 @@ G_STATE_PTR, G_STATE = 0x800BACD0, 0x800BD158
 OWN_LO, OWN_HI, LIB_MAIN, OVL_LO, OVL_HI, GP = 0x800252CC, 0x80099DE0, 0x80025214, 0x800C9DC0, 0x800F9E18, GP_EU
 REGION = None
 INTERP = None   # --interp: biblioteca del interprete en C en vez de librecomp.so
+STATES = None   # --states: estados reales
+OVL_DIR = None  # --ovl-dir: overlays de la version (para reconocer el cargado en un estado)
 
 
 def apply_region(path):
@@ -114,6 +122,18 @@ class World:
                 lib.rc_register_overlay.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint]
                 lib.rc_register_overlay(n, ctypes.addressof(ot), on)
                 lib.rc_set_overlay(n)
+        self.ovl_tabs = {}
+        if STATES and not INTERP:   # todos los overlays registrados; el estado dice cual esta cargado
+            for k in range(1, 6):
+                ot = (ctypes.c_uint8 * 8).in_dll(lib, 'rc_funcs_overlay%d' % k)
+                on = ctypes.c_uint.in_dll(lib, 'rc_nfuncs_overlay%d' % k).value
+                lib.rc_register_overlay.argtypes = [ctypes.c_int, ctypes.c_void_p, ctypes.c_uint]
+                lib.rc_register_overlay(k, ctypes.addressof(ot), on)
+        self.ovl_sig = {}
+        if OVL_DIR:
+            for k in range(1, 6):
+                d = open(os.path.join(OVL_DIR, 'overlay%d.exe' % k), 'rb').read()
+                self.ovl_sig[d[2048:2048 + 64]] = k
         self.base = bytes(self.ram)
         # libreria: todas las funciones de la zona de librerias a las que puede saltar el juego
         meta = json.load(open(os.path.join(out_dir, stem + '.json')))
@@ -217,12 +237,79 @@ class World:
         return 'igual', None
 
 
+    def loaded_overlay(self):
+        o = OVL_LO & 0x1FFFFF
+        return self.ovl_sig.get(bytes(self.ram[o:o + 64]), 0)
+
+    def trial_state(self, path, steps):
+        """un caso desde un estado real (formato de native_main.c, save_state)"""
+        d = open(path, 'rb').read()
+        magic, addr = struct.unpack_from('<II', d, 0)
+        if magic != 0x53334341:
+            raise ValueError('no es un estado AC3S')
+        regs = list(struct.unpack_from('<32I', d, 8))
+        hi, lo = struct.unpack_from('<II', d, 136)
+        gte, scr, ram = d[144:400], d[400:1424], d[1424:1424 + 0x200000]
+        regs[0] = 0
+        regs[31] = RETURN_MAGIC
+
+        def load():
+            ctypes.memmove(self.ram, ram, 0x200000)
+            ctypes.memmove(self.scr, scr, 0x400)
+            self.gte_a.set_state(gte)
+            ctypes.memmove(self.gte_b, gte, 256)
+        load()
+        n = self.loaded_overlay()
+        if not INTERP and n:
+            self.lib.rc_set_overlay(n)
+        # ganchos de libreria del interprete de referencia sobre la RAM de este estado
+        for lo_, hi_ in ((OWN_LO, OWN_HI), (OVL_LO, OVL_HI)):
+            for a in range(lo_, hi_, 4):
+                w = self.m.lw(a)
+                if w >> 26 == 3:
+                    t = ((a + 4) & 0xF0000000) | ((w & 0x3FFFFFF) << 2)
+                    if LIB_LO <= t < LIB_HI or t == LIB_MAIN:
+                        self.m.hooks[t] = self.libcall_py
+        self.log = []
+        st_a, _ = self.m.run(addr, regs, hi, lo, max_steps=steps)
+        res_a = (list(self.m.r), self.m.hi, self.m.lo, bytes(self.ram), bytes(self.scr), self.gte_a.state(), self.log)
+        load()
+        self.log = []
+        cpu = RCpu()
+        for i in range(32):
+            cpu.r[i] = regs[i]
+        cpu.hi, cpu.lo = hi, lo
+        fpc, fad = ctypes.c_uint32(), ctypes.c_uint32()
+        st = self.lib.rc_run(ctypes.byref(cpu), addr, steps // 4, ctypes.byref(fpc), ctypes.byref(fad))
+        st_b = STATUS.get(st, str(st))
+        res_b = (list(cpu.r), cpu.hi, cpu.lo, bytes(self.ram), bytes(self.scr), bytes(self.gte_b.raw), self.log)
+        mod = 'overlay %d' % n if addr >= OVL_LO and n else 'residente'
+        if 'timeout' in (st_a, st_b):
+            return mod, addr, 'timeout', None
+        if st_a != 'ok' and st_b != 'ok':
+            return mod, addr, 'fallo', st_a
+        if st_a != st_b:
+            return mod, addr, 'distinto', 'estado %s / %s' % (st_a, st_b)
+        names = ['registros', 'hi', 'lo', 'ram', 'scratch', 'gte', 'librerias']
+        for k, (x, y) in enumerate(zip(res_a, res_b)):
+            if x != y:
+                return mod, addr, 'distinto', names[k]
+        return mod, addr, 'igual', None
+
+
+def check_state(path):
+    try:
+        return WORLD.trial_state(path, 2000000)
+    except Exception as e:
+        return '?', 0, 'distinto', 'excepcion %s' % e
+
+
 WORLD = None
 
 
-def init(acebin, out_dir, ovl=None, region=None, interp=None):
-    global WORLD, INTERP
-    INTERP = interp
+def init(acebin, out_dir, ovl=None, region=None, interp=None, states=None, ovl_dir=None):
+    global WORLD, INTERP, STATES, OVL_DIR
+    INTERP, STATES, OVL_DIR = interp, states, ovl_dir
     WORLD = World(acebin, out_dir, ovl, region)
 
 
@@ -258,11 +345,22 @@ def main():
         i = args.index('--interp')
         INTERP = os.path.abspath(args[i + 1])
         args = args[:i] + args[i + 2:]
+    global STATES, OVL_DIR
+    if '--states' in args:
+        i = args.index('--states')
+        STATES = os.path.abspath(args[i + 1])
+        args = args[:i] + args[i + 2:]
+    if '--ovl-dir' in args:
+        i = args.index('--ovl-dir')
+        OVL_DIR = os.path.abspath(args[i + 1])
+        args = args[:i] + args[i + 2:]
     if '--overlay' in args:   # --overlay N data/exe/ovl/overlayN.exe
         i = args.index('--overlay')
         ovl = (int(args[i + 1]), args[i + 2])
         args = args[:i] + args[i + 3:]
     acebin, out_dir = args[0], args[1]
+    if STATES:
+        return main_states(acebin, out_dir, region, int(args[2]) if len(args) > 2 else 2)
     ncases = int(args[2]) if len(args) > 2 else 12
     procs = int(args[3]) if len(args) > 3 else max(1, (os.cpu_count() or 2) - 1)
     stem = os.path.splitext(os.path.basename(ovl[1] if ovl else acebin))[0]
@@ -305,6 +403,31 @@ def main():
             d = json.load(open(p))
             d.setdefault('recompiladas', {})['overlay %d' % ovl[0] if ovl else 'residente'] = nval
             json.dump(d, open(p, 'w'), indent=1, ensure_ascii=False)
+    return 0
+
+
+def main_states(acebin, out_dir, region, procs):
+    files = sorted(glob.glob(os.path.join(STATES, 'st_*.bin')))
+    res = {}
+    with cf.ProcessPoolExecutor(procs, initializer=init, initargs=(acebin, out_dir, None, region, INTERP, STATES, OVL_DIR)) as ex:
+        for k, (mod, addr, v, det) in enumerate(ex.map(check_state, files)):
+            res.setdefault((mod, addr), []).append((v, det))
+            if (k + 1) % 50 == 0:
+                print('  ... %d/%d estados' % (k + 1, len(files)), flush=True)
+    out = {}
+    for (mod, addr), vs in sorted(res.items()):
+        kinds = [v for v, _ in vs]
+        verdict = 'VALIDADA' if 'igual' in kinds and 'distinto' not in kinds else ('DISTINTA' if 'distinto' in kinds else 'SIN CASO')
+        out.setdefault(mod, {})['%08x' % addr] = {'veredicto': verdict, 'casos': kinds,
+                                                   'primera_diferencia': next((d for v, d in vs if v == 'distinto'), None)}
+        if verdict == 'DISTINTA':
+            print('  DISTINTA %s %08x %s' % (mod, addr, out[mod]['%08x' % addr]['primera_diferencia']), flush=True)
+    for mod, d in out.items():
+        c = {v: sum(1 for x in d.values() if x['veredicto'] == v) for v in ('VALIDADA', 'DISTINTA', 'SIN CASO')}
+        print('%-10s %d funciones con estados reales: %d validadas, %d distintas, %d sin caso' % (mod, len(d), c['VALIDADA'],
+                                                                                                 c['DISTINTA'], c['SIN CASO']))
+    name = 'states_check_interp.json' if INTERP else 'states_check.json'
+    json.dump(out, open(os.path.join(out_dir, name), 'w'), indent=1)
     return 0
 
 

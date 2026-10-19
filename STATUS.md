@@ -86,20 +86,26 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Recorrido completo, 1:1** (paso 5 de `docs/11-etapa6.md`). **Las 41 misiones
-de la americana cargan, arrancan y se vuelan sin fallos** (`make misiones`).
-El dueño ha jugado varias en la Retroid sin errores. Falta:
-- completar misiones y ver los finales y el árbol de la historia;
-- guardar y cargar en la tarjeta de memoria;
-- compararlo con DuckStation.
+**Recorrido completo, 1:1** (paso 5 de `docs/11-etapa6.md`).
+- **Las 41 misiones cargan, arrancan y se vuelan sin fallos en las dos
+  versiones** (`make misiones`, `make misiones-eu`; `docs/pruebas/`).
+- **Código validado** (intérprete del APK frente al de referencia, estados
+  aleatorios y reales): US 1.750/1.824 (95,9 %), EU 1.754/1.821 (96,3 %),
+  0 distintas.
+- El dueño ha jugado varias misiones en la Retroid sin errores.
 
-Se puede guionizar o pedir al dueño partidas largas en la Retroid.
+Falta:
+- completar misiones y ver los finales y el árbol de la historia;
+- guardar y cargar;
+- las 63 funciones por versión que no se ejecutan en vuelo (menús, finales,
+  overlays 3-5);
+- la comparación con DuckStation.
 
 ## Pendiente
 
 | Qué | Etapa / paso | Estado |
 |---|---|---|
-| Juego completo jugable de principio a fin, 1:1 (americana) | 6 / paso 5 | 🔄 41/41 misiones cargan y se vuelan; faltan finales, guardado y DuckStation |
+| Juego completo jugable de principio a fin, 1:1 (americana) | 6 / paso 5 | 🔄 41/41 misiones cargan y se vuelan (US y EU); 95,9 % del código validado; faltan finales, guardado y DuckStation |
 | Sprites que coloca la CPU (explosiones, humo, llamas de los motores) a 60 fps | 6 / paso 7 | ⏳ |
 | GPU por GLES: alta resolución con la precisión de nuestra GTE y panorámico | 6 / paso 7 | ⏳ |
 | Calibrar `BUDGET_PER_FRAME` (reloj del juego), sobre todo en NTSC | 6 | ⏳ |

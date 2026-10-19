@@ -1,35 +1,42 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="840" height="400" viewBox="0 0 840 400" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-<rect width="840" height="400" rx="12" fill="#0d1117"/>
-<text x="24" y="38" fill="#e6edf3" font-size="20" font-weight="600">Ace Combat 3 nativo: progreso de la recompilaci&#243;n</text>
-<text x="24" y="60" fill="#8b949e" font-size="13">Etapa 6 &#183; Paso 4: arranque nativo en el PC (pantalla de titulo)</text>
-<text x="24" y="100" fill="#e6edf3" font-size="15">Juego recompilado y validado</text>
-<text x="816" y="100" fill="#e6edf3" font-size="15" text-anchor="end" font-weight="600">91.8 % &#183; 1672 / 1821 funciones</text>
-<rect x="24" y="110" width="792" height="26" rx="4" fill="#30363d"/><rect x="24" y="110" width="727.2" height="26" rx="4" fill="#2ea043"/>
+<svg xmlns="http://www.w3.org/2000/svg" width="840" height="560" viewBox="0 0 840 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
+<rect width="840" height="560" rx="12" fill="#0d1117"/>
+<text x="24" y="38" fill="#e6edf3" font-size="20" font-weight="600">Ace Combat 3 nativo: progreso</text>
+<text x="24" y="60" fill="#8b949e" font-size="13">Versi&#243;n americana (SLUS-00972), la de referencia &#183; Etapa 6: paso 5, recorrido 1:1 (41/41 misiones) &#183; Etapa 7: APK libre publicado (v1.7-alfa)</text>
+<text x="24" y="100" fill="#e6edf3" font-size="15">C&#243;digo del juego validado (int&#233;rprete del APK frente al de referencia)</text>
+<text x="816" y="100" fill="#e6edf3" font-size="15" text-anchor="end" font-weight="600">95.9 % &#183; 1750 / 1824 funciones</text>
+<rect x="24" y="110" width="792" height="26" rx="4" fill="#30363d"/><rect x="24" y="110" width="759.9" height="26" rx="4" fill="#2ea043"/>
 <text x="24" y="160" fill="#8b949e" font-size="12">residente</text>
-<text x="272" y="160" fill="#8b949e" font-size="12" text-anchor="end">1130 / 1237</text>
-<rect x="24" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="24" y="166" width="226.5" height="10" rx="4" fill="#2ea043"/>
+<text x="272" y="160" fill="#8b949e" font-size="12" text-anchor="end">1193 / 1239</text>
+<rect x="24" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="24" y="166" width="238.8" height="10" rx="4" fill="#2ea043"/>
 <text x="288" y="160" fill="#8b949e" font-size="12">overlay 1</text>
-<text x="536" y="160" fill="#8b949e" font-size="12" text-anchor="end">142 / 144</text>
-<rect x="288" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="288" y="166" width="244.6" height="10" rx="4" fill="#2ea043"/>
+<text x="536" y="160" fill="#8b949e" font-size="12" text-anchor="end">142 / 143</text>
+<rect x="288" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="288" y="166" width="246.3" height="10" rx="4" fill="#2ea043"/>
 <text x="552" y="160" fill="#8b949e" font-size="12">overlay 2</text>
-<text x="800" y="160" fill="#8b949e" font-size="12" text-anchor="end">362 / 401</text>
-<rect x="552" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="552" y="166" width="223.9" height="10" rx="4" fill="#2ea043"/>
+<text x="800" y="160" fill="#8b949e" font-size="12" text-anchor="end">375 / 402</text>
+<rect x="552" y="166" width="248" height="10" rx="4" fill="#30363d"/><rect x="552" y="166" width="231.3" height="10" rx="4" fill="#2ea043"/>
 <text x="24" y="202" fill="#8b949e" font-size="12">overlay 3</text>
-<text x="272" y="202" fill="#8b949e" font-size="12" text-anchor="end">20 / 21</text>
-<rect x="24" y="208" width="248" height="10" rx="4" fill="#30363d"/><rect x="24" y="208" width="236.2" height="10" rx="4" fill="#2ea043"/>
+<text x="272" y="202" fill="#8b949e" font-size="12" text-anchor="end">22 / 22</text>
+<rect x="24" y="208" width="248" height="10" rx="4" fill="#30363d"/><rect x="24" y="208" width="248.0" height="10" rx="4" fill="#2ea043"/>
 <text x="288" y="202" fill="#8b949e" font-size="12">overlay 4</text>
 <text x="536" y="202" fill="#8b949e" font-size="12" text-anchor="end">10 / 10</text>
 <rect x="288" y="208" width="248" height="10" rx="4" fill="#30363d"/><rect x="288" y="208" width="248.0" height="10" rx="4" fill="#2ea043"/>
 <text x="552" y="202" fill="#8b949e" font-size="12">overlay 5</text>
 <text x="800" y="202" fill="#8b949e" font-size="12" text-anchor="end">8 / 8</text>
 <rect x="552" y="208" width="248" height="10" rx="4" fill="#30363d"/><rect x="552" y="208" width="248.0" height="10" rx="4" fill="#2ea043"/>
-<text x="24" y="260" fill="#e6edf3" font-size="14">Capa PsyQ (funciones de Sony que usa el juego)</text>
-<text x="816" y="260" fill="#e6edf3" font-size="14" text-anchor="end">152 / 152 &#183; 100 %</text>
-<rect x="24" y="268" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="268" width="792.0" height="14" rx="4" fill="#1f6feb"/>
-<text x="24" y="306" fill="#e6edf3" font-size="14">Pasos de la etapa 6</text>
-<text x="816" y="306" fill="#e6edf3" font-size="14" text-anchor="end">3 / 8 &#183; 38 %</text>
-<rect x="24" y="314" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="314" width="297.0" height="14" rx="4" fill="#a371f7"/>
-<text x="24" y="352" fill="#e6edf3" font-size="14">Recorrido 1:1 validado (arranque, men&#250;s, 41 misiones, final)</text>
-<text x="816" y="352" fill="#e6edf3" font-size="14" text-anchor="end">0 / 46 &#183; 0 %</text>
-<rect x="24" y="360" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="360" width="0.0" height="14" rx="4" fill="#d29922"/>
+<text x="24" y="262" fill="#e6edf3" font-size="14">Funciones que se ejecutan en las 41 misiones</text>
+<text x="816" y="262" fill="#e6edf3" font-size="14" text-anchor="end">1065 / 1824 &#183; 58 %</text>
+<rect x="24" y="270" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="270" width="462.4" height="14" rx="4" fill="#3fb950"/>
+<text x="24" y="308" fill="#e6edf3" font-size="14">Capa PsyQ (funciones de Sony que usa el juego)</text>
+<text x="816" y="308" fill="#e6edf3" font-size="14" text-anchor="end">152 / 152 &#183; 100 %</text>
+<rect x="24" y="316" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="316" width="792.0" height="14" rx="4" fill="#1f6feb"/>
+<text x="24" y="354" fill="#e6edf3" font-size="14">Pasos de la etapa 6</text>
+<text x="816" y="354" fill="#e6edf3" font-size="14" text-anchor="end">5 / 8 &#183; 62 %</text>
+<rect x="24" y="362" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="362" width="495.0" height="14" rx="4" fill="#a371f7"/>
+<text x="24" y="400" fill="#e6edf3" font-size="14">Recorrido: funciona (arranque, men&#250;s, 41 misiones; falta el final)</text>
+<text x="816" y="400" fill="#e6edf3" font-size="14" text-anchor="end">45 / 46 &#183; 98 %</text>
+<rect x="24" y="408" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="408" width="774.8" height="14" rx="4" fill="#d29922"/>
+<text x="24" y="446" fill="#e6edf3" font-size="14">Recorrido: comparado 1:1 con DuckStation</text>
+<text x="816" y="446" fill="#e6edf3" font-size="14" text-anchor="end">0 / 46 &#183; 0 %</text>
+<rect x="24" y="454" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="454" width="0.0" height="14" rx="4" fill="#db6d28"/>
+<text x="24" y="496" fill="#8b949e" font-size="13">Versi&#243;n europea (SCES-02066): 1754 / 1821 funciones validadas &#183; 1058 ejecutadas en las misiones &#183; misiones: 41/41</text>
 </svg>

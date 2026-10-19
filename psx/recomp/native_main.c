@@ -279,6 +279,46 @@ static void parse_script(const char *s) {
 /* AC3_MISSION=N: al entrar en la funcion que arranca la mision, la mision actual del estado de
  * la partida (g_state + 0x390) pasa a ser N; el juego carga entonces mission_records[N] */
 static int g_force_mission = -1;
+
+/* AC3_COVERAGE=archivo: al terminar, las direcciones de las funciones en las que se entro.
+ * AC3_STATES=dir + AC3_STATES_LIST=archivo (direcciones en hex) [+ AC3_STATES_MAX=n]: al entrar en
+ * una de ellas se guarda el estado (las n primeras veces): magic "AC3S", direccion, 32 registros,
+ * hi, lo, GTE (256 B), scratchpad (1 KB), RAM (2 MB). Lo lee tools/recomp/check.py --states */
+static const char *g_states_dir;
+static int g_states_max = 2;
+static uint16_t g_states_n[PSX_RAM_SIZE / 4];
+static void save_state(RCpu *c, uint32_t a) {
+    uint32_t i = (a & (PSX_RAM_SIZE - 1)) >> 2;
+    if (g_states_n[i] >= g_states_max) return;
+    char path[600];
+    snprintf(path, sizeof path, "%s/st_%08x_%d_f%d.bin", g_states_dir, a, g_states_n[i], last_vcount);
+    g_states_n[i]++;
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    uint32_t hdr[2] = {0x53334341u, a};   /* "AC3S" */
+    fwrite(hdr, 4, 2, f);
+    fwrite(c->r, 4, 32, f);
+    fwrite(&c->hi, 4, 1, f);
+    fwrite(&c->lo, 4, 1, f);
+    fwrite(rc_gte, 1, 256, f);
+    fwrite(psx_scratch, 1, 0x400, f);
+    fwrite(psx_ram, 1, PSX_RAM_SIZE, f);
+    fclose(f);
+}
+static void coverage_dump(void) {
+    const char *p = getenv("AC3_COVERAGE");
+    FILE *f = p ? fopen(p, "w") : NULL;
+    if (!f) return;
+    int n = 0;
+    uint32_t ob = AC3_OVL_BASE;
+    for (uint32_t a = 0x80000000u; a < ob; a += 4)
+        if (mipsi_entered(a)) { fprintf(f, "%08x\n", a); n++; }
+    static uint32_t oa[32768], os[32768];
+    int no = mipsi_ovl_entries(oa, os, 32768);
+    for (int k = 0; k < no; k++) { fprintf(f, "%08x %08x\n", oa[k], os[k]); n++; }
+    fclose(f);
+    printf("cobertura: %d funciones con entrada -> %s\n", n, p);
+}
 static void force_mission(RCpu *c) {
     (void)c;
     uint32_t st = *(uint32_t *)psx_ptr(V->g_state_ptr);
@@ -334,6 +374,18 @@ int main(int argc, char **argv) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     rc_set_hle(V->hle, *V->nhle);
+    if (getenv("AC3_COVERAGE")) { mipsi_coverage(1); atexit(coverage_dump); }
+    if (getenv("AC3_STATES") && getenv("AC3_STATES_LIST")) {
+        static uint32_t list[8192];
+        int n = 0;
+        FILE *lf = fopen(getenv("AC3_STATES_LIST"), "r");
+        while (lf && n < 8192 && fscanf(lf, "%x", &list[n]) == 1) n++;
+        if (lf) fclose(lf);
+        g_states_dir = getenv("AC3_STATES");
+        if (getenv("AC3_STATES_MAX")) g_states_max = atoi(getenv("AC3_STATES_MAX"));
+        mipsi_watch(list, n, save_state);
+        printf("estados: %d funciones vigiladas -> %s\n", n, g_states_dir);
+    }
     if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
         g_force_mission = atoi(getenv("AC3_MISSION"));
         mipsi_set_hook(V->mission_start, force_mission);

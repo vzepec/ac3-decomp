@@ -148,5 +148,9 @@ void rc_set_interpreter(void (*fn)(RCpu *, uint32_t));
 void mipsi_call(RCpu *c, uint32_t addr);
 extern uint64_t mipsi_steps;
 void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *));   /* pruebas: al entrar en `addr` */
+void mipsi_coverage(int on);                                /* anotar las funciones en que se entra */
+int mipsi_entered(uint32_t addr);
+int mipsi_ovl_entries(uint32_t *addr, uint32_t *sig, int max);   /* entradas en overlays: (direccion, firma) */
+void mipsi_watch(const uint32_t *addrs, int n, void (*fn)(RCpu *, uint32_t));   /* al entrar en una de ellas */
 
 #endif
