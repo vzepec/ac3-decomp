@@ -20,7 +20,8 @@
  *  - interpolacion nueva (etapa 8, psx/recomp/ac3_rerender.c): en cada imagen intermedia el mundo
  *    estatico (terreno, cielo, ciudades) se vuelve a dibujar con el codigo del juego y la camara a
  *    medio camino; solo lo movil se interpola en pantalla. Una intermedia por paso (30 -> 60 fps).
- *    L3+R3 recorre: 16:9 nueva -> 16:9 anterior (la de la etapa 6) -> 4:3 nueva -> el original;
+ *    L3+R3 recorre: 16:9 -> 4:3 -> el original (la interpolacion anterior, la de la etapa 6, se
+ *    quito de la app en la 1.9-alfa; sin la nueva, en los APK personales, es la que se usa);
  *  - el juego y los hilos de dibujo van fijados a los nucleos rapidos (los de mayor frecuencia);
  *  - contador (arriba a la izquierda): imagenes distintas mostradas por segundo, velocidad del
  *    juego frente a la consola (100% = 50 VBlank por segundo), intermedias por paso y uso del
@@ -102,7 +103,7 @@ static struct {
     struct { uint32_t px[640 * 512]; int w, h; double due; int full, wide; } q[8];
     double interp_last;              /* ultima imagen entregada por la interpolacion */
     volatile int interp_enabled;
-    /* L3+R3: 0 = 16:9 + interpolacion nueva, 1 = 16:9 + la anterior, 2 = 4:3 + la nueva, 3 = original */
+    /* L3+R3: 0 = 16:9 + interpolacion, 1 = 4:3 + interpolacion, 2 = original */
     volatile int gfx_mode;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0) */
@@ -200,10 +201,10 @@ static void frame_wait(void) {
     }
     /* L3+R3 cambia G.gfx_mode en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1;
-    G.interp_enabled = G.gfx_mode != 3;
+    G.interp_enabled = G.gfx_mode != 2;
 #ifdef AC3_LIBRE
     static int rr_applied = -1;
-    int rr = G.gfx_mode == 0 || G.gfx_mode == 2;
+    int rr = G.gfx_mode <= 1;
     if (rr != rr_applied) {
         rr_applied = rr;
         G.rr_on = rr;
@@ -223,7 +224,7 @@ static void frame_wait(void) {
     static int terrain_idle = 1000;
     if (ac3_terrain_count != terrain_last) { terrain_last = ac3_terrain_count; terrain_idle = 0; }
     else if (terrain_idle < 1000) terrain_idle++;
-    G.wide_now = G.gfx_mode <= 1 && terrain_idle < 15;
+    G.wide_now = G.gfx_mode == 0 && terrain_idle < 15;
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
 #endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
@@ -233,7 +234,7 @@ static void frame_wait(void) {
     pthread_mutex_lock(&G.lock);
     int gw, gh, gon, rgb24;
     psx_display_geom(&gw, &gh, &gon, &rgb24);   /* los videos van en color de 24 bits: a 4:3 */
-    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; G.frame_wide = G.gfx_mode <= 1 && !rgb24; }
+    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; G.frame_wide = G.gfx_mode == 0 && !rgb24; }
     pthread_mutex_unlock(&G.lock);
 }
 
@@ -251,7 +252,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         if (G.q[i].due < G.q[k].due) k = i;
     }
     memcpy(G.q[k].px, rgba, (size_t)w * h * 4);
-    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = G.gfx_mode <= 1;
+    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = G.gfx_mode == 0;
     G.interp_last = now();
     pthread_mutex_unlock(&G.lock);
 }
@@ -442,9 +443,8 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
-                G.gfx_mode = (G.gfx_mode + 1) % 4;
-                LOG("modo de imagen: %s", G.gfx_mode == 0 ? "16:9, interpolacion nueva" : G.gfx_mode == 1 ? "16:9, interpolacion anterior"
-                                          : G.gfx_mode == 2 ? "4:3, interpolacion nueva" : "original");
+                G.gfx_mode = (G.gfx_mode + 1) % 3;
+                LOG("modo de imagen: %s", G.gfx_mode == 0 ? "60 fps + 16:9" : G.gfx_mode == 1 ? "60 fps + 4:3" : "original");
             }
         }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;
@@ -634,7 +634,7 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            const char *md = G.gfx_mode == 3 ? "ORIG" : G.gfx_mode == 0 ? "16:9 N" : G.gfx_mode == 1 ? "16:9 A" : "4:3 N";
+            const char *md = G.gfx_mode == 2 ? "ORIG" : G.gfx_mode == 0 ? "16:9" : "4:3";
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
             if (G.running)

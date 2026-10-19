@@ -277,3 +277,22 @@ VBlank, con el guion de `tools/misiones.py` más dos pausas.
     frena);
   - la pausa;
   - los bordes en giros.
+
+## Release v1.9-alfa
+
+- **Prueba de la 1.9.6** por el dueño: "funciona mucho mejor". Aún hay
+  bajones de fps mirando ciudades muy pobladas (el hilo de dibujo no llega
+  a tiempo en algunos pasos), pero se siente más estable.
+- **Modos:** a petición del dueño se quitan los de la interpolación anterior.
+  L3+R3: `16:9` → `4:3` → `ORIG`, los dos primeros con la interpolación
+  nueva.
+- **Europea:** la corrección del cielo baja las imágenes con cuña de 31 a 2
+  (misión 3; en la 2, 2 de 744). Las 2 que quedan salen igual sin la
+  corrección, y en 4:3 no aparecen (allí la línea termina justo en la
+  esquina). `SIN RESOLVER`. La americana, la de referencia, queda en 0.
+- **Publicada como `v1.9-alfa`** (`versionCode` 21):
+  - la rama `etapa-8` se integra en `develop` y en `main`;
+  - la release adjunta el APK con la auditoría a 0 y su SHA-256.
+
+**Siguiente:** el rendimiento (análisis de llevar el dibujo a la GPU, en
+`STATUS.md`).

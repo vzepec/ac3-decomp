@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-18 (se trabaja con la versión americana; ramas fusionadas borradas)
+**Última actualización:** 2026-10-19 (release `v1.9-alfa`: interpolación nueva; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,9 +10,12 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.8-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.9-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
+**Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
+(`docs/14-etapa8.md`). El mundo se redibuja con el código del juego en cada
+imagen intermedia, en un hilo de dibujo.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -86,25 +89,20 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Etapa 8 (rama `etapa-8`, sin publicar):** probar en la Retroid el APK
-1.9.6-alfa (`data/android/AC3Recomp-1.9.6-alfa.apk`; `docs/14-etapa8.md`).
-- **El redibujo del mundo**, ahora en un hilo de dibujo (segunda copia del
-  intérprete). Antes iba en el hilo del juego: 20-30 fps en ciudades con la
-  1.9.5.
-- **Pausa:** el HUD ya no queda encima del menú.
-- **16:9:** sin la cuña del cielo en los bordes al ladear.
-- **Qué mirar:** `VEL` al 100 % y `FPS` en ciudades, en `16:9 N`; la pausa;
-  los bordes en giros.
+**Rendimiento** (petición del dueño tras la `v1.9-alfa`): bajones de fps
+mirando ciudades muy pobladas.
+- **Primero, análisis:** ¿conviene llevar el dibujo a la GPU (GLES) en lugar
+  de la GPU por software? Base: el comparador `psx_hwcmp` y el dibujo por
+  GLES ya validado en la rama `gles-alta-resolucion` (pasos 17-20 de la
+  etapa 6).
+- **Medir antes de decidir:** en qué se va el tiempo de cada hilo en la
+  Retroid (juego, redibujo, dibujo por software).
 
-Después:
-- si el hilo de dibujo no llega a tiempo en la Retroid: adelantar el
-  redibujo al final del dibujo estático o acelerar el intérprete;
+**Después:**
 - objetos móviles por su identidad (aviones, misiles);
 - orientación de los objetos del arreglo;
-- la europea.
-
-La rama `etapa-6-paso-20` (1.9.4, sin publicar) queda como base. La
-comparación con DuckStation queda para el final.
+- la europea (las 2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
+- la comparación con DuckStation, al final.
 
 ## Pendiente
 

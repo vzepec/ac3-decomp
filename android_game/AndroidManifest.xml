@@ -4,8 +4,8 @@
      Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3game"
-    android:versionCode="20"
-    android:versionName="1.9.6-alfa">
+    android:versionCode="21"
+    android:versionName="1.9-alfa">
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />

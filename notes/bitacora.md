@@ -5,6 +5,18 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Release v1.9-alfa: interpolación nueva
+
+- **Probado en la Retroid (1.9.6):** "funciona mucho mejor", más estable;
+  aún con bajones de fps mirando ciudades muy pobladas.
+- **Modos:** se quitan los de la interpolación anterior. Quedan 16:9 y 4:3
+  con la nueva, y el original.
+- **Europea, corrección del cielo** (`AC3_SKYCHECK=1`, `AC3_WIDE_NOSKY=1`):
+  - de 31 imágenes con cuña a 2 en la misión 3 (en la 2, 2 de 744);
+  - esas 2 no dependen de la corrección y en 4:3 no aparecen: `SIN RESOLVER`.
+- **Publicado como release `v1.9-alfa`**, con la auditoría a 0. Las pruebas
+  internas se llamaron 1.9.4 a 1.9.6.
+
 ## 2026-10-19 — Etapa 8: pausa, cuña del cielo en 16:9 y redibujo en un hilo de dibujo (1.9.6-alfa)
 
 **Informe del dueño con la 1.9.5:** "más estable", pero de 20 a 30 fps en

@@ -61,7 +61,7 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
 | 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
 | 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
-| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha) |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva) |
 
 ## Resultados
 
@@ -142,3 +142,22 @@ Probada por el dueño en la Retroid. Mismo procedimiento que la 1.7:
 - APK con la auditoría a 0;
 - SHA-256 en la descripción;
 - `INSTALAR.md` al día como texto.
+
+## Tercera release (1.9-alfa)
+
+**Novedad: la interpolación nueva** (etapa 8, `docs/14-etapa8.md`):
+- en cada imagen intermedia, el mundo estático se redibuja con el código del
+  juego y la cámara a medio camino;
+- el redibujo va en un hilo de dibujo, con una segunda copia del intérprete;
+- el HUD ya no queda encima del menú de pausa;
+- en 16:9 desaparece la cuña del cielo en los bordes al ladear.
+
+**Modos:** L3+R3 recorre 60 fps + 16:9 → 60 fps + 4:3 → original. La
+interpolación anterior se quita de la app, a petición del dueño.
+
+**Nombres:** las versiones de prueba se llamaron 1.9.4 a 1.9.6. Lo publicado
+es la `v1.9-alfa`, con `versionCode` 21, para instalarse encima de la 1.9.6.
+
+Probada por el dueño en la Retroid: "funciona mucho mejor", aunque con bajones
+de fps mirando ciudades muy pobladas. Mismo procedimiento que la 1.7 y la 1.8.
+
