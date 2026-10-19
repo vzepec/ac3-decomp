@@ -66,7 +66,7 @@ distribuido (`docs/06-legal.md`).
 | 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
 | 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ✅ 1.672/1.821 funciones validadas con estados aleatorios, 0 distintas; el resto, con estados reales en el paso 4 |
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
-| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **las 41 misiones cargan y se vuelan sin fallos** (americana, `make misiones`); falta completarlas, los finales, guardar/cargar y la comparación con DuckStation |
+| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **las 41 misiones cargan y se vuelan sin fallos en las dos versiones** (`make misiones`, `make misiones-eu`; `docs/pruebas/`); falta completarlas, los finales, guardar/cargar y la comparación con DuckStation |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
 | 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (la americana, estable; la europea, aparcada); sprites de la CPU, alta resolución y panorámico ⏳ |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
@@ -923,3 +923,41 @@ el juego.
 
 **Reproducir:** `make misiones` (`MISIONES=0-40`).
 
+### Paso 12: cobertura, estados reales e infografía nueva
+
+**Pregunta del dueño:** la infografía de `develop` daba 91 % recompilado y el
+recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
+
+- **El 91 %** eran funciones validadas con estados aleatorios. El resto no
+  salía distinto, sino *sin caso*: con datos aleatorios no terminaba ningún
+  caso.
+- **Validación con estados de partidas reales:**
+  - el intérprete anota las funciones en que entra (`AC3_COVERAGE`,
+    `tools/cobertura.py`);
+  - guarda el estado al entrar en las pendientes (`AC3_STATES`,
+    `tools/estados.py`);
+  - `tools/recomp/check.py --states` compara desde ahí el intérprete del APK
+    con el de referencia.
+- **Resultado:**
+  - americana: 1.671 → **1.750/1.824 (95,9 %)**;
+  - europea: 1.672 → **1.754/1.821 (96,3 %)**;
+  - **0 distintas** en todas las pruebas;
+  - en las 41 misiones se ejecutan 1.065 (US) y 1.058 (EU) funciones.
+  - Registro: `docs/pruebas/2026-10-18-validacion-estados-reales.md`.
+- **Versión europea:** las 41 misiones, igual que la americana: 41/41 sin
+  fallos (`make misiones-eu`).
+- **Infografía nueva** (`tools/progress.py version us|eu` y `svg`): mide
+  la versión americana y lo que lleva el APK, que es el intérprete.
+  - código validado (aleatorio o real, sin ninguna diferencia);
+  - funciones ejecutadas en las misiones;
+  - capa;
+  - pasos de la etapa (5/8);
+  - recorrido en dos barras: funciona (45/46, falta el final) y comparado
+    con DuckStation (0/46);
+  - la europea, resumida al pie.
+
+**Pendiente:**
+- 63 funciones por versión que no se ejecutan en vuelo (menús, finales,
+  overlays 3-5);
+- los finales;
+- la comparación con DuckStation.

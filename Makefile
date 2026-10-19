@@ -223,10 +223,18 @@ MISIONES ?= 0-40
 misiones: libre-build
 	@$(PY) tools/misiones.py "$(US)" psx/build/misiones $(MISIONES) 2
 
+misiones-eu: libre-build
+	@$(PY) tools/misiones.py "$(EU)" psx/build/misiones_eu $(MISIONES) 2 --eu
+
 # el interprete en C frente al de referencia, en las mismas entradas que el codigo traducido
 mipsi-check: mipsi
 	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24 --interp psx/build/libmipsi.so
 	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp --overlay $$k data/exe/ovl/overlay$$k.exe 24 --interp psx/build/libmipsi.so; done
+
+# lo mismo en la americana (la version de referencia)
+mipsi-check-us: mipsi
+	@$(PY) tools/recomp/check.py data/exe/ace_us.bin data/recomp_us 24 --interp psx/build/libmipsi.so --region data/recomp_us/region.json
+	@for k in 1 2 3 4 5; do $(PY) tools/recomp/check.py data/exe/ace_us.bin data/recomp_us --overlay $$k data/exe/ovl_us/overlay$$k.exe 24 --interp psx/build/libmipsi.so --region data/recomp_us/region.json; done
 
 recomp-check:
 	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24

@@ -92,6 +92,7 @@ static void (*lookup(uint32_t addr))(RCpu *) {
  * funcion traducida. Sin el, esas llamadas son un fallo (RC_NOFUNC), como hasta ahora */
 static void (*g_interp)(RCpu *, uint32_t);
 void rc_set_interpreter(void (*fn)(RCpu *, uint32_t)) { g_interp = fn; }
+uint32_t rc_ovl_base(void) { return g_ovl_base; }
 int rc_is_lib(uint32_t a) { return (a >= g_lib_lo && a < g_lib_hi) || a == g_lib_main; }
 void (*rc_find(uint32_t addr))(RCpu *) { return g_nfuncs || g_cur_ovl || g_sigs ? lookup(addr) : 0; }
 
