@@ -105,14 +105,20 @@ static void save_screen(int frame) {
 #ifdef AC3_LIBRE
 /* AC3_WIDE=1: pantalla ancha (paso 16) mientras el juego dibuja terreno (la mision): la GTE
  * comprime la x a 3/4. Las capturas salen comprimidas: hay que ensancharlas a 16:9 para verlas */
-static int g_wide;
+static int g_wide, g_hw_main, g_hwcmp_only;
 static void wide_update(void) {
     static uint32_t last;
     static int idle = 1000;
-    if (!g_wide) return;
     if (ac3_terrain_count != last) { last = ac3_terrain_count; idle = 0; }
     else if (idle < 1000) idle++;
+    if (g_hw_main) psx_interp_hw_main(idle < 15);   /* etapa 8, paso 2: la imagen solo en la GPU, en la mision */
+    if (g_hwcmp_only) { extern int psx_hwcmp_only; psx_hwcmp_only = idle < 15; }
+    if (!g_wide) return;
     psx_gte_wide = idle < 15 ? 0.75f : 1.0f;
+}
+static void stale_summary(void) {
+    printf("gpu: accesos a la imagen que solo tiene la GPU: texturas %ld, copias %ld, StoreImage %ld, escrituras fuera de las listas %ld\n",
+           psx_gpu_stale_ev[0], psx_gpu_stale_ev[1], psx_gpu_stale_ev[2], psx_gpu_stale_ev[3]);
 }
 #endif
 
@@ -508,6 +514,9 @@ static void rr_stats(void) {
              tm_raster_nr, tm_raster_nw ? 1000 * tm_raster_w / tm_raster_nw : 0.0, tm_raster_nw); }
     printf("rr: pasos %d, con intermedias %d, saltados (hilos ocupados) %d; hilo de dibujo 0 %.2f ms por trabajo (redibujo %.2f), %.2f el peor\n",
            pf.steps, pf.jobs, pf.skipped, pf.worker0_ms, pf.rebuild_ms, pf.worker_max_ms);
+    extern long ac3_rr_why[5];
+    printf("rr: sin redibujo: sin datos %ld, dibujo de otro paso %ld, corte (giro) %ld, corte (posicion) %ld\n", ac3_rr_why[0], ac3_rr_why[1],
+           ac3_rr_why[2], ac3_rr_why[3]);
     extern double ac3_rr_t[6];
     double t[6];
     if (g_rr_async) ac3_rr_async_times(t);
@@ -677,11 +686,15 @@ int main(int argc, char **argv) {
 #endif
     if (getenv("AC3_HW_NULL")) {   /* etapa 8, paso 1: medir la CPU con la GPU (las listas se anotan y se tiran, sin GLES) */
         psx_interp_hw(hw_null_sink, 0);
+        /* paso 2: AC3_HW_MAIN=1, ademas la imagen solo en la GPU durante la mision */
+        if (getenv("AC3_HW_MAIN")) { g_hw_main = 1; atexit(stale_summary); if (!g_wide) ac3_wide_install(V); }
     }
     if (getenv("AC3_HWCMP")) {   /* paso 17: comparar el dibujo por GLES con el software, lista a lista */
         int psx_hwcmp_start(const char *dir);
         void psx_hwcmp_interp(void);
         if (psx_hwcmp_start(getenv("AC3_HWCMP"))) puts("AC3_HWCMP: sin contexto GLES");
+        /* etapa 8, paso 2: AC3_HWCMP_ONLY=1, la imagen solo en la GPU durante la mision */
+        if (getenv("AC3_HWCMP_ONLY")) { g_hwcmp_only = 1; atexit(stale_summary); if (!getenv("AC3_WIDE")) ac3_wide_install(V); }
         else if (getenv("AC3_INTERP")) psx_hwcmp_interp();   /* tambien las intermedias */
     }
     if (getenv("AC3_WIDE")) {   /* pantalla ancha en la mision */

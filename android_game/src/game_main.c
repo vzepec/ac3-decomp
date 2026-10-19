@@ -109,7 +109,7 @@ static struct {
     struct {
         uint32_t px[640 * 512]; int w, h; double due; int full, wide;
         /* GPU (hw = 1): lista anotada, sus subidas y la VRAM de partida; seq numera las imagenes */
-        int hw, x0, y0, np, nd;
+        int hw, x0, y0, np, nd, real, stale;
         uint32_t seq;
         PsxHwPrim *prims; int capp;
         uint16_t *data; int capd;
@@ -251,6 +251,9 @@ static void frame_wait(void) {
     else if (terrain_idle < 1000) terrain_idle++;
     G.wide_now = MODE_WIDE(G.gfx_mode) && terrain_idle < 15;
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
+    /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
+     * solo interpreta la lista): menos trabajo en el hilo del juego */
+    psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15);
 #endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
@@ -311,6 +314,7 @@ static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, 
         memcpy(G.q[k].bg, bg, 1024 * 512 * 2);
         G.q[k].np = l->n; G.q[k].nd = l->ndata;
         G.q[k].hw = 1; G.q[k].w = w; G.q[k].h = h; G.q[k].x0 = x0; G.q[k].y0 = y0;
+        G.q[k].real = num == den; G.q[k].stale = l->main_stale;
         G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = MODE_WIDE(G.gfx_mode); G.q[k].seq = ++G.seq;
         G.interp_last = now();
     } else G.q[k].capp = G.q[k].capd = 0;
@@ -675,17 +679,40 @@ void android_main(struct android_app *app) {
         pthread_mutex_lock(&G.lock);
         double t = now();
         int best = -1, sw = 0, sh = 0, wide = 0;   /* interpolacion activa: la ultima imagen cuya hora ya llego */
+        /* las imagenes reales de la GPU que se saltan se dibujan igual (sin mostrarlas): la GPU
+         * conserva cada imagen y la siguiente parte de ella (etapa 8, paso 2) */
+        static PsxHwList rl[8];
+        static uint16_t *rbg[8];
+        static int rgeo[8][4];
+        static double rdue[8];
+        int nr = 0;
         if (G.interp_enabled && t - G.interp_last < 0.15) {
             for (int i = 0; i < 8; i++)
                 if (G.q[i].full && G.q[i].due <= t && (best < 0 || G.q[i].due > G.q[best].due)) best = i;
             if (best >= 0)
                 for (int i = 0; i < 8; i++)
-                    if (G.q[i].full && G.q[i].due < G.q[best].due) G.q[i].full = 0;
+                    if (G.q[i].full && G.q[i].due < G.q[best].due) {
+                        if (G.q[i].hw && G.q[i].real) {   /* sus buferes se intercambian con los de rl[nr] */
+                            PsxHwPrim *tp = rl[nr].p; int tcp = rl[nr].max;
+                            uint16_t *td = rl[nr].data; int tcd = rl[nr].maxdata;
+                            uint16_t *tb = rbg[nr];
+                            rl[nr].p = G.q[i].prims; rl[nr].max = G.q[i].capp;
+                            rl[nr].data = G.q[i].data; rl[nr].maxdata = G.q[i].capd;
+                            rl[nr].n = G.q[i].np; rl[nr].ndata = G.q[i].nd; rl[nr].main_stale = G.q[i].stale;
+                            rbg[nr] = G.q[i].bg;
+                            rgeo[nr][0] = G.q[i].x0; rgeo[nr][1] = G.q[i].y0; rgeo[nr][2] = G.q[i].w; rgeo[nr][3] = G.q[i].h;
+                            rdue[nr] = G.q[i].due;
+                            G.q[i].prims = tp; G.q[i].capp = tcp; G.q[i].data = td; G.q[i].capd = tcd; G.q[i].bg = tb;
+                            G.q[i].np = G.q[i].nd = 0;
+                            nr++;
+                        }
+                        G.q[i].full = 0;
+                    }
         }
         /* GPU: los buferes de la ranura se intercambian (sin copiar) y se dibujan fuera del cerrojo */
         static PsxHwList hl;
         static uint16_t *hbg;
-        static int hx0, hy0, hw_w, hw_h;
+        static int hx0, hy0, hw_w, hw_h, hw_real;
         static uint32_t hw_seq, last_seq;
         int hw = 0;
         uint32_t seq = 0;
@@ -698,7 +725,7 @@ void android_main(struct android_app *app) {
                 hl.p = G.q[best].prims; hl.max = G.q[best].capp;
                 hl.data = G.q[best].data; hl.maxdata = G.q[best].capd;
                 hbg = G.q[best].bg;
-                hl.n = G.q[best].np; hl.ndata = G.q[best].nd;
+                hl.n = G.q[best].np; hl.ndata = G.q[best].nd; hl.main_stale = G.q[best].stale; hw_real = G.q[best].real;
                 hx0 = G.q[best].x0; hy0 = G.q[best].y0; hw_w = G.q[best].w; hw_h = G.q[best].h;
                 G.q[best].prims = tp; G.q[best].capp = tcp;
                 G.q[best].data = td; G.q[best].capd = tcd;
@@ -744,10 +771,19 @@ void android_main(struct android_app *app) {
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
         int hw_drawn = 0;
+        for (int a = 0; a < nr; a++)   /* las reales saltadas, en orden */
+            for (int b = a + 1; b < nr; b++)
+                if (rdue[b] < rdue[a]) {
+                    PsxHwList tl = rl[a]; rl[a] = rl[b]; rl[b] = tl;
+                    uint16_t *tb = rbg[a]; rbg[a] = rbg[b]; rbg[b] = tb;
+                    int tg[4]; memcpy(tg, rgeo[a], sizeof tg); memcpy(rgeo[a], rgeo[b], sizeof tg); memcpy(rgeo[b], tg, sizeof tg);
+                    double td = rdue[a]; rdue[a] = rdue[b]; rdue[b] = td;
+                }
+        for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], 1, 1);
         if (hw) {
             if (seq != hw_seq) {
                 double a = now();
-                psx_hw_frame(&hl, hbg, hx0, hy0, hw_w, hw_h, 1);
+                psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, 1, hw_real);
                 c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
                 hw_seq = seq;
             }

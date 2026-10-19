@@ -58,7 +58,11 @@ void psx_interp_perf(PsxInterpPerf *p, int reset);
 #include "psx_gpu.h"
 typedef void (*PsxInterpHwSink)(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h,
                                 int phase_num, int phase_den, int vblanks, double t_step);
-void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por software, como hasta ahora */
+void psx_interp_hw(PsxInterpHwSink sink, int full);
+/* etapa 8, paso 2: con un sumidero (y sin full), la imagen real solo se dibuja en la GPU: el software
+ * solo interpreta la lista y dibuja lo de fuera de la imagen (texturas, paletas). La lista lleva
+ * main_stale cuando la GPU debe partir de su propia copia de la imagen (psx/gl/psx_hw.c) */
+void psx_interp_hw_main(int on);   /* NULL: imagenes por software, como hasta ahora */
 
 /* etapa 8: redibujo del mundo estatico. fn(ot, t) construye en psx_ram la lista de la intermedia de
  * fase t (0 = paso anterior, 1 = este) con el codigo de dibujo del juego (psx/recomp/ac3_rerender.c)

@@ -207,16 +207,17 @@ static void dbg_chain(uint32_t ot, const char *when) {   /* depuracion: rectangu
 }
 
 /* se puede redibujar este paso */
+long ac3_rr_why[5];   /* medicion: por que no se redibuja (sin datos, de otro paso, corte de giro, corte de posicion) */
 static int rr_check(void) {
-    if (!ac3_rr_ready()) return -1;
+    if (!ac3_rr_ready()) { ac3_rr_why[0]++; return -1; }
     /* el dibujo estático tiene que ser de este paso: si no corrió (pausa, menú), el rango guardado
      * ya es otra cosa y desengancharlo rompería la imagen */
-    if (VSync(-1) - g_mark_vb > 3) return -1;
+    if (VSync(-1) - g_mark_vb > 3) { ac3_rr_why[1]++; return -1; }
     /* corte de plano: la cámara salta (más de 1/8 de vuelta o de 2^21 en posición) */
     for (int i = 0; i < 6; i++) {
         int32_t d = g_cur[i] - g_prev[i];
-        if (FIELDS[i].kind == F_ANG) { d &= 0x3FFF; if (d >= 0x2000) d -= 0x4000; if (d > 2048 || d < -2048) return -1; }
-        else if (d > (1 << 21) || d < -(1 << 21)) return -1;
+        if (FIELDS[i].kind == F_ANG) { d &= 0x3FFF; if (d >= 0x2000) d -= 0x4000; if (d > 2048 || d < -2048) { ac3_rr_why[2]++; return -1; } }
+        else if (d > (1 << 21) || d < -(1 << 21)) { ac3_rr_why[3]++; return -1; }
     }
     return 0;
 }
@@ -247,6 +248,13 @@ int ac3_rr_build_from(const RrSnap *s, uint32_t ot, float t) {
 }
 
 static int build_core(uint32_t ot, float t) {
+    if (getenv("AC3_RR_DUMPOBJ")) {
+        uint32_t G = rd32(g_a->g_render);
+        fprintf(stderr, "obj vb %d:", VSync(-1));
+        for (int o = 0x3C4; o < 0x3C4 + 0x5C; o += 4) fprintf(stderr, " %08x", rd32(G + o));
+        fprintf(stderr, "\n");
+    }
+    if (getenv("AC3_RR_SPAN")) fprintf(stderr, "rr: VBlank %d, estatico %08x-%08x (%u bytes)\n", VSync(-1), g_st0, g_st1, g_st1 - g_st0);
     uint32_t gr = rd32(g_a->g_render), cam = rd32(gr + 40);
     dbg_chain(ot, "antes");
     double t0 = now_s(), t1, t2, t3;
@@ -319,8 +327,12 @@ static int build_core(uint32_t ot, float t) {
     t2 = now_s(); ac3_rr_t[2] += t2 - t1;
     /* 4. el dibujo estático del juego */
     g_busy = 1;
-    guest_call(g_a->cam_matrix, cam, gr + 0x2C, gr + 0x4C);
-    for (int i = 0; i < 4; i++) guest_call(g_a->draw[i], 0, 0, 0);
+    static int nodraw = -1;   /* depuracion: AC3_RR_NODRAW=1, se quita lo estatico sin redibujarlo */
+    if (nodraw < 0) nodraw = getenv("AC3_RR_NODRAW") != NULL;
+    if (!nodraw) {
+        guest_call(g_a->cam_matrix, cam, gr + 0x2C, gr + 0x4C);
+        for (int i = 0; i < 4; i++) guest_call(g_a->draw[i], 0, 0, 0);
+    }
     g_busy = 0;
     t3 = now_s(); ac3_rr_t[3] += t3 - t2;
     /* 5. en cada cajón: lo de después del estático > lo redibujado > lo de antes (el juego inserta a

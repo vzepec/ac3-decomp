@@ -99,6 +99,8 @@ static void save(int vb, int num, int den, int w, int h, const uint8_t *badmap, 
 }
 
 static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv, int x0, int y0, int w, int h, int num, int den);
+int psx_hwcmp_only;          /* lo pone native_main (AC3_HWCMP_ONLY) mientras hay mision */
+static int g_cmp_persist;    /* compare: la GPU conserva la imagen (real) */
 
 static void hook(PsxGpu *g, uint32_t ot) {
     int x0 = g->area_x1, y0 = g->area_y1, w = g->area_x2 - g->area_x1 + 1, h = g->area_y2 - g->area_y1 + 1;
@@ -117,6 +119,24 @@ static void hook(PsxGpu *g, uint32_t ot) {
     memcpy(g_bg, g->vram, sizeof g_bg);
     PsxHwList l = {.p = g_prims, .max = 65536, .data = g_data, .maxdata = 1024 * 512,
                    .main_x1 = g->area_x1, .main_y1 = g->area_y1, .main_x2 = g->area_x2, .main_y2 = g->area_y2};
+    if (psx_hwcmp_only) {
+        /* etapa 8, paso 2 (AC3_HWCMP_ONLY, en la mision): el software solo interpreta la lista y la
+         * GPU parte de lo que conserva; la referencia la dibuja entera una copia del software, que
+         * despues pasa a ser la VRAM (las zonas siguen marcadas como solo de la GPU) */
+        static PsxGpu ref;
+        memcpy(&ref, g, sizeof ref);
+        l.main_stale = psx_gpu_main_stale(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+        psx_gpu_record(&l, 1);
+        psx_gpu_draw_list(g, ot);
+        psx_gpu_record_flush(g);
+        psx_gpu_record(NULL, 0);
+        psx_gpu_draw_list_mem(&ref, ot, psx_ram, psx_scratch);
+        g_cmp_persist = 1;
+        compare(&l, g_bg, ref.vram, x0, y0, w, h, 1, 1);
+        g_cmp_persist = 0;
+        memcpy(g, &ref, sizeof *g);
+        return;
+    }
     psx_gpu_record(&l, 0);
     psx_gpu_draw_list(g, ot);
     psx_gpu_record_flush(g);
@@ -170,7 +190,16 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
                        q->u[2], q->v[2], q->ax1 - x0, q->ay1 - y0, q->ax2 - x0, q->ay2 - y0);
         }
     }
-    psx_hw_frame(lp, bg, x0, y0, w, h, 1);
+    /* AC3_HWCMP_PERSIST=1 (etapa 8, paso 2): la GPU conserva cada imagen y parte de ella, no de la
+     * VRAM del software (que aqui si se dibuja entera, de referencia) */
+    static int persist = -1;
+    if (persist < 0) persist = getenv("AC3_HWCMP_PERSIST") != NULL;
+    if (g_cmp_persist) psx_hw_frame_ex(lp, bg, x0, y0, w, h, 1, 1);
+    else if (persist) {
+        PsxHwList l2 = *lp;
+        l2.main_stale = 1;
+        psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
+    } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w; x++) g_sw[y * w + x] = x5(swv[((y0 + y) & 511) * 1024 + ((x0 + x) & 1023)]);

@@ -23,6 +23,11 @@ void psx_hw_shutdown(void);
  * (fondo y texturas de partida). El resultado queda en la textura RGBA de psx_hw_texture (fila 0
  * = arriba), de w*scale x h*scale */
 void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale);
+/* etapa 8, paso 2: lo mismo conservando la imagen en la GPU (una por zona de la VRAM: el doble
+ * bufer). real: la imagen se dibuja sobre la conservada y se queda; si no (intermedia), sobre una
+ * copia. Con l->main_stale se parte de la imagen conservada en lugar de la de bg (el software ya
+ * no la tiene al dia) */
+void psx_hw_frame_ex(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale, int real);
 unsigned psx_hw_texture(int *w, int *h);
 /* tramado de la PS1 (matriz 4x4 por pixel de la VRAM); para comparar a escala 1 con el software */
 void psx_hw_dither(int on);

@@ -89,21 +89,23 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Etapa 8, paso 1 (rama `etapa-8-paso-1`, sin publicar):** probar en la
-Retroid el APK 1.10.1-alfa (`data/android/AC3Recomp-1.10.1-alfa.apk`).
-- **Dibujo por la GPU a escala 1** (la misma imagen que por software).
-- L3+R3: `GPU 16:9` → `SW 16:9` → `GPU 4:3` → `ORIG`.
-- **Qué mirar:**
-  - `FPS` en ciudades, `GPU 16:9` frente a `SW 16:9`;
-  - que la imagen sea igual;
-  - `adb logcat -s AC3Game`: hilo de dibujo 0 y redibujo, ms de GLES.
-- **Después:** la imagen real solo en la GPU (quita ~7 ms al hilo del juego);
-  luego la alta resolución.
+**Etapa 8, paso 2 (rama `etapa-8-paso-2`, sin publicar):** probar en la
+Retroid el APK 1.10.2-alfa.
+- La imagen real, en la misión, solo la dibuja la GPU: menos trabajo en el
+  hilo del juego.
+- Mirar `FPS` y `VEL` en ciudades a baja altura; la pantalla de "MISSION
+  FAILED" (el reflejo); la pausa.
 
-**Pendiente de etapa 8:**
-- objetos móviles por su identidad;
-- orientación de los objetos del arreglo;
-- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`).
+**Paso 3 (en curso):** llevar a la interpolación nueva lo que se mueve.
+- **La repetición del final de misión** (el avión doble que vio el dueño):
+  - el avión lo dibuja la parte estática, leyendo `g_render+0x3C4`
+    (posición y ángulos), que no se interpola;
+  - se reproduce con la demostración del título (VBlank ~6000 en la US, sin
+    guion).
+- **Orientación de los objetos del arreglo** (+0x10 / +0x14).
+- **Aviones, misiles y efectos de la misión:** los dibujan los subsistemas que
+  llama la lógica (`FUN_80033034`: `FUN_8006b088`, `FUN_8007c6e4`,
+  `FUN_80083cfc`…). Hay que separar su dibujo de su lógica.
 
 ## Pendiente
 

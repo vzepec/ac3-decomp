@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Etapa 8, paso 2: la imagen real solo en la GPU (APK 1.10.2-alfa)
+
+- **Software:** en la misión solo interpreta la lista (`only`). La GPU
+  conserva cada imagen (color, bit 15 y stencil) y dibuja encima.
+- **Seguimiento** de las zonas que solo tiene la GPU (`psx_gpu_stale_ev`), en
+  las 41 misiones:
+  - texturas que las leen en 7 misiones: el reflejo de "MISSION FAILED", que
+    usa la imagen anterior;
+  - una escritura fuera de las listas.
+  - Las dos cosas se pasan a la GPU: copia de su imagen a su textura de la
+    VRAM, con el bit 15 (sin él, el reflejo salía casi negro), y subida de lo
+    escrito.
+- **Comparador `AC3_HWCMP_ONLY=1`** (referencia por software en una copia):
+  41 misiones, 127.072 listas, 3 con bloques malos.
+- **PC:** el rasterizado de la imagen real en el hilo del juego pasa de 6,45 a
+  0,45 ms por paso.
+
 ## 2026-10-19 — Etapa 8, paso 1: dibujo por la GPU a escala 1 (APK 1.10.1-alfa)
 
 - **GLES vuelve a la app** con la interpolación nueva. Las intermedias solo

@@ -369,3 +369,57 @@ las listas y las tira, sin GLES):
   rasterizado del hilo del juego, unos 7 ms en el PC). Exige seguir qué
   partes de la memoria de vídeo lee el juego;
 - después, la escala (alta resolución).
+
+## Paso 2: la imagen real solo en la GPU (rama `etapa-8-paso-2`)
+
+**Objetivo:** quitar del hilo del juego el rasterizado por software de la
+imagen real (~6,5 ms por paso en la ciudad de la misión 0, en el PC).
+
+**Cómo** (el diseño de los renderizadores por hardware de los emuladores):
+- **Software** (`psx_gpu_record` con `only`): en la misión, la lista solo se
+  interpreta. Lo de fuera de la imagen (texturas, paletas) se sigue dibujando
+  y sube a la GPU como hasta ahora.
+- **GPU** (`psx/gl/psx_hw.c`, `psx_hw_frame_ex`):
+  - conserva cada imagen de la VRAM (el doble búfer): color, un segundo
+    búfer con el bit 15 de cada píxel y el stencil para la máscara;
+  - la real se dibuja sobre la suya; la intermedia, sobre una copia.
+  - Si el software no tiene la imagen al día (`main_stale`), parte de la
+    suya y no de la VRAM del software.
+- **Seguimiento** (`psx/src/gpu.c`):
+  - las zonas que solo tiene la GPU, por hilo (el del juego);
+  - cuenta lo que las lee o escribe por otro camino (`psx_gpu_stale_ev`);
+  - **escrituras fuera de las listas** (LoadImage, ClearImage, MoveImage): se
+    pasan a la GPU con la siguiente lista (subida y copia a la imagen);
+  - **lecturas como textura:** la lista apunta las zonas (`read`), y la GPU
+    copia antes su imagen a su textura de la VRAM, convertida a 15 bits con
+    el bit 15 de su segundo búfer (`read_zones`).
+- **App:** solo en la misión con la GPU (`psx_interp_hw_main`). La
+  presentación dibuja también las imágenes reales que se salta, para que la
+  imagen conservada no se atrase.
+
+**Lo que salió en las 41 misiones** (`AC3_HW_NULL=1 AC3_HW_MAIN=1`, binario
+libre):
+- sin fallos;
+- lecturas de la imagen como textura en 7 misiones (232 u 80):
+  - es el efecto de "MISSION FAILED", que refleja la imagen anterior (misión
+    10, VBlank 3455: cuadriláteros de 160×120 con la página del otro búfer, a
+    15 bits);
+  - sin el bit 15 en la copia salía casi negro, porque el reflejo es
+    semitransparente por texel;
+- una escritura fuera de las listas (misión 16).
+
+**Comparador** (`AC3_HWCMP_ONLY=1`): una copia de la GPU por software dibuja
+la lista entera como referencia, mientras la GPU parte de lo que conserva.
+- Misión 10, reflejo incluido: **0 listas malas** de 3.131.
+- **Las 41 misiones: 127.072 listas, 3 con bloques malos (6 bloques).**
+  - Misión 7, VBlank 2763: la estela de triángulos finos (la misma que con
+    el dibujo GPU normal).
+  - Misiones 2 y 40, en el choque del guion: un matiz de sombreado de pocos
+    píxeles encima del radar. Puede ser un hueco sin cubrir que hereda una
+    diferencia de una imagen anterior. `SIN RESOLVER`, menor.
+- `AC3_HWCMP_PERSIST=1`: solo prueba partir de la imagen conservada (con el
+  software completo).
+
+**Medida en el PC** (misión 0, `AC3_PACE=60`): el rasterizado de la imagen
+real pasa de 6,45 ms a **0,45 ms**. El total del hilo del juego, a ritmo real,
+lo enmascara el escalado de frecuencia de la CPU (18,8 → 16,9 ms).

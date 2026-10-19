@@ -227,8 +227,12 @@ static void capture(PsxGpu *g, int num, int den, int vb) {
  * (psx/gl/psx_hw.c). La imagen real se sigue dibujando por software (la VRAM del juego); las
  * intermedias, solo se interpretan (registro sin dibujar la imagen principal) ---- */
 static PsxInterpHwSink g_hwsink;
-static int g_hwfull;
+static int g_hwfull, g_hwmain;
 void psx_interp_hw(PsxInterpHwSink sink, int full) { g_hwsink = sink; g_hwfull = full; }
+void psx_interp_hw_main(int on) { g_hwmain = on; }
+static int g_real_only;   /* la imagen real de este paso solo se dibujo en la GPU */
+static int g_real_nread;
+static int16_t g_real_read[4][4];
 
 static int hw_prepare(PsxHwList *l, int x1, int y1, int x2, int y2) {
     if (!l->p) {
@@ -259,8 +263,15 @@ static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
     }
     int x0 = g->area_x1, y0 = g->area_y1;
     memcpy(bg, g->vram, sizeof bg);
-    psx_gpu_record(&L, 0);
+    /* etapa 8, paso 2: con g_hwmain, el software no dibuja la imagen (solo lo de fuera); la GPU
+     * parte de su propia copia si el software ya no la tenia al dia */
+    L.main_stale = psx_gpu_main_stale(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+    g_real_only = g_hwmain && !g_hwfull;
+    double r0 = tnow();
+    psx_gpu_record(&L, g_real_only);
     psx_gpu_draw_list(g, ot);
+    tm_raster_real += tnow() - r0; tm_raster_nr++;
+    g_real_nread = L.nread; memcpy(g_real_read, L.read, sizeof g_real_read);
     psx_gpu_record_flush(g);
     psx_gpu_record(NULL, 0);
     g_hwsink(&L, bg, g->vram, x0, y0, w, h, num, den, vb, g_tstep);
@@ -350,6 +361,9 @@ static struct {
     uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
     int rebuilt;
     int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
+    int real_only;                    /* etapa 8, paso 2: la real solo esta en la GPU (base de las intermedias) */
+    int nread;                        /* y las zonas de la GPU que lee como textura (las mismas en las intermedias) */
+    int16_t read[4][4];
     PsxGpu gpu;
     PhaseList L;
     int den, interval, x0, y0, dw, dh, on, rgb24;
@@ -433,12 +447,14 @@ static void *worker(void *arg) {
             int den = J.den;
             apply_phase(&J.L, k, den, R, Sc);
             if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
+                hl.main_stale = J.real_only;   /* la base (la real pegada) no esta en el software */
                 /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
                  * con full (comparador), tambien la imagen por software */
                 psx_gpu_record(&hl, !g_hwfull);
                 psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
                 psx_gpu_record_flush(gpu);
                 psx_gpu_record(NULL, 0);
+                hl.nread = J.nread; memcpy(hl.read, J.read, sizeof hl.read);   /* lo que lee la real de la GPU */
                 J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
                 continue;
             }
@@ -1045,6 +1061,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
             if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
             J.hwsink = J.on && !J.rgb24 ? g_hwsink : NULL;
+            J.real_only = g_real_only;
+            J.nread = g_real_nread; memcpy(J.read, g_real_read, sizeof J.read);
             if (J.rr_async && !(J.dw > 0 && J.dh > 0)) { g_rra->done(); J.rr_async = 0; }   /* sin trabajo: se suelta */
         }
         double tc = tnow();
