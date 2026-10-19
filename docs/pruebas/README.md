@@ -10,3 +10,5 @@ indicada.
 | 2026-10-18 | [Las 41 misiones, una a una (americana)](2026-10-18-misiones-us.md) | 41/41 cargan y se vuelan, 0 fallos |
 | 2026-10-18 | [Las 41 misiones, una a una (europea)](2026-10-18-misiones-eu.md) | 41/41 cargan y se vuelan, 0 fallos |
 | 2026-10-18 | [Funciones validadas con estados reales](2026-10-18-validacion-estados-reales.md) | US 1.750/1.824 (95,9 %), EU 1.754/1.821 (96,3 %), 0 distintas |
+| 2026-10-18 | [Las secuencias de final y los créditos](2026-10-18-finales.md) | Las dos secuencias, en US y EU, se reproducen y el juego vuelve solo al título, 0 fallos |
+| 2026-10-18 | [Guardar y cargar partida](2026-10-18-guardado.md) | Guarda y carga en US y EU (partida válida en la tarjeta), 0 fallos |

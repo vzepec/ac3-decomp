@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-18 — Finales, créditos, guardar y cargar: funcionan en US y EU
+
+- **Finales:** `FUN_80037d58` pone `g_state + 0x3AC` = 1 (nodo `0x2E`) o 2
+  (nodos `0x36`/`0x3B`). El modo 5 reproduce la secuencia; con 2 sigue en los
+  créditos (modo 7, overlay 3).
+  - `AC3_SEQ=v` la fuerza en la demostración del título.
+  - `tools/finales.py`: las dos secuencias, en US y EU, se reproducen y el
+    juego vuelve solo al título, sin fallos. En la europea hay que pasar
+    antes el menú de idioma, que si no espera para siempre.
+- **Guardar y cargar** (`tools/guardado.py`, `PSX_CARDDBG`): el juego crea
+  y escribe su partida (US 4.860 B `BASLUS-00972AC3NA`, EU 4.604 B
+  `BESCESP02066AC3PAL`, cabecera "SC") y la carga desde el menú principal.
+  - Error propio: en "Save to file #1?" el cursor empieza en "no", y los
+    primeros guiones volvían a la elección de archivo. La capa estaba bien.
+- **Recorrido:** funciona 46/46. Falta DuckStation (al final, decisión del
+  dueño).
+
 ## 2026-10-18 — Estados reales: 95,9 % del código validado (US), 96,3 % (EU); misiones EU 41/41
 
 **Pregunta del dueño:** la infografía seguía en 91 % recompilado y 0 en el

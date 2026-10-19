@@ -1,7 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="840" height="560" viewBox="0 0 840 560" font-family="Segoe UI, Helvetica, Arial, sans-serif">
 <rect width="840" height="560" rx="12" fill="#0d1117"/>
 <text x="24" y="38" fill="#e6edf3" font-size="20" font-weight="600">Ace Combat 3 nativo: progreso</text>
-<text x="24" y="60" fill="#8b949e" font-size="13">Versi&#243;n americana (SLUS-00972), la de referencia &#183; Etapa 6: paso 5, recorrido 1:1 (41/41 misiones) &#183; Etapa 7: APK libre publicado (v1.7-alfa)</text>
+<text x="24" y="60" fill="#8b949e" font-size="13">Versi&#243;n americana (SLUS-00972), la de referencia &#183; Etapa 6: paso 5, recorrido 1:1 (falta la comparacion con DuckStation) &#183; Etapa 7: APK libre publicado (v1.7-alfa)</text>
 <text x="24" y="100" fill="#e6edf3" font-size="15">C&#243;digo del juego validado (int&#233;rprete del APK frente al de referencia)</text>
 <text x="816" y="100" fill="#e6edf3" font-size="15" text-anchor="end" font-weight="600">95.9 % &#183; 1750 / 1824 funciones</text>
 <rect x="24" y="110" width="792" height="26" rx="4" fill="#30363d"/><rect x="24" y="110" width="759.9" height="26" rx="4" fill="#2ea043"/>
@@ -32,9 +32,9 @@
 <text x="24" y="354" fill="#e6edf3" font-size="14">Pasos de la etapa 6</text>
 <text x="816" y="354" fill="#e6edf3" font-size="14" text-anchor="end">5 / 8 &#183; 62 %</text>
 <rect x="24" y="362" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="362" width="495.0" height="14" rx="4" fill="#a371f7"/>
-<text x="24" y="400" fill="#e6edf3" font-size="14">Recorrido: funciona (arranque, men&#250;s, 41 misiones; falta el final)</text>
-<text x="816" y="400" fill="#e6edf3" font-size="14" text-anchor="end">45 / 46 &#183; 98 %</text>
-<rect x="24" y="408" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="408" width="774.8" height="14" rx="4" fill="#d29922"/>
+<text x="24" y="400" fill="#e6edf3" font-size="14">Recorrido: funciona (arranque, men&#250;s, 41 misiones, finales; guardar y cargar)</text>
+<text x="816" y="400" fill="#e6edf3" font-size="14" text-anchor="end">46 / 46 &#183; 100 %</text>
+<rect x="24" y="408" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="408" width="792.0" height="14" rx="4" fill="#d29922"/>
 <text x="24" y="446" fill="#e6edf3" font-size="14">Recorrido: comparado 1:1 con DuckStation</text>
 <text x="816" y="446" fill="#e6edf3" font-size="14" text-anchor="end">0 / 46 &#183; 0 %</text>
 <rect x="24" y="454" width="792" height="14" rx="4" fill="#30363d"/><rect x="24" y="454" width="0.0" height="14" rx="4" fill="#db6d28"/>

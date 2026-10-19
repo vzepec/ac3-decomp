@@ -66,7 +66,7 @@ distribuido (`docs/06-legal.md`).
 | 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
 | 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ✅ 1.672/1.821 funciones validadas con estados aleatorios, 0 distintas; el resto, con estados reales en el paso 4 |
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
-| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **las 41 misiones cargan y se vuelan sin fallos en las dos versiones** (`make misiones`, `make misiones-eu`; `docs/pruebas/`); falta completarlas, los finales, guardar/cargar y la comparación con DuckStation |
+| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **funciona entero en las dos versiones:** las 41 misiones, las secuencias de final con los créditos y guardar/cargar, sin fallos (`docs/pruebas/`). Falta la comparación con DuckStation, que el dueño deja para el final |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
 | 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (la americana, estable; la europea, aparcada); sprites de la CPU, alta resolución y panorámico ⏳ |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
@@ -961,3 +961,29 @@ recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
   overlays 3-5);
 - los finales;
 - la comparación con DuckStation.
+
+### Paso 13: finales, créditos, guardar y cargar
+
+- **Finales:**
+  - `FUN_80037d58` escribe en `g_state + 0x3AC` la secuencia de final según
+    el nodo de la historia: 1 para `0x2E`, 2 para `0x36`/`0x3B`.
+  - El **modo 5** la reproduce; con 2 sigue en los **créditos** (modo 7,
+    overlay 3).
+  - `AC3_SEQ=v` la fuerza en la demostración del título.
+  - Resultado (`tools/finales.py`, `make finales` / `finales-eu`): las dos
+    secuencias se reproducen en las dos versiones y el juego vuelve solo a su
+    ciclo, sin fallos. Los créditos completos duran unos 4 minutos.
+- **Guardar y cargar** (`tools/guardado.py`, `make guardado` /
+  `guardado-eu`):
+  - guarda desde la interfaz de la UPEO: `open` con FCREAT, `write` de 4.860
+    B (US) o 4.604 B (EU), partida válida con cabecera "SC";
+  - carga desde el menú principal con una copia de la tarjeta;
+  - sin fallos en las dos versiones.
+  - El primer intento no guardaba: en "Save to file #1?" el cursor empieza
+    en "no". El fallo era del guion, no de la capa.
+- **`PSX_CARDDBG=1`:** la capa de tarjeta anota las llamadas del juego
+  (open/read/write/firstfile).
+- **Registro:** `docs/pruebas/2026-10-18-finales.md` y
+  `2026-10-18-guardado.md`.
+- **Recorrido:** funciona 46/46 (arranque, menús, 41 misiones y final).
+  Falta compararlo con DuckStation.

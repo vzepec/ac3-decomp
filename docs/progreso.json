@@ -23,13 +23,13 @@
  "pasos": {
   "total": 8,
   "hechos": 5,
-  "actual": "paso 5, recorrido 1:1 (41/41 misiones)"
+  "actual": "paso 5, recorrido 1:1 (falta la comparacion con DuckStation)"
  },
  "recorrido": {
   "total": 46,
-  "funcionan": 45,
+  "funcionan": 46,
   "duckstation": 0,
-  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final; funcionan: cargan y se vuelan sin fallos (make misiones, docs/pruebas/)"
+  "nota": "arranque, titulo, menu, briefing, 41 misiones (registros 6-46), final; funcionan: cargan y se juegan sin fallos (misiones, finales y creditos, guardar/cargar: docs/pruebas/)"
  },
  "us": {
   "funciones": {

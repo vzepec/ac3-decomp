@@ -226,6 +226,18 @@ misiones: libre-build
 misiones-eu: libre-build
 	@$(PY) tools/misiones.py "$(EU)" psx/build/misiones_eu $(MISIONES) 2 --eu
 
+# etapa 6, paso 13: las secuencias de final y los creditos (tools/finales.py)
+finales: libre-build
+	@$(PY) tools/finales.py "$(US)" psx/build/finales
+finales-eu: libre-build
+	@$(PY) tools/finales.py "$(EU)" psx/build/finales_eu --eu
+
+# guardar y cargar partida en la tarjeta (tools/guardado.py); cada vez en una carpeta nueva
+guardado: libre-build
+	@$(PY) tools/guardado.py "$(US)" psx/build/guardado_$$(date +%s)
+guardado-eu: libre-build
+	@$(PY) tools/guardado.py "$(EU)" psx/build/guardado_eu_$$(date +%s) --eu
+
 # el interprete en C frente al de referencia, en las mismas entradas que el codigo traducido
 mipsi-check: mipsi
 	@$(PY) tools/recomp/check.py data/exe/ace_eu.bin data/recomp 24 --interp psx/build/libmipsi.so

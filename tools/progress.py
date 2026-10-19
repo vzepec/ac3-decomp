@@ -179,7 +179,7 @@ def cmd_svg():
     rows = [('Funciones que se ejecutan en las 41 misiones', ex, total, '#3fb950'),
             ('Capa PsyQ (funciones de Sony que usa el juego)', d['capa']['hechas'], d['capa']['necesarias'], '#1f6feb'),
             ('Pasos de la etapa 6', d['pasos']['hechos'], d['pasos']['total'], '#a371f7'),
-            ('Recorrido: funciona (arranque, men&#250;s, 41 misiones; falta el final)', rec['funcionan'], rec['total'], '#d29922'),
+            ('Recorrido: funciona (arranque, men&#250;s, 41 misiones, finales; guardar y cargar)', rec['funcionan'], rec['total'], '#d29922'),
             ('Recorrido: comparado 1:1 con DuckStation', rec['duckstation'], rec['total'], '#db6d28')]
     for label, a, b, col in rows:
         out.append('<text x="24" y="%d" fill="#e6edf3" font-size="14">%s</text>' % (y, label))
