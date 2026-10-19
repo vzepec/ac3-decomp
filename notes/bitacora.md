@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Investigación: cómo hacen 60 fps otros ports (docs/13-60fps.md)
+
+**Familias de técnicas:**
+- lógica a 60 Hz: Crash1/2 recompilados, parches de DuckStation, CTR;
+- interpolación de matrices con identidad etiquetada a mano: Zelda64Recomp +
+  RT64, TRX;
+- interpolación en pantalla (la nuestra);
+- flujo óptico (nadie lo usa).
+
+**Medido:** la comparación EU/US de las funciones del ejecutable no muestra
+ninguna constante de tiempo ajustada para PAL; solo posiciones del HUD. AC3
+cuenta en ticks fijos y no tiene escala de tiempo que reaprovechar.
+DuckStation tampoco tiene parche de 60 fps para AC3.
+
+**Veredicto:** no a la lógica a 60 Hz. Sí, como etapa propia, a volver a
+dibujar las intermedias con el código de dibujo del juego y una cámara
+interpolada. El método actual queda de respaldo.
+
 ## 2026-10-19 — El cielo no se interpolaba (temblaba al cabecear)
 
 **Causa:** el cielo se dibuja antes de la primera orden E3 de la lista, y

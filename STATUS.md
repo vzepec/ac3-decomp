@@ -97,6 +97,10 @@ rama `etapa-6-paso-20`; nada fusionado ni subido).
 - Si va bien: fusionar `etapa-6-paso-20` en `develop` / `main` y publicarla
   (será la 1.9-alfa).
 
+**60 fps a largo plazo:** `docs/13-60fps.md`. Veredicto: volver a dibujar las
+intermedias con el código de dibujo del juego y una cámara interpolada. Una
+etapa propia, de varias semanas.
+
 **El modo de alta resolución** (GLES) queda en la rama
 `gles-alta-resolucion` para una integración futura.
 
