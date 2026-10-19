@@ -15,6 +15,7 @@ typedef struct {
     uint32_t main, gp, bss_start, bss_end, ovl_base, lib_lo, lib_hi, lib_main, pad_buf;
     uint32_t g_state_ptr;   /* puntero al estado de la partida (mision actual en +0x390, short) */
     uint32_t mission_start; /* funcion que arranca la mision: registro = mission_records[+0x390] */
+    uint32_t seq_start;     /* primer paso del modo 5: secuencia segun g_state + 0x3AC (0 demo, 1, 2 final) */
     int refresh;            /* 50 (PAL) / 60 (NTSC) */
     const RcFunc *hle;
     const unsigned *nhle;

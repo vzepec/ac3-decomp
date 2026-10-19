@@ -333,6 +333,20 @@ static void force_mission(RCpu *c) {
     *m = (int16_t)g_force_mission;
     g_force_mission = -1;
 }
+
+/* AC3_SEQ=v: al entrar en el primer paso del modo 5 (la secuencia que reproduce el juego segun
+ * g_state + 0x3AC: 0 la demostracion del menu, 2 el final de la campana, que sigue en los
+ * creditos) se escribe v en g_state + 0x3AC, la primera vez */
+static int g_force_seq = -1;
+static void force_seq(RCpu *c) {
+    (void)c;
+    uint32_t st = *(uint32_t *)psx_ptr(V->g_state_ptr);
+    uint8_t *q = (uint8_t *)psx_ptr(st + 0x3AC);
+    printf("secuencia: el juego entra en el modo 5 con 0x3AC = %d en el fotograma %d%s\n", *q, last_vcount,
+           g_force_seq >= 0 ? "; se fuerza" : "");
+    if (g_force_seq >= 0) { printf("  -> %d\n", g_force_seq); *q = (uint8_t)g_force_seq; g_force_seq = -1; }
+    fflush(stdout);
+}
 #endif
 
 int main(int argc, char **argv) {
@@ -366,7 +380,7 @@ int main(int argc, char **argv) {
 #endif
     psx_pad_connect(0, getenv("AC3_PAD_ID") ? (int)strtol(getenv("AC3_PAD_ID"), NULL, 16) : 0x41);   /* 73 = analogico */
     psx_pad_connect(1, 0);
-    psx_card_attach(0, "/tmp/ac3_native_tarjeta1.mcd");
+    psx_card_attach(0, getenv("AC3_CARD") ? getenv("AC3_CARD") : "/tmp/ac3_native_tarjeta1.mcd");   /* AC3_CARD: otra tarjeta */
     psx_card_detach(1);
     psx_set_refresh(AC3_REFRESH);
     /* codigo recompilado: residente, overlays (deteccion por firma) y enlace con psx/ */
@@ -385,6 +399,10 @@ int main(int argc, char **argv) {
         if (getenv("AC3_STATES_MAX")) g_states_max = atoi(getenv("AC3_STATES_MAX"));
         mipsi_watch(list, n, save_state);
         printf("estados: %d funciones vigiladas -> %s\n", n, g_states_dir);
+    }
+    if (getenv("AC3_SEQ")) {   /* prueba: forzar la secuencia del modo 5 (final: 2) */
+        g_force_seq = atoi(getenv("AC3_SEQ"));
+        mipsi_set_hook(V->seq_start, force_seq);
     }
     if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
         g_force_mission = atoi(getenv("AC3_MISSION"));

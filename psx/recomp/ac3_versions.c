@@ -11,9 +11,9 @@ extern const unsigned hle_count_eu, hle_count_us;
 
 const Ac3Version ac3_versions[] = {
     {"EU", "\\SCES_020.66;1", 0x80025D08u, 0x800BA9F4u, 0x800BACB0u, 0x800C9DC0u, 0x800C9DC0u, 0x80099DE0u, 0x800AE09Cu,
-     0x80025214u, 0x800BAA04u, 0x800BACD0u, 0x800355F0u, 50, hle_table_eu, &hle_count_eu},
+     0x80025214u, 0x800BAA04u, 0x800BACD0u, 0x800355F0u, 0x800563C8u, 50, hle_table_eu, &hle_count_eu},
     {"US", "\\SLUS_009.72;1", 0x80025E5Cu, 0x800BB454u, 0x800BB808u, 0x800CA908u, 0x800CA908u, 0x8009A1B4u, 0x800AE470u,
-     0x80025394u, 0x800BB464u, 0x800BB828u, 0x800357B8u, 60, hle_table_us, &hle_count_us},
+     0x80025394u, 0x800BB464u, 0x800BB828u, 0x800357B8u, 0x8005658Cu, 60, hle_table_us, &hle_count_us},
 };
 const int ac3_nversions = 2;
 

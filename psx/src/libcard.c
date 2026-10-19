@@ -3,6 +3,7 @@
  * el mismo que usan los emuladores): bloque 0 = cabecera "MC" (marco 0) y directorio
  * (marcos 1-15, uno por bloque de datos), bloques 1-15 de 8 KB con los archivos. */
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include "psx_libapi.h"
@@ -111,8 +112,11 @@ void _bu_init(void) {}
  * _card_clear, que escribe directamente en la tarjeta, con eventos de hardware (HwCARD,
  * 0xF0000011). Con tarjeta: fin de la operacion (EvSpIOE); sin ella: tiempo agotado
  * (EvSpTIMOUT). Devuelven 1 (operacion aceptada). */
+/* depuracion: PSX_CARDDBG=1 imprime las llamadas del juego a la tarjeta */
+#define CDBG(...) do { if (getenv("PSX_CARDDBG")) { fprintf(stderr, "tarjeta: " __VA_ARGS__); } } while (0)
 static int32_t card_op(int32_t chan, uint32_t cls) {
     int port = (chan >> 4) & 1;
+    CDBG("card_op canal %x clase %08x\n", (unsigned)chan, cls);
     DeliverEvent(cls, C[port].present ? 0x0004 : 0x0100);
     return 1;
 }
@@ -129,7 +133,13 @@ int32_t _card_format(int32_t chan) {
 }
 
 /* open: FREAD 1, FWRITE 2, FCREAT 0x200 (bloques en los bits 16+), FASYNC 0x8000 */
+static int32_t bios_open_(const char *name, int32_t mode);
 int32_t bios_open(const char *name, int32_t mode) {
+    int32_t r = bios_open_(name, mode);
+    CDBG("open(\"%s\", %#x) = %d\n", name, (unsigned)mode, r);
+    return r;
+}
+static int32_t bios_open_(const char *name, int32_t mode) {
     const char *file;
     int port = parse(name, &file);
     if (port < 0) return -1;
@@ -182,9 +192,10 @@ static int32_t rw(int32_t fd, uint8_t *buf, int32_t n, int wr) {
     return done;
 }
 
-int32_t bios_read(int32_t fd, void *buf, int32_t n) { return rw(fd, buf, n, 0); }
+int32_t bios_read(int32_t fd, void *buf, int32_t n) { int32_t r = rw(fd, buf, n, 0); CDBG("read(%d, %d) = %d\n", fd, n, r); return r; }
 int32_t bios_write(int32_t fd, const void *buf, int32_t n) {
     int32_t r = rw(fd, (uint8_t *)(uintptr_t)buf, n, 1);
+    CDBG("write(%d, %d) = %d\n", fd, n, r);
     if (r >= 0) card_flush(F[fd - 2].port);
     return r;
 }
@@ -223,6 +234,7 @@ static DIRENTRY *dir_next(DIRENTRY *d) {
 DIRENTRY *bios_firstfile(const char *name, DIRENTRY *d) {
     const char *pat;
     int port = parse(name, &pat);
+    CDBG("firstfile(\"%s\") puerto %d\n", name, port);
     if (port < 0) return NULL;
     DIRS.port = port;
     DIRS.next = 1;
