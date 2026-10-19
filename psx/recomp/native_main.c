@@ -427,6 +427,10 @@ int main(int argc, char **argv) {
         g_force_seq = atoi(getenv("AC3_SEQ"));
         mipsi_set_hook(V->seq_start, force_seq);
     }
+    if (getenv("AC3_HWCMP")) {   /* paso 17: comparar el dibujo por GLES con el software, lista a lista */
+        int psx_hwcmp_start(const char *dir);
+        if (psx_hwcmp_start(getenv("AC3_HWCMP"))) puts("AC3_HWCMP: sin contexto GLES");
+    }
     if (getenv("AC3_WIDE")) {   /* pantalla ancha en la mision */
         g_wide = 1;
         ac3_wide_install(V);
