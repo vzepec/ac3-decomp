@@ -10,10 +10,15 @@
  * lado), un hueco, un pico o un recorte por mascara si. Un bloque es "malo" con BAD_PIX o mas
  * pixeles malos.
  *
+ * Con la interpolacion (psx_hwcmp_interp), tambien las imagenes intermedias: los hilos de dibujo
+ * las rasterizan por software y GLES las dibuja desde la misma lista.
+ *
  * Salida: una linea por lista con bloques malos (hwcmp: ...) y, para algunas, <dir>/c<VBlank>.ppm
+ * (intermedias: c<VBlank>_<k>-<n>.ppm)
  * con software | GLES | mapa de bloques malos (rojo). Al salir, el resumen. Requiere un contexto
  * GLES 3 (EGL pbuffer; en el PC, Mesa). */
 #include <EGL/egl.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,6 +26,7 @@
 #include "psx_gpu.h"
 #include "psx_hw.h"
 #include "psx_mem.h"
+#include "psx_interp.h"
 
 #define BAD_DIFF 40
 #define BAD_PIX 8
@@ -30,6 +36,7 @@ extern void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
 int VSync(int);
 
 static const char *g_dir;
+static pthread_mutex_t g_mu = PTHREAD_MUTEX_INITIALIZER;
 static EGLDisplay g_dpy;
 static EGLSurface g_surf;
 static EGLContext g_ctx;
@@ -37,7 +44,7 @@ static long g_lists, g_bad_lists, g_bad_blocks, g_pixels, g_same, g_close;
 static int g_saves, g_last_save = -1000;
 /* listas con menos del 99 % de pixeles casi iguales (diferencias repartidas que los bloques no
  * ven: p. ej. el fondo leido un pixel al lado) y la peor */
-static long g_low;
+static long g_low, g_inter;
 static double g_worst = 101.0;
 static int g_worst_vb;
 static PsxHwPrim g_prims[65536];
@@ -69,9 +76,10 @@ static uint32_t x5(uint16_t c) {
     return (uint32_t)r | (uint32_t)g << 8 | (uint32_t)b << 16;
 }
 
-static void save(int vb, int w, int h, const uint8_t *badmap, int bw) {
+static void save(int vb, int num, int den, int w, int h, const uint8_t *badmap, int bw) {
     char path[600];
-    snprintf(path, sizeof path, "%s/c%05d.ppm", g_dir, vb);
+    if (num == den) snprintf(path, sizeof path, "%s/c%05d.ppm", g_dir, vb);
+    else snprintf(path, sizeof path, "%s/c%05d_%d-%d.ppm", g_dir, vb, num, den);
     FILE *f = fopen(path, "wb");
     if (!f) return;
     fprintf(f, "P6\n%d %d\n255\n", w * 3 + 8, h);
@@ -89,6 +97,8 @@ static void save(int vb, int w, int h, const uint8_t *badmap, int bw) {
     }
     fclose(f);
 }
+
+static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv, int x0, int y0, int w, int h, int num, int den);
 
 static void hook(PsxGpu *g, uint32_t ot) {
     int x0 = g->area_x1, y0 = g->area_y1, w = g->area_x2 - g->area_x1 + 1, h = g->area_y2 - g->area_y1 + 1;
@@ -111,11 +121,29 @@ static void hook(PsxGpu *g, uint32_t ot) {
     psx_gpu_draw_list(g, ot);
     psx_gpu_record_flush(g);
     psx_gpu_record(NULL, 0);
-    if (l.n == 0) return;
+    psx_gpu_record(NULL, 0);
+    compare(&l, g_bg, g->vram, x0, y0, w, h, 1, 1);
+}
+
+/* sumidero de la interpolacion (AC3_HWCMP con AC3_INTERP y AC3_INTERP_THREADS): imagenes reales
+ * e intermedias, con la del software (psx_interp_hw(..., 1)) */
+static void interp_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num,
+                        int den, int vb, double t) {
+    (void)vb; (void)t;
+    if (sw) compare(l, bg, sw, x0, y0, w, h, num, den);
+}
+
+/* compara una lista: GLES (escala 1) desde bg frente a swv, la VRAM tras el software; area
+ * (x0, y0, w, h). La llaman el enganche de DrawOTag y el sumidero de la interpolacion (hilo del
+ * juego y de dibujo: va bajo un cerrojo, con el contexto tomado solo mientras tanto) */
+static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv, int x0, int y0, int w, int h, int num, int den) {
+    if (lp->n == 0 || w <= 0 || h <= 0 || w > 1024 || h > 512) return;
+    pthread_mutex_lock(&g_mu);
+    eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx);
     if (getenv("AC3_HWCMP_MASK")) {   /* depuracion: primitivas con bit de mascara (poner / comprobar) */
         int n[16] = {0};
-        for (int i = 0; i < l.n; i++) {
-            int f = g_prims[i].flags;
+        for (int i = 0; i < lp->n; i++) {
+            int f = lp->p[i].flags;
             if (f & (PSX_HWF_MASKSET | PSX_HWF_MASKCHK))
                 n[(f & PSX_HWF_MASKSET ? 1 : 0) | (f & PSX_HWF_MASKCHK ? 2 : 0) | (f & PSX_HWF_SEMI ? 4 : 0) | (f & PSX_HWF_TEX ? 8 : 0)]++;
         }
@@ -126,8 +154,8 @@ static void hook(PsxGpu *g, uint32_t ot) {
     int pv, px, py;   /* depuracion: AC3_HWCMP_PROBE=vblank,x,y: primitivas que cubren ese pixel del area */
     if (getenv("AC3_HWCMP_PROBE") && sscanf(getenv("AC3_HWCMP_PROBE"), "%d,%d,%d", &pv, &px, &py) == 3 && VSync(-1) == pv) {
         int X = px + x0, Y = py + y0;
-        for (int i = 0; i < l.n; i++) {
-            const PsxHwPrim *q = &g_prims[i];
+        for (int i = 0; i < lp->n; i++) {
+            const PsxHwPrim *q = &lp->p[i];
             int in = 0;
             if (q->kind == PSX_HW_TRI) {
                 long d0 = (long)(q->x[1] - q->x[0]) * (Y - q->y[0]) - (long)(q->y[1] - q->y[0]) * (X - q->x[0]);
@@ -142,11 +170,10 @@ static void hook(PsxGpu *g, uint32_t ot) {
                        q->u[2], q->v[2], q->ax1 - x0, q->ay1 - y0, q->ax2 - x0, q->ay2 - y0);
         }
     }
-    eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx);
-    psx_hw_frame(&l, g_bg, x0, y0, w, h, 1);
+    psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
     for (int y = 0; y < h; y++)
-        for (int x = 0; x < w; x++) g_sw[y * w + x] = x5(g->vram[((y0 + y) & 511) * 1024 + ((x0 + x) & 1023)]);
+        for (int x = 0; x < w; x++) g_sw[y * w + x] = x5(swv[((y0 + y) & 511) * 1024 + ((x0 + x) & 1023)]);
     int bw = (w + 7) / 8, bh = (h + 7) / 8, nbad = 0, bx1 = 9999, by1 = 9999, bx2 = -1, by2 = -1;
     static uint8_t badmap[128 * 64];
     static uint16_t cnt[128 * 64];
@@ -171,26 +198,32 @@ static void hook(PsxGpu *g, uint32_t ot) {
         if (by > by2) by2 = by;
     }
     g_lists++;
+    g_inter += num != den;
     g_pixels += (long)w * h; g_same += same; g_close += close;
     double pc = 100.0 * close / ((double)w * h);
     if (pc < 99.0) g_low++;
     if (pc < g_worst) { g_worst = pc; g_worst_vb = VSync(-1); }
-    if (!nbad) return;
+    if (!nbad) goto done;
     g_bad_lists++;
     g_bad_blocks += nbad;
     int vb = VSync(-1);
-    printf("hwcmp: VBlank %d, lista %dx%d en (%d,%d), %d primitivas: %d bloques malos en (%d,%d)-(%d,%d); identicos %.1f %%\n", vb, w, h,
-           x0, y0, l.n, nbad, bx1 * 8, by1 * 8, bx2 * 8 + 7, by2 * 8 + 7, 100.0 * same / ((double)w * h));
+    printf("hwcmp: VBlank %d, %s %d/%d, lista %dx%d en (%d,%d), %d primitivas: %d bloques malos en (%d,%d)-(%d,%d); identicos %.1f %%\n", vb,
+           num == den ? "real" : "intermedia", num, den, w, h, x0, y0, lp->n, nbad, bx1 * 8, by1 * 8, bx2 * 8 + 7, by2 * 8 + 7, 100.0 * same / ((double)w * h));
     if (g_saves < MAX_SAVES && vb - g_last_save >= 30) {
-        save(vb, w, h, badmap, bw);
+        save(vb, num, den, w, h, badmap, bw);
         g_saves++;
         g_last_save = vb;
     }
+done:
+    eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
+    pthread_mutex_unlock(&g_mu);
 }
+
 
 static void summary(void) {
     printf("hwcmp: %ld listas comparadas, %ld con bloques malos (%ld bloques); pixeles identicos %.2f %%, casi iguales %.2f %%\n",
            g_lists, g_bad_lists, g_bad_blocks, g_pixels ? 100.0 * g_same / g_pixels : 0.0, g_pixels ? 100.0 * g_close / g_pixels : 0.0);
+    printf("hwcmp: de ellas, %ld imagenes intermedias\n", g_inter);
     printf("hwcmp: %ld listas por debajo del 99 %% de casi iguales; la peor, %.2f %% (VBlank %d)\n", g_low, g_lists ? g_worst : 100.0,
            g_worst_vb);
 }
@@ -211,7 +244,11 @@ int psx_hwcmp_start(const char *dir) {
     g_ctx = eglCreateContext(g_dpy, cfg, EGL_NO_CONTEXT, cattr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx) || psx_hw_init()) return -1;
     psx_hw_dither(1);
+    eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     psx_draw_list_hook = hook;
     atexit(summary);
     return 0;
 }
+
+/* con la interpolacion: las imagenes llegan por su sumidero (real e intermedias) */
+void psx_hwcmp_interp(void) { psx_interp_hw(interp_sink, 1); }

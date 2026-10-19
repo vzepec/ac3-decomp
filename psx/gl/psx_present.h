@@ -13,5 +13,10 @@ enum { PSX_FIT_43 = 0, PSX_FIT_EXACT = 1, PSX_FIT_INTEGER = 2, PSX_FIT_169 = 3 }
 int psx_present_init(void);   /* 0 si va bien (contexto GLES 3 ya activo) */
 void psx_present_frame(const uint32_t *rgba, int w, int h, int view_w, int view_h, int fit, int linear);
 void psx_present_shutdown(void);
+/* paso 7: una textura RGBA ya hecha (p. ej. la de psx_hw_texture), con el mismo encaje */
+void psx_present_texture(unsigned tex, int w, int h, int view_w, int view_h, int fit, int linear);
+/* superpone rgba (alfa 0 = transparente) arriba a la izquierda de la ultima imagen, a la escala de
+ * una imagen de ref_w x ref_h de la PS1 (el contador) */
+void psx_present_overlay(const uint32_t *rgba, int w, int h, int ref_w, int ref_h);
 
 #endif

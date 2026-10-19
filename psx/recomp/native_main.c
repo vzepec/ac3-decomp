@@ -429,7 +429,9 @@ int main(int argc, char **argv) {
     }
     if (getenv("AC3_HWCMP")) {   /* paso 17: comparar el dibujo por GLES con el software, lista a lista */
         int psx_hwcmp_start(const char *dir);
+        void psx_hwcmp_interp(void);
         if (psx_hwcmp_start(getenv("AC3_HWCMP"))) puts("AC3_HWCMP: sin contexto GLES");
+        else if (getenv("AC3_INTERP")) psx_hwcmp_interp();   /* tambien las intermedias */
     }
     if (getenv("AC3_WIDE")) {   /* pantalla ancha en la mision */
         g_wide = 1;

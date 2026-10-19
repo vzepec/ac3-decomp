@@ -86,19 +86,20 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**La pantalla ancha está publicada** (release `v1.8-alfa`, paso 16).
+**Probar en la Retroid el APK 1.9-alfa** (`data/android/AC3Recomp-1.9-alfa.apk`,
+rama `etapa-6-paso-17`, sin fusionar ni subir).
+- Es la alta resolución por GLES, sin antitemblores, comprobada antes con el
+  comparador (`docs/11-etapa6.md`, paso 17).
+- **L3+R3** recorre `GLX4 16:9` → `SW 16:9` → `SW 4:3` → `ORIG`.
+- **Qué mirar:**
+  - `VEL` y `FPS` en `GLX4`;
+  - cualquier fallo que salga en `GLX4` y no en `SW 16:9`.
+- **Pendiente de la 1.8** (parpadeo de lados y vértices en edificios): ver
+  en qué modo aparece (`SW 16:9`, `SW 4:3` u `ORIG`).
 
-Siguiente: **alta resolución, por partes** (`docs/11-etapa6.md`, paso 16), en
-la rama `etapa-6-paso-17`:
-1. **Comparador automático:** misiones enteras en el PC, cada imagen por
-   software y por GLES a escala 1, avisando de zonas que difieran mucho.
-   Primero las 41 misiones, luego la Retroid.
-2. Recuperar de la rama `etapa-6-paso-15` solo el dibujo por GLES, sin
-   antitemblores, y corregir lo que encuentre el comparador. Pista: el bit
-   de máscara del radar.
-3. Subir de ×1 a ×2 y ×4; primero las imágenes reales y después las
-   intermedias. Como modo aparte de L3+R3, para comparar en el aparato.
-4. Antitemblores al final, aparte, solo si hace falta.
+Después:
+- antitemblores, solo si hace falta;
+- sprites de la CPU a 60 fps.
 
 La comparación con DuckStation queda para el final.
 

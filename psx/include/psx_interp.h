@@ -46,6 +46,18 @@ typedef struct {
 } PsxInterpPerf;
 void psx_interp_perf(PsxInterpPerf *p, int reset);
 
+/* dibujo por GLES (etapa 6, pasos 15 y 17). Con un sumidero, las imagenes de la mision (real e
+ * intermedias, estas solo con hilos de dibujo) llegan como la lista anotada (psx_gpu_record) y
+ * bg, la VRAM de antes de dibujarla (1024x512), para dibujarlas con psx/gl/psx_hw.c a alta
+ * resolucion. sw es la VRAM tras dibujarla por software: siempre en la real; en las intermedias
+ * solo con full (comparador, psx/gl/psx_hwcmp.c: los hilos de dibujo rasterizan tambien la imagen
+ * por software); si no, NULL. El sumidero se llama desde el hilo del juego (real) y los de dibujo
+ * (intermedias) y debe copiar lo que use */
+#include "psx_gpu.h"
+typedef void (*PsxInterpHwSink)(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h,
+                                int phase_num, int phase_den, int vblanks, double t_step);
+void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por software, como hasta ahora */
+
 extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase
  * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1

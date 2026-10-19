@@ -229,6 +229,12 @@ libre-build: $(GLINC)/GLES3/gl3.h
 # etapa 6, paso 5: carga una a una las 41 misiones (por defecto en la americana) con el binario
 # libre y anota fallos y capturas (tools/misiones.py). MISIONES=0-40, DISCO=$(US)
 MISIONES ?= 0-40
+# etapa 6, paso 17: dibujo por GLES frente a la GPU por software, lista a lista, en las 41
+# misiones (tools/hwcmp.py); HWCMP_INTERP=1 compara tambien las imagenes intermedias
+HWCMP_ENV = $(if $(HWCMP_INTERP),AC3_INTERP=3 AC3_INTERP_THREADS=3,)
+hwcmp: libre-build
+	@$(HWCMP_ENV) $(PY) tools/hwcmp.py "$(US)" psx/build/hwcmp $(MISIONES) 4
+
 misiones: libre-build
 	@$(PY) tools/misiones.py "$(US)" psx/build/misiones $(MISIONES) 2
 

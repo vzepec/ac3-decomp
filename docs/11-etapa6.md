@@ -1063,3 +1063,74 @@ el primer intento.
 
 Siguiente: la alta resolución por partes, con un comparador automático
 software/GLES por misiones enteras antes de ir a la Retroid (`STATUS.md`).
+
+### Paso 17: alta resolución por GLES, comprobada antes de ir a la Retroid (APK 1.9-alfa, sin publicar)
+
+Punto 2 del plan por partes (pantalla ancha → alta resolución →
+antitemblores). Rama `etapa-6-paso-17`. Del primer intento (rama
+`etapa-6-paso-15`) se recupera solo el dibujo por GLES: `psx_hw.c`, el
+registro de primitivas de `gpu.c` y el reparto por la interpolación. **Sin
+antitemblores.**
+
+#### 1. El comparador
+
+- **Cómo funciona** (`psx/gl/psx_hwcmp.c`, `AC3_HWCMP=<dir>` del binario
+  libre, `tools/hwcmp.py`, `make hwcmp`):
+  - en partida real, cada lista de dibujo del juego la dibuja la GPU por
+    software (la referencia) y GLES la vuelve a dibujar a escala 1, desde
+    la misma VRAM de partida;
+  - con `AC3_INTERP` + `AC3_INTERP_THREADS` compara también las imágenes
+    intermedias de los 60 fps: los hilos de dibujo las rasterizan por
+    software además de anotarlas (`psx_interp_hw(sumidero, 1)`).
+- **Qué cuenta como "bloque malo"** (8×8):
+  - 8 o más píxeles que difieren en más de 40 en algún canal;
+  - y cuyo color no está en los 3×3 vecinos de la otra imagen.
+  - Así un borde o una línea movidos un píxel no cuentan, y un hueco, un
+    pico o un recorte de máscara sí.
+- **Además:** listas por debajo del 99 % de píxeles casi iguales, para
+  diferencias repartidas.
+
+**Validado con el caso positivo conocido** (regla 3):
+- con el bit de máscara desactivado a propósito (`PSX_HW_NOMASK=1`), la
+  misión 0 da **570 listas con bloques malos** (el radar);
+- con la máscara, **0**.
+- En la primera pasada, el comparador detectó el radar desbordado de la
+  Retroid en todas las imágenes de misión: 34 bloques en (8,8)-(79,79).
+
+#### 2. Lo que encontró, y la corrección
+
+| Fallo | Causa | Corrección |
+|---|---|---|
+| Radar desbordado de su círculo (el del vídeo del dueño) | `psx_hw.c` no emulaba el **bit de máscara**. En el radar, las primitivas que comprueban la máscara son semitransparentes con textura | **Stencil** de 1 bit = bit 15. Cada primitiva escribe lo que la GPU dejaría (texel / poner máscara; dos pasadas en las texturadas). Las que comprueban, pintan solo donde vale 0. El fondo lleva su bit 15 de partida. Solo si la lista tiene alguna primitiva que comprueba |
+| Bordes de polígono un píxel fuera | GL mira el centro del píxel; la GPU, la esquina | Geometría desplazada casi medio píxel de salida (`u_shift`). Color, uv y tramado se llevan a la esquina exacta (`u_delta`). Si no, una uv decreciente lee el texel anterior: era la línea de más del borde del mapa del radar |
+| Líneas: pendiente y redondeo | El cuadrilátero alargado un píxel cambiaba la pendiente | Paralelogramo con la pendiente exacta y desempate como la GPU (lejos de cero), compensando el desplazamiento de muestreo. `psx/test/test_hwlines.c`: **5043 de 5043 líneas idénticas** |
+| Fondo leído un píxel al lado | La copia directa de la VRAM no tenía el margen de +0,001 | Margen añadido. Una lista de la misión 2 pasa de 37 a 49 dB |
+
+**Fotograma de prueba** (`make psx-hw`): de 37,2 dB y 97,7 % casi iguales a
+**50,5 dB y 99,88 %**.
+
+#### 3. Resultado en las 41 misiones (US, escala 1)
+
+- **127.072 listas, 1 con bloques malos:** una línea de la rejilla del túnel
+  (misión 37), desplazada un píxel.
+- **Imágenes intermedias** (misión 2, 3 por paso): 4.207 listas, de ellas
+  1.077 intermedias, **0 bloques malos**.
+- **Conclusión:** GLES dibuja las intermedias igual que el software. Los
+  picos del primer intento no venían del dibujo GLES. Quedan como
+  sospechosos (`SIN RESOLVER`):
+  - los antitemblores de entonces;
+  - el driver de la Retroid (Adreno), que Mesa no reproduce;
+  - o la propia interpolación, que también se ve con el dibujo por
+    software (el dueño ve parpadeos en edificios con la 1.8).
+- **Diferencias que quedan:**
+  - degradados de las líneas: un escalón de 5 bits, porque el software
+    trunca hacia cero;
+  - redondeo de la mezcla semitransparente (GL en 8 bits, la consola en 5).
+  - Ninguna se ve como fallo.
+
+#### 4. APK 1.9-alfa
+
+- **L3+R3** recorre GLES ×N + 16:9 (`GLX4 16:9`) → software 16:9
+  (`SW 16:9`, como la 1.8) → software 4:3 (`SW 4:3`) → original (`ORIG`).
+- **Escala:** la entera que quepa en la pantalla, hasta ×4.
+- Los menús a 60 imágenes por segundo siguen por software.

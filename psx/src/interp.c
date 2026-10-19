@@ -208,6 +208,46 @@ static void capture(PsxGpu *g, int num, int den, int vb) {
     if (w && h) g_sink(img, w, h, num, den, vb, g_tstep);
 }
 
+/* ---- dibujo por GLES (paso 7, psx_interp_hw): en vez de la imagen se entrega la lista anotada
+ * (psx_gpu_record) con la VRAM de antes de dibujarla; el anfitrion la dibuja a alta resolucion
+ * (psx/gl/psx_hw.c). La imagen real se sigue dibujando por software (la VRAM del juego); las
+ * intermedias, solo se interpretan (registro sin dibujar la imagen principal) ---- */
+static PsxInterpHwSink g_hwsink;
+static int g_hwfull;
+void psx_interp_hw(PsxInterpHwSink sink, int full) { g_hwsink = sink; g_hwfull = full; }
+
+static int hw_prepare(PsxHwList *l, int x1, int y1, int x2, int y2) {
+    if (!l->p) {
+        l->max = 65536; l->p = malloc((size_t)l->max * sizeof *l->p);
+        l->maxdata = 1024 * 512; l->data = malloc((size_t)l->maxdata * 2);
+        if (!l->p || !l->data) return -1;
+    }
+    l->n = l->ndata = 0;
+    l->main_x1 = x1; l->main_y1 = y1; l->main_x2 = x2; l->main_y2 = y2;
+    return 0;
+}
+
+/* la imagen real del paso: por software y, con GLES, ademas anotada y entregada */
+static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
+    int w, h, on, rgb24;
+    psx_display_geom(&w, &h, &on, &rgb24);
+    static PsxHwList L;
+    static uint16_t bg[1024 * 512];
+    if (!g_hwsink || !on || rgb24 || w <= 0 || h <= 0 || w * h > 1024 * 512 ||
+        hw_prepare(&L, g->area_x1, g->area_y1, g->area_x2, g->area_y2)) {
+        psx_gpu_draw_list(g, ot);
+        capture(g, num, den, vb);
+        return;
+    }
+    int x0 = g->area_x1, y0 = g->area_y1;
+    memcpy(bg, g->vram, sizeof bg);
+    psx_gpu_record(&L, 0);
+    psx_gpu_draw_list(g, ot);
+    psx_gpu_record_flush(g);
+    psx_gpu_record(NULL, 0);
+    g_hwsink(&L, bg, g->vram, x0, y0, w, h, num, den, vb, g_tstep);
+}
+
 /* ---- posiciones de una fase. La lista lleva, por primitiva con algo que mover, todas sus
  * coordenadas (direccion PS1 de la palabra, valor real y desplazamiento hacia el paso
  * anterior). La comparten el modo en el hilo del juego y los hilos de dibujo ---- */
@@ -295,6 +335,8 @@ static struct {
     uint32_t ot;
     double t;
     PsxInterpSink sink;
+    PsxInterpHwSink hwsink;
+    int ax1, ay1, ax2, ay2;   /* area principal (la de la imagen) */
     /* rendimiento */
     double worker_s, worker_max;
     int jobs, skipped, steps, unpaired;
@@ -309,6 +351,7 @@ static void *worker(void *arg) {
     uint8_t *ram = malloc(PSX_RAM_SIZE), scratch[0x400];
     PsxGpu *gpu = malloc(sizeof *gpu);
     uint32_t *out = malloc(1024 * 512 * 4);
+    PsxHwList hl = {0};
     uint32_t seen = 0;
     for (;;) {
         pthread_mutex_lock(&J.mu);
@@ -324,6 +367,16 @@ static void *worker(void *arg) {
             memcpy(gpu, &J.gpu, sizeof *gpu);
             int den = J.den;
             apply_phase(&J.L, k, den, ram, scratch);
+            if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
+                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
+                 * con full (comparador), tambien la imagen por software */
+                psx_gpu_record(&hl, !g_hwfull);
+                psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
+                psx_gpu_record_flush(gpu);
+                psx_gpu_record(NULL, 0);
+                J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
+                continue;
+            }
             psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
             psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
             J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
@@ -755,8 +808,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         J.unpaired++;
         pthread_mutex_unlock(&J.mu);
         g_tstep = ta;
-        psx_gpu_draw_list(g, ot);
-        capture(g, 1, 1, interval);
+        draw_real(g, ot, 1, 1, interval);
         return 1;
     }
     g_tstep = ta;
@@ -775,12 +827,13 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             build_list(&J.L);
             J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
             J.x0 = g->area_x1; J.y0 = g->area_y1;
+            J.ax1 = g->area_x1; J.ay1 = g->area_y1; J.ax2 = g->area_x2; J.ay2 = g->area_y2;
             psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
             if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
+            J.hwsink = J.on && !J.rgb24 ? g_hwsink : NULL;
         }
         double tc = tnow();
-        psx_gpu_draw_list(g, ot);
-        capture(g, g_nfrac + 1, g_nfrac + 1, interval);
+        draw_real(g, ot, g_nfrac + 1, g_nfrac + 1, interval);
         if (!busy && J.dw > 0 && J.dh > 0) {
             paste_rect(J.gpu.vram, g->vram, J.x0, J.y0, J.dw, J.dh);
             pthread_mutex_lock(&J.mu);

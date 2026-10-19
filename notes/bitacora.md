@@ -5,6 +5,30 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Alta resolución por GLES con comparador (paso 17, APK 1.9-alfa sin publicar)
+
+**Comparador** (`psx/gl/psx_hwcmp.c`, `tools/hwcmp.py`, `make hwcmp`): cada
+lista de dibujo de la partida, por software y por GLES a escala 1, comparadas
+por bloques 8×8.
+- Validado con el caso positivo conocido: sin bit de máscara
+  (`PSX_HW_NOMASK=1`), 570 listas malas en la misión 0; con él, 0.
+
+**Fallos encontrados y corregidos:**
+- el bit de máscara: el radar desbordado de la Retroid; ahora con stencil;
+- el muestreo en el centro del píxel en vez de en la esquina;
+- la pendiente y el redondeo de las líneas: 5043/5043 idénticas
+  (`test_hwlines`);
+- el fondo leído un píxel al lado.
+
+**Resultados:**
+- 41 misiones US: 1 lista de 127.072 con bloques malos (una línea movida un
+  píxel).
+- Intermedias (misión 2): 1.077, sin bloques malos.
+- Fotograma de prueba: de 37,2 a 50,5 dB.
+
+**Reproducir:** `make hwcmp` (`HWCMP_INTERP=1` para las intermedias),
+`make psx-hw`.
+
 ## 2026-10-19 — Release v1.8-alfa: pantalla ancha
 
 - **Probado en la Retroid:** la pantalla ancha sola funciona y va estable.
