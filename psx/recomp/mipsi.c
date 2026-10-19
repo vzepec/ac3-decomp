@@ -16,6 +16,7 @@
  * Presupuesto del reloj (RC_BUDGET) en los mismos sitios que el codigo traducido: al entrar en
  * una funcion (jal/jalr) y en los saltos hacia atras. Modo mixto: si hay una funcion traducida
  * registrada para el destino de un jal/jalr, se llama a ella (rc_find). */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -99,6 +100,7 @@ static inline uint32_t fetch(uint32_t pc) {
 /* medicion (etapa 8): si esta puesto, un bit por palabra de la RAM que lee el codigo (cargas y
  * LWC2); asi se sabe que datos usa una funcion */
 uint8_t *mipsi_rtrace, *mipsi_wtrace;   /* con mipsi_wtrace: solo lo leido antes de escribirlo */
+uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
 
 static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     uint32_t *r = c->r;
@@ -106,6 +108,10 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     uint32_t sh = (w >> 6) & 31, fn = w & 63, imm = w & 0xFFFF;
     uint32_t simm = (uint32_t)(int32_t)(int16_t)imm;
     if (w == 0) return;
+    if (mipsi_watch_read && ((op >= 0x20 && op <= 0x26) || op == 0x32) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_read & 0x1FFFFFFCu)) {
+        static int nw;
+        if (nw++ < 12) fprintf(stderr, "vigia: lectura de %08x desde %08x (ra %08x)\n", mipsi_watch_read, pc, r[31]);
+    }
     if (mipsi_rtrace || mipsi_wtrace) {
         uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;
         if (a < 0x200000) {

@@ -86,25 +86,21 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.9.4-alfa** (`data/android/AC3Recomp-1.9.4-alfa.apk`,
-rama `etapa-6-paso-20`; nada fusionado ni subido).
-- Software, panorámico e interpolación, como la 1.8 publicada.
-- Con las correcciones de los pasos 18-19: la GTE como la de Mednafen, sin
-  emparejamientos falsos en las ciudades y el cielo interpolado.
-- **Qué mirar:**
-  - que el cielo ya no tiemble al cabecear;
-  - que no vuelvan los estiramientos en ciudades.
-- Si va bien: fusionar `etapa-6-paso-20` en `develop` / `main` y publicarla
-  (será la 1.9-alfa).
+**Etapa 8 (rama `etapa-8`, sin publicar):** probar en la Retroid el APK
+1.9.5-alfa (`data/android/AC3Recomp-1.9.5-alfa.apk`).
+- **Interpolación nueva** (`docs/14-etapa8.md`): el mundo estático se
+  redibuja en cada intermedia con el código del juego.
+- L3+R3: `16:9 N` (nueva) → `16:9 A` (anterior) → `4:3 N` → `ORIG`.
+- **Qué mirar:** ciudades y horizonte en `16:9 N` frente a `16:9 A`; `VEL` y
+  `CPU`.
 
-**60 fps a largo plazo:** `docs/13-60fps.md`. Veredicto: volver a dibujar las
-intermedias con el código de dibujo del juego y una cámara interpolada. Una
-etapa propia, de varias semanas.
+Después:
+- objetos móviles por su identidad (aviones, misiles);
+- orientación de los objetos del arreglo;
+- la europea.
 
-**El modo de alta resolución** (GLES) queda en la rama
-`gles-alta-resolucion` para una integración futura.
-
-La comparación con DuckStation queda para el final.
+La rama `etapa-6-paso-20` (1.9.4, sin publicar) queda como base. La
+comparación con DuckStation queda para el final.
 
 ## Pendiente
 

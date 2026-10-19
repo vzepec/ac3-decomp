@@ -10,6 +10,7 @@
 #include "psx_gpu.h"
 #include "psx_gte.h"
 #include "psx_interp.h"
+#include "psx_libgte.h"
 #include "psx_libetc.h"
 #include "psx_mem.h"
 
@@ -342,6 +343,8 @@ static struct {
     void (*on_start)(void);
     /* el trabajo */
     uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
+    uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
+    int rebuilt;
     PsxGpu gpu;
     PhaseList L;
     int den, interval, x0, y0, dw, dh, on, rgb24;
@@ -357,6 +360,33 @@ static struct {
 } J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER};
 
 static double tnow(void);
+
+/* etapa 8: redibujo del mundo estatico por fase (psx_interp_rebuild) */
+static PsxInterpRebuild g_rebuild;
+void psx_interp_rebuild(PsxInterpRebuild fn) { g_rebuild = fn; }
+int psx_interp_rebuild_fails;   /* pasos en que no se pudo (corte de plano, sin datos) */
+double psx_interp_rebuild_s;   /* tiempo total en el redibujo (medicion) */
+int psx_interp_rebuild_n;
+static int rebuild_phases(uint32_t ot, int den) {
+    double t0 = tnow();
+    static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
+    static PsxGte gte;
+    PsxGte *gc = (PsxGte *)psx_gte_get_context();
+    memcpy(ram, psx_ram, sizeof ram); memcpy(scr, psx_scratch, sizeof scr); gte = *gc;
+    int ok = 1;
+    for (int k = 1; k < den && ok; k++) {
+        if (!J.ramk[k]) { J.ramk[k] = malloc(PSX_RAM_SIZE); J.scrk[k] = malloc(0x400); }
+        if (!J.ramk[k] || !J.scrk[k]) { ok = 0; break; }
+        /* fase k: la coordenada intermedia es la real + d * (den - k) / den, de modo que t = k / den */
+        if (g_rebuild(ot, (float)k / (float)den)) ok = 0;
+        else { memcpy(J.ramk[k], psx_ram, PSX_RAM_SIZE); memcpy(J.scrk[k], psx_scratch, 0x400); }
+        memcpy(psx_ram, ram, sizeof ram); memcpy(psx_scratch, scr, sizeof scr); *gc = gte;
+    }
+    if (!ok) psx_interp_rebuild_fails++;
+    psx_interp_rebuild_s += tnow() - t0;
+    psx_interp_rebuild_n++;
+    return ok;
+}
 
 static void *worker(void *arg) {
     int id = (int)(intptr_t)arg;
@@ -376,7 +406,8 @@ static void *worker(void *arg) {
         double t0 = tnow();
         int copied = 0;
         for (int k = id + 1; k < J.den; k += nt) {
-            if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
+            if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
+            else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
             memcpy(gpu, &J.gpu, sizeof *gpu);
             int den = J.den;
             apply_phase(&J.L, k, den, ram, scratch);
@@ -940,6 +971,9 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d\n",
                                            VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model);
     int ok = !g_cut && have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
+    /* etapa 8: con el redibujo, el mundo sale exacto aunque el emparejamiento falle; lo movil, quieto */
+    int nodyn = 0;
+    if (!ok && g_rebuild && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
     have_prev = 1;
     ncur = 0;
     occ_gen++;
@@ -970,6 +1004,9 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             memcpy(J.scratch, psx_scratch, sizeof J.scratch);
             memcpy(&J.gpu, g, sizeof J.gpu);
             build_list(&J.L);
+            if (nodyn) J.L.n = J.L.np = 0;
+            J.rebuilt = g_rebuild ? rebuild_phases(ot, g_nfrac + 1) : 0;
+            if (nodyn && !J.rebuilt) J.L.n = J.L.np = 0;
             J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
             J.x0 = g->area_x1; J.y0 = g->area_y1;
             J.ax1 = g->area_x1; J.ay1 = g->area_y1; J.ax2 = g->area_x2; J.ay2 = g->area_y2;

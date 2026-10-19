@@ -58,6 +58,15 @@ typedef void (*PsxInterpHwSink)(const PsxHwList *l, const uint16_t *bg, const ui
                                 int phase_num, int phase_den, int vblanks, double t_step);
 void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por software, como hasta ahora */
 
+/* etapa 8: redibujo del mundo estatico. fn(ot, t) construye en psx_ram la lista de la intermedia de
+ * fase t (0 = paso anterior, 1 = este) con el codigo de dibujo del juego (psx/recomp/ac3_rerender.c)
+ * y devuelve 0, o -1 si no puede (sin datos, corte de plano). Se llama en el hilo del juego, una vez
+ * por fase; la capa guarda y restaura RAM, scratchpad y GTE alrededor. Los hilos de dibujo parten de
+ * esa RAM y sobre ella interpolan en pantalla solo lo que se mueve por su cuenta (lo emparejado). Si
+ * el emparejamiento del paso falla, las intermedias salen igual (el mundo exacto, lo movil quieto) */
+typedef int (*PsxInterpRebuild)(uint32_t ot, float t);
+void psx_interp_rebuild(PsxInterpRebuild fn);
+
 extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase
  * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1

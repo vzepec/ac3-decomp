@@ -85,7 +85,7 @@ for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_pr
     $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
 done
 if [ "$REGION" = libre ]; then
-    for f in "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c"; do
+    for f in "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c"; do
         $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
     done
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"

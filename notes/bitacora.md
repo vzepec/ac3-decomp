@@ -5,6 +5,31 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Etapa 8: intermedias redibujando el mundo con el código del juego
+
+**Prueba de concepto:** en `DrawOTag` se quita de la cadena lo que dibujó el
+mundo estático (entre `FUN_8003308c` y `FUN_80039d84`, EU), se gira la
+cámara y se vuelven a llamar esas funciones del juego. Terreno y cielo salen
+girados, y el HUD intacto.
+
+**Redibujo exacto con t = 1** (0 píxeles distintos, EU y US). Hizo falta:
+- partir del estado al empezar el dibujo estático (el dibujo no es puro);
+- poner las primitivas nuevas detrás de todo;
+- no tocar los enlaces de la tabla maestra;
+- recolocar lo redibujado en cada cajón (el E5 del cielo).
+
+**Entradas que cambian entre pasos:** medidas con el registro de lecturas
+del intérprete. Son la cámara y el arreglo de objetos móviles del mundo
+(`g_render+0x474`).
+
+**Resultados:**
+- integrado en la interpolación (`psx_interp_rebuild`);
+- 41 misiones US sin fallos, unos 5 ms por paso;
+- APK 1.9.5-alfa con L3+R3: nueva / anterior / 4:3 / original.
+
+**Reproducir:** `AC3_RR_SELFTEST=vblank`, `AC3_RR_SURVEY=1`, `AC3_RR=1` con
+`AC3_INTERP=1` (binario libre).
+
 ## 2026-10-19 — Investigación: cómo hacen 60 fps otros ports (docs/13-60fps.md)
 
 **Familias de técnicas:**
