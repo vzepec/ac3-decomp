@@ -208,12 +208,20 @@ mipsi:
 # version detectada): lo mismo que hara el APK distribuible. DISCO=$(EU) o $(US)
 DISCO ?= $(EU)
 LIBRE_GUION ?= $(GUION)
-libre:
+libre: libre-build
+	@psx/build/ac3_libre "$(DISCO)" - 3600 psx/build/libre 100 "$(LIBRE_GUION)"
+
+libre-build:
 	@mkdir -p psx/build/libre
 	@cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp psx/recomp/native_main.c psx/recomp/mipsi.c \
 		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/hle_eu.c psx/recomp/hle_us.c psx/src/*.c -lm -lpthread \
 		-o psx/build/ac3_libre
-	@psx/build/ac3_libre "$(DISCO)" - 3600 psx/build/libre 100 "$(LIBRE_GUION)"
+
+# etapa 6, paso 5: carga una a una las 41 misiones (por defecto en la americana) con el binario
+# libre y anota fallos y capturas (tools/misiones.py). MISIONES=0-40, DISCO=$(US)
+MISIONES ?= 0-40
+misiones: libre-build
+	@$(PY) tools/misiones.py "$(US)" psx/build/misiones $(MISIONES) 2
 
 # el interprete en C frente al de referencia, en las mismas entradas que el codigo traducido
 mipsi-check: mipsi

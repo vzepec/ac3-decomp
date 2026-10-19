@@ -26,6 +26,12 @@ void (*rc_find(uint32_t addr))(RCpu *);         /* recomp_rt.c: funcion traducid
 /* instrucciones ejecutadas (medicion) */
 uint64_t mipsi_steps;
 
+/* enganche de pruebas: se llama al entrar en la funcion `addr` (p. ej. forzar la mision que
+ * carga el juego: AC3_MISSION en native_main) */
+static uint32_t g_hook_addr;
+static void (*g_hook)(RCpu *);
+void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) { g_hook_addr = addr; g_hook = fn; }
+
 static inline uint32_t fetch(uint32_t pc) {
     uint8_t *p = rc_ptr(pc, pc);
     if (!p || (pc & 3)) { rc_fault(p ? RC_FAULT_ALIGN : RC_FAULT_MEM, pc, pc); return 0; }
@@ -109,6 +115,7 @@ static inline uint32_t call_to(RCpu *c, uint32_t tgt, uint32_t link) {
     if (rc_is_lib(tgt)) { rc_libcall(c, tgt); return link; }
     void (*fn)(RCpu *) = rc_find(tgt);
     if (fn) { rc_ret = link; fn(c); c->r[0] = 0; return link; }
+    if (g_hook && tgt == g_hook_addr) g_hook(c);
     RC_BUDGET(tgt);
     return tgt;
 }
@@ -118,6 +125,7 @@ void mipsi_call(RCpu *c, uint32_t addr) {
     uint32_t pc = addr;
     /* entrar en la funcion: como un salto a ella (libreria, traducida o interpretada) */
     if (rc_is_lib(pc)) { rc_libcall(c, pc); return; }
+    if (g_hook && pc == g_hook_addr) g_hook(c);
     RC_BUDGET(pc);
     while (pc != ret) {
         uint32_t w = fetch(pc);

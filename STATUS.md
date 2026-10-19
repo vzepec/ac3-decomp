@@ -86,22 +86,20 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Recorrido completo del juego, 1:1** (paso 5 de `docs/11-etapa6.md`, el
-criterio de salida de la etapa 6). Hoy solo está comprobada la primera
-misión. Falta jugar o guionizar en la americana:
-- título, menús, briefings, misiones y finales;
-- películas, música y textos;
+**Recorrido completo, 1:1** (paso 5 de `docs/11-etapa6.md`). **Las 41 misiones
+de la americana cargan, arrancan y se vuelan sin fallos** (`make misiones`).
+El dueño ha jugado varias en la Retroid sin errores. Falta:
+- completar misiones y ver los finales y el árbol de la historia;
 - guardar y cargar en la tarjeta de memoria;
 - compararlo con DuckStation.
 
-Cada fallo que aparezca es una tarea: una función de la capa que falta o un
-fallo de `rc_fault` en el registro.
+Se puede guionizar o pedir al dueño partidas largas en la Retroid.
 
 ## Pendiente
 
 | Qué | Etapa / paso | Estado |
 |---|---|---|
-| Juego completo jugable de principio a fin, 1:1 (americana) | 6 / paso 5 | ⏳ siguiente |
+| Juego completo jugable de principio a fin, 1:1 (americana) | 6 / paso 5 | 🔄 41/41 misiones cargan y se vuelan; faltan finales, guardado y DuckStation |
 | Sprites que coloca la CPU (explosiones, humo, llamas de los motores) a 60 fps | 6 / paso 7 | ⏳ |
 | GPU por GLES: alta resolución con la precisión de nuestra GTE y panorámico | 6 / paso 7 | ⏳ |
 | Calibrar `BUDGET_PER_FRAME` (reloj del juego), sobre todo en NTSC | 6 | ⏳ |
