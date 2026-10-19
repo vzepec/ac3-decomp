@@ -345,6 +345,7 @@ static struct {
     uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
     uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
     int rebuilt;
+    int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
     PsxGpu gpu;
     PhaseList L;
     int den, interval, x0, y0, dw, dh, on, rgb24;
@@ -363,7 +364,9 @@ static double tnow(void);
 
 /* etapa 8: redibujo del mundo estatico por fase (psx_interp_rebuild) */
 static PsxInterpRebuild g_rebuild;
-void psx_interp_rebuild(PsxInterpRebuild fn) { g_rebuild = fn; }
+static const PsxInterpRebuildAsync *g_rra;
+void psx_interp_rebuild(PsxInterpRebuild fn) { g_rebuild = fn; if (fn) g_rra = NULL; }
+void psx_interp_rebuild_async(const PsxInterpRebuildAsync *a) { g_rra = a; if (a) g_rebuild = NULL; }
 int psx_interp_rebuild_fails;   /* pasos en que no se pudo (corte de plano, sin datos) */
 double psx_interp_rebuild_s;   /* tiempo total en el redibujo (medicion) */
 int psx_interp_rebuild_n;
@@ -405,26 +408,38 @@ static void *worker(void *arg) {
         if (id >= nt) continue;   /* hilo sobrante (se pidieron menos): no cuenta */
         double t0 = tnow();
         int copied = 0;
-        for (int k = id + 1; k < J.den; k += nt) {
-            if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
+        /* con el redibujo en este hilo (una sola copia del interprete), el hilo 0 hace todas las fases */
+        int rra = J.rr_async, k0 = rra ? (id == 0 ? 1 : J.den) : id + 1, kstep = rra ? 1 : nt;
+        for (int k = k0; k < J.den; k += kstep) {
+            uint8_t *R = ram, *Sc = scratch;
+            if (rra) {
+                double tr = tnow();
+                if (g_rra->build(J.ot, (float)k / (float)J.den, J.ram, J.scratch, &R, &Sc)) {
+                    R = ram; Sc = scratch;
+                    memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch);
+                    pthread_mutex_lock(&J.mu); psx_interp_rebuild_fails++; pthread_mutex_unlock(&J.mu);
+                }
+                pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += tnow() - tr; psx_interp_rebuild_n++; pthread_mutex_unlock(&J.mu);
+            } else if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
             else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
             memcpy(gpu, &J.gpu, sizeof *gpu);
             int den = J.den;
-            apply_phase(&J.L, k, den, ram, scratch);
+            apply_phase(&J.L, k, den, R, Sc);
             if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
                 /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
                  * con full (comparador), tambien la imagen por software */
                 psx_gpu_record(&hl, !g_hwfull);
-                psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
+                psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
                 psx_gpu_record_flush(gpu);
                 psx_gpu_record(NULL, 0);
                 J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
                 continue;
             }
-            psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
+            psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
             psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
             J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
         }
+        if (rra && id == 0) g_rra->done();
         double dt = tnow() - t0;
         pthread_mutex_lock(&J.mu);
         J.worker_s += dt;
@@ -973,7 +988,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     int ok = !g_cut && have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
     /* etapa 8: con el redibujo, el mundo sale exacto aunque el emparejamiento falle; lo movil, quieto */
     int nodyn = 0;
-    if (!ok && g_rebuild && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
+    if (!ok && (g_rebuild || g_rra) && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
     have_prev = 1;
     ncur = 0;
     occ_gen++;
@@ -1006,6 +1021,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             build_list(&J.L);
             if (nodyn) J.L.n = J.L.np = 0;
             J.rebuilt = g_rebuild ? rebuild_phases(ot, g_nfrac + 1) : 0;
+            J.rr_async = g_rra && !g_rra->prep(ot);
+            if (g_rra && !J.rr_async) psx_interp_rebuild_fails++;
             if (nodyn && !J.rebuilt) J.L.n = J.L.np = 0;
             J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
             J.x0 = g->area_x1; J.y0 = g->area_y1;
@@ -1013,6 +1030,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
             if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
             J.hwsink = J.on && !J.rgb24 ? g_hwsink : NULL;
+            if (J.rr_async && !(J.dw > 0 && J.dh > 0)) { g_rra->done(); J.rr_async = 0; }   /* sin trabajo: se suelta */
         }
         double tc = tnow();
         draw_real(g, ot, g_nfrac + 1, g_nfrac + 1, interval);

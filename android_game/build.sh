@@ -85,9 +85,15 @@ for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_pr
     $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
 done
 if [ "$REGION" = libre ]; then
-    for f in "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c"; do
+    for f in "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" "$ROOT/psx/recomp/ac3_rr_async.c" \
+             "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c"; do
         $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
     done
+    # etapa 8: la segunda copia del interprete (simbolos rrw_*) para redibujar en un hilo de dibujo
+    sh "$ROOT/tools/rr_clone.sh" "$CC -O2 $CF -DAC3_LIBRE" "$TC/llvm-nm" "$TC/llvm-objcopy" "$B/obj_rrw" \
+        "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" \
+        "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c" "$ROOT/psx/src/mem.c" "$ROOT/psx/src/gte.c" "$ROOT/psx/src/libgte.c" \
+        "$ROOT/psx/src/libgpu.c"
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
 else
     $CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"

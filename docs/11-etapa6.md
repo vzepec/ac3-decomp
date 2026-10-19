@@ -990,6 +990,12 @@ recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
 
 ### Paso 16: pantalla ancha (release v1.8-alfa)
 
+> **Corrección posterior (etapa 8, 1.9.6-alfa):** al ladear el avión, las
+> franjas del cielo podían cerrarse con una cuña falsa en los bordes. Los
+> extremos de las líneas del horizonte, comprimidos, quedaban dentro de la
+> pantalla. Se alargan antes de proyectarlos (`sky_lines` en
+> `ac3_wide_install`). Ver `docs/14-etapa8.md`.
+
 **Nombres:** las versiones de prueba se llamaron 1.10-alfa y 1.11-alfa. Lo
 publicado es la release **`v1.8-alfa`** (la 1.11, con `versionCode` 13).
 No tiene que ver con los APK de prueba "1.8/1.9-alfa" del primer intento,

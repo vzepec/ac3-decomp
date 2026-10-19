@@ -5,6 +5,47 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Etapa 8: pausa, cuña del cielo en 16:9 y redibujo en un hilo de dibujo (1.9.6-alfa)
+
+**Informe del dueño con la 1.9.5:** "más estable", pero de 20 a 30 fps en
+ciudades. Además, el velocímetro queda encima del menú de pausa, y de antes,
+en 16:9, aparece a veces una franja deformada en los bordes al girar.
+
+- **Pausa:**
+  - el dibujo estático no corre en la pausa, y el código de la pausa
+    reserva primitivas sin mover `g_render[5]`;
+  - **arreglo:** rango solo si su inicio es del mismo paso; lo nuevo, detrás
+    del final real de la cadena; en cada cajón, lo nuevo donde estaba lo
+    estático (tras su ancla), sin reordenar lo demás;
+  - con t = 1 la pausa sale exacta (antes, 614 píxeles distintos).
+- **Autoprueba en las 41 misiones** (`AC3_RR_SELFTEST_EVERY=10`): 150 de
+  5.592 imágenes distintas. La causa es una lectura de la pila sin iniciar
+  (misión 22), que depende de dónde cae la interrupción de VBlank en el
+  original. Es un comportamiento del juego, no del redibujo.
+- **Cuña del cielo en 16:9:**
+  - las líneas del horizonte del cielo (US `FUN_80093324`, EU
+    `FUN_80092f90`) se proyectan con la GTE desde extremos pensados para 4:3;
+  - comprimidos, pueden quedar dentro de la pantalla;
+  - **arreglo:** se alargan por 1 / `psx_gte_wide`;
+  - `AC3_SKYCHECK=1` en 8 misiones: 7 imágenes con cuña sin el arreglo, 0
+    con él, 0 en 4:3.
+- **Rendimiento:**
+  - el redibujo era el 19,5 % de las instrucciones de la partida, en el
+    hilo del juego;
+  - ahora va en el hilo de dibujo 0, con una segunda copia del intérprete
+    (símbolos `rrw_*`, `tools/rr_clone.sh`) que tiene su RAM y su GTE;
+  - 324 de 326 intermedias idénticas al camino anterior.
+
+**Reproducir:**
+- `AC3_RR=1|2` (1 = hilo de dibujo, 2 = hilo del juego);
+- `AC3_PACE=60`;
+- `AC3_SKYCHECK=1` y `AC3_WIDE_NOSKY=1`;
+- `AC3_UNCOVERED=dir`;
+- `AC3_RR_SELFTEST_EVERY`;
+- `AC3_WATCHWRITE=dir`.
+
+Detalle en `docs/14-etapa8.md`.
+
 ## 2026-10-19 — Etapa 8: intermedias redibujando el mundo con el código del juego
 
 **Prueba de concepto:** en `DrawOTag` se quita de la cadena lo que dibujó el

@@ -18,6 +18,7 @@
 #include <stdint.h>
 
 #include "ac3_versions.h"
+#include "psx_gte.h"
 
 /* instala los enganches (inicio y fin del dibujo estático); 0 si la versión lo admite */
 int ac3_rr_install(const Ac3Version *v);
@@ -29,5 +30,23 @@ int ac3_rr_ready(void);
 int ac3_rr_build(uint32_t ot, float t);
 /* rango de memoria de las primitivas que dibujó el mundo estático en este paso */
 void ac3_rr_static_range(uint32_t *a0, uint32_t *a1);
+
+/* ---- en otro hilo (ac3_rr_async.c): el juego deja una instantánea de lo que hace falta para
+ * redibujar este paso y una segunda copia de este módulo (con su intérprete, su RAM y su GTE: los
+ * mismos objetos con los símbolos renombrados, rrw_*) construye la intermedia ---- */
+#define AC3_RR_NFIELDS (9 + 32 * 3)
+typedef struct {
+    uint32_t st0, st1, sp;
+    int32_t cur[AC3_RR_NFIELDS], prev[AC3_RR_NFIELDS];
+    const uint8_t *s0, *s0_scr;   /* RAM y scratchpad al empezar el dibujo estático (S0) */
+    PsxGte gte;
+    float wide;                   /* psx_gte_wide del paso */
+} RrSnap;
+/* hilo del juego, en DrawOTag: 0 si este paso se puede redibujar; el búfer de S0 queda reservado
+ * hasta ac3_rr_release (mientras, el juego guarda el del paso siguiente en el otro) */
+int ac3_rr_snapshot(RrSnap *s);
+void ac3_rr_release(void);
+/* como ac3_rr_build, con el estado de la instantánea (en la copia del módulo) */
+int ac3_rr_build_from(const RrSnap *s, uint32_t ot, float t);
 
 #endif

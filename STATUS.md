@@ -87,14 +87,18 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 ## Siguiente tarea concreta
 
 **Etapa 8 (rama `etapa-8`, sin publicar):** probar en la Retroid el APK
-1.9.5-alfa (`data/android/AC3Recomp-1.9.5-alfa.apk`).
-- **Interpolación nueva** (`docs/14-etapa8.md`): el mundo estático se
-  redibuja en cada intermedia con el código del juego.
-- L3+R3: `16:9 N` (nueva) → `16:9 A` (anterior) → `4:3 N` → `ORIG`.
-- **Qué mirar:** ciudades y horizonte en `16:9 N` frente a `16:9 A`; `VEL` y
-  `CPU`.
+1.9.6-alfa (`data/android/AC3Recomp-1.9.6-alfa.apk`; `docs/14-etapa8.md`).
+- **El redibujo del mundo**, ahora en un hilo de dibujo (segunda copia del
+  intérprete). Antes iba en el hilo del juego: 20-30 fps en ciudades con la
+  1.9.5.
+- **Pausa:** el HUD ya no queda encima del menú.
+- **16:9:** sin la cuña del cielo en los bordes al ladear.
+- **Qué mirar:** `VEL` al 100 % y `FPS` en ciudades, en `16:9 N`; la pausa;
+  los bordes en giros.
 
 Después:
+- si el hilo de dibujo no llega a tiempo en la Retroid: adelantar el
+  redibujo al final del dibujo estático o acelerar el intérprete;
 - objetos móviles por su identidad (aviones, misiles);
 - orientación de los objetos del arreglo;
 - la europea.

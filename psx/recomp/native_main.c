@@ -116,10 +116,24 @@ static void wide_update(void) {
 }
 #endif
 
+/* AC3_PACE=hz: a ritmo real (un VBlank cada 1/hz s, como en el aparato), para medir lo que hacen
+ * los hilos de dibujo con el tiempo que tendrian */
+static void pace(void) {
+    static double hz = -1, t0;
+    if (hz < 0) hz = getenv("AC3_PACE") ? atof(getenv("AC3_PACE")) : 0;
+    if (hz <= 0) return;
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    double t = ts.tv_sec + ts.tv_nsec * 1e-9;
+    if (t0 == 0) t0 = t - last_vcount / hz;
+    double due = t0 + last_vcount / hz;
+    if (due > t) { ts.tv_sec = (time_t)(due - t); ts.tv_nsec = (long)((due - t - (double)ts.tv_sec) * 1e9); nanosleep(&ts, NULL); }
+}
 static void frame_check(void) {
     int v = VSync(-1);
     while (last_vcount < v) {
         last_vcount++;
+        pace();
         if (getenv("AC3_WATCHREAD")) {   /* depuracion: desde donde se lee una direccion (desde AC3_WATCHREAD_FROM) */
             extern uint32_t mipsi_watch_read;
             int from = getenv("AC3_WATCHREAD_FROM") ? atoi(getenv("AC3_WATCHREAD_FROM")) : 0;
@@ -380,14 +394,107 @@ static void trace_hook(RCpu *c) {
  * redibujada da la misma imagen que la original; AC3_RR_INTERP=desde,cuantos guarda en cada paso la
  * imagen real (i<VBlank>_2-2.ppm) y la intermedia a medio camino (i<VBlank>_1-2.ppm) ---- */
 #include "ac3_rerender.h"
+#include "ac3_rr_async.h"
 #include "psx_gpu.h"
 extern void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
-static int rr_self = -1, rr_from = -1, rr_len;
+/* AC3_UNCOVERED=dir: pixeles de la imagen que no dibuja ninguna primitiva (el area se rellena antes
+ * con un color testigo); en la mision, el cielo y el terreno deberian cubrirlo todo. Guarda las
+ * imagenes con pixeles sin cubrir (u<VBlank>.ppm, el testigo en magenta) */
+static const char *g_uncov_dir;
+static int g_uncov_frames, g_uncov_bad;
+static void uncov_summary(void) { printf("descubiertos: %d imagenes, %d con pixeles sin dibujar\n", g_uncov_frames, g_uncov_bad); }
+static void uncov_hook(PsxGpu *g, uint32_t ot) {
+    int x1 = g->area_x1, y1 = g->area_y1, x2 = g->area_x2, y2 = g->area_y2;
+    for (int y = y1; y <= y2; y++)
+        for (int x = x1; x <= x2; x++) g->vram[y * 1024 + x] = 0x7C1F;
+    psx_gpu_draw_list(g, ot);
+    int n = 0, nl = 0, nr = 0, w = x2 - x1 + 1;
+    for (int y = y1; y <= y2; y++)
+        for (int x = x1; x <= x2; x++)
+            if (g->vram[y * 1024 + x] == 0x7C1F) { n++; if (x - x1 < w / 8) nl++; else if (x2 - x >= 0 && x2 - x < w / 8) nr++; }
+    if (ac3_terrain_count == 0) return;   /* solo en la mision */
+    g_uncov_frames++;
+    if (!n) return;
+    g_uncov_bad++;
+    if (g_uncov_bad <= 40) {
+        printf("descubiertos: VBlank %d: %d pixeles (borde izquierdo %d, derecho %d)\n", last_vcount, n, nl, nr);
+        char fn[512];
+        snprintf(fn, sizeof fn, "%s/u%05d.ppm", g_uncov_dir, last_vcount);
+        FILE *f = fopen(fn, "wb");
+        if (f) {
+            fprintf(f, "P6\n%d %d\n255\n", w, y2 - y1 + 1);
+            for (int y = y1; y <= y2; y++)
+                for (int x = x1; x <= x2; x++) {
+                    uint16_t p = g->vram[y * 1024 + x];
+                    uint8_t c[3] = {(uint8_t)((p & 31) << 3), (uint8_t)((p >> 5 & 31) << 3), (uint8_t)((p >> 10 & 31) << 3)};
+                    fwrite(c, 1, 3, f);
+                }
+            fclose(f);
+        }
+    }
+}
+/* AC3_SKYCHECK=1: las franjas del cielo (poligonos sin textura antes de la primera orden E3 de la
+ * lista, paso 19) se recortan al rectangulo de la pantalla, asi que todos sus vertices deberian
+ * estar en el borde (|x| = 160 o |y| = 120 en la US; 128 en la EU). Un vertice dentro es una cuna
+ * falsa (pantalla ancha con el avion ladeado, etapa 8). Con AC3_SKYDUMP=vb1,vb2 ademas vuelca los
+ * paquetes del cielo de esas imagenes */
+static int g_sky0 = -1, g_sky1 = -1, g_sky_frames, g_sky_bad, g_sky_badv;
+static void sky_summary(void) { printf("cielo: %d imagenes, %d con vertices de franja dentro de la pantalla (%d vertices)\n", g_sky_frames, g_sky_bad, g_sky_badv); }
+static void sky_hook(PsxGpu *g, uint32_t ot) {
+    int dump = last_vcount >= g_sky0 && last_vcount <= g_sky1, bad = 0, any = 0;
+    int hx = (g->area_x2 - g->area_x1 + 1) / 2, hy = (g->area_y2 - g->area_y1 + 1) / 2;
+    if (dump) printf("cielo vb %d:\n", last_vcount);
+    uint32_t a = ot;
+    for (int n = 0; (a & 0xFFFFFF) != 0xFFFFFF && n < 100000; n++) {
+        uint32_t *p = (uint32_t *)psx_ptr(a | 0x80000000u), len = p[0] >> 24;
+        if (len) {
+            uint32_t op = p[1] >> 24;
+            if (op == 0xE3) break;
+            if ((op & 0xE4) == 0x20) {   /* poligono sin textura: plano (1 color) o degradado */
+                int nv = (op & 8) ? 4 : 3, step = (op & 0x10) ? 2 : 1;
+                any = 1;
+                if (dump) printf("  op %02x:", op);
+                for (int v = 0; v < nv; v++) {
+                    uint32_t w = p[2 + v * step];
+                    int x = (int16_t)(w << 5) >> 5, y = (int16_t)((w >> 16) << 5) >> 5;
+                    if (dump) printf(" (%d,%d)", x, y);
+                    if (abs(x) < hx - 1 && abs(y) < hy - 1) bad++;
+                }
+                if (dump) printf("\n");
+            }
+        }
+        a = p[0] & 0xFFFFFF;
+    }
+    if (any && ac3_terrain_count) {
+        g_sky_frames++;
+        if (bad && ++g_sky_bad <= 5) printf("cielo: cuna en el VBlank %d (%d vertices)\n", last_vcount, bad);
+        g_sky_badv += bad;
+    }
+    psx_gpu_draw_list(g, ot);
+}
+static int rr_self = -1, rr_from = -1, rr_len, rr_every, rr_tests, rr_bad, rr_skipped;
+static void rr_self_summary(void) {
+    printf("rr: autoprueba t = 1: %d imagenes comprobadas, %d distintas del original, %d sin construir (corte o pausa)\n", rr_tests, rr_bad,
+           rr_skipped);
+}
+static int g_rr_async;
 static void rr_stats(void) {
     extern double psx_interp_rebuild_s;
     extern int psx_interp_rebuild_n, psx_interp_rebuild_fails;
-    printf("rr: %d pasos redibujados (%d sin poder: corte de plano o sin datos), %.2f ms de media por paso\n", psx_interp_rebuild_n,
-           psx_interp_rebuild_fails, psx_interp_rebuild_n ? 1000.0 * psx_interp_rebuild_s / psx_interp_rebuild_n : 0.0);
+    printf("rr: %d pasos redibujados %s (%d sin poder: corte de plano o sin datos), %.2f ms de media por paso\n", psx_interp_rebuild_n,
+           g_rr_async ? "en un hilo de dibujo" : "en el hilo del juego", psx_interp_rebuild_fails,
+           psx_interp_rebuild_n ? 1000.0 * psx_interp_rebuild_s / psx_interp_rebuild_n : 0.0);
+    PsxInterpPerf pf;
+    psx_interp_perf(&pf, 0);
+    printf("rr: pasos %d, con intermedias %d, saltados (hilos ocupados) %d; hilo de dibujo %.2f ms de media, %.2f el peor\n", pf.steps, pf.jobs,
+           pf.skipped, pf.worker_ms, pf.worker_max_ms);
+    extern double ac3_rr_t[6];
+    double t[6];
+    if (g_rr_async) ac3_rr_async_times(t);
+    else memcpy(t, ac3_rr_t, sizeof t);
+    double n = t[5] > 0 ? t[5] : 1;
+    printf("rr: ms por redibujo: cadena %.2f, restaurar %.2f, dibujo del juego %.2f, cajones %.2f; S0 (hilo del juego, cada paso) %.2f\n",
+           1000 * t[1] / n, 1000 * t[2] / n, 1000 * t[3] / n, 1000 * t[4] / n, 1000 * ac3_rr_t[0] / (ac3_rr_t[5] > 0 && !g_rr_async ? ac3_rr_t[5] : n));
 }
 static void save_vram(const PsxGpu *g, const char *name) {
     int w = g->area_x2 - g->area_x1 + 1, h = g->area_y2 - g->area_y1 + 1;
@@ -419,14 +526,41 @@ static int rr_draw_phase(PsxGpu *gout, uint32_t ot, float t) {
 static void rr_hook(PsxGpu *g, uint32_t ot) {
     if (rr_self >= 0 && last_vcount >= rr_self && ac3_rr_ready()) {   /* t = 1: igual que el original */
         static PsxGpu a, b;
+        static PsxHwPrim p0[65536], p1[65536];
+        static uint16_t d0[1024 * 512], d1[1024 * 512];
+        PsxHwList l0 = {.p = p0, .max = 65536, .data = d0, .maxdata = 1024 * 512, .main_x1 = g->area_x1, .main_y1 = g->area_y1,
+                        .main_x2 = g->area_x2, .main_y2 = g->area_y2};
+        PsxHwList l1 = l0;
+        l1.p = p1; l1.data = d1;
         a = *g; b = *g;
+        psx_gpu_record(&l0, 0);
         psx_gpu_draw_list(&a, ot);
+        psx_gpu_record_flush(&a);
+        psx_gpu_record(&l1, 0);
         int r = rr_draw_phase(&b, ot, 1.0f);
+        psx_gpu_record_flush(&b);
+        psx_gpu_record(NULL, 0);
+        printf("rr: primitivas %d / %d\n", l0.n, l1.n);
+        for (int i = 0, shown = 0; i < l0.n && i < l1.n && shown < 6; i++) {
+            PsxHwPrim x = p0[i], y = p1[i];
+            x.data_off = y.data_off = 0;
+            if (!memcmp(&x, &y, sizeof x)) continue;
+            shown++;
+            printf("  primitiva %d: tipo %d/%d banderas %x/%x xy0 (%d,%d)/(%d,%d) color %d,%d,%d/%d,%d,%d\n", i, x.kind, y.kind, x.flags, y.flags,
+                   x.x[0], x.y[0], y.x[0], y.y[0], x.r[0], x.g[0], x.b[0], y.r[0], y.g[0], y.b[0]);
+        }
         int nd = 0;
         for (int y = g->area_y1; y <= g->area_y2; y++)
             for (int x = g->area_x1; x <= g->area_x2; x++) nd += a.vram[y * 1024 + x] != b.vram[y * 1024 + x];
-        printf("rr: prueba t = 1 en el VBlank %d: %s, %d pixeles distintos del original\n", last_vcount, r ? "sin construir" : "construida", nd);
-        rr_self = -1;
+        if (rr_every) {   /* sistematica: resumen al salir y las primeras que fallen */
+            rr_tests++;
+            if (r) rr_skipped++;
+            else if (nd) { rr_bad++; if (rr_bad <= 5) printf("rr: prueba t = 1 en el VBlank %d: %d pixeles distintos\n", last_vcount, nd); }
+            rr_self = last_vcount + rr_every;
+        } else {
+            printf("rr: prueba t = 1 en el VBlank %d: %s, %d pixeles distintos del original\n", last_vcount, r ? "sin construir" : "construida", nd);
+            rr_self = -1;
+        }
     }
     if (rr_from >= 0 && last_vcount >= rr_from && last_vcount < rr_from + rr_len && ac3_rr_ready() && shots) {
         static PsxGpu mid;
@@ -531,15 +665,32 @@ int main(int argc, char **argv) {
         g_wide = 1;
         ac3_wide_install(V);
     }
-    if (getenv("AC3_RR")) {   /* etapa 8: intermedias con el mundo estatico redibujado (con AC3_INTERP) */
-        if (ac3_rr_install(V)) puts("AC3_RR: esta version aun no tiene direcciones");
-        else { psx_interp_rebuild(ac3_rr_build); atexit(rr_stats); }
+    if (getenv("AC3_RR")) {   /* etapa 8: intermedias con el mundo estatico redibujado (con AC3_INTERP y AC3_INTERP_THREADS) */
+        /* 1: en un hilo de dibujo (la segunda copia del interprete); 2: en el hilo del juego */
+        g_rr_async = atoi(getenv("AC3_RR")) != 2;
+        if (ac3_rr_install(V) || (g_rr_async && ac3_rr_async_install(V))) puts("AC3_RR: esta version aun no tiene direcciones");
+        else {
+            if (g_rr_async) psx_interp_rebuild_async(ac3_rr_async());
+            else psx_interp_rebuild(ac3_rr_build);
+            atexit(rr_stats);
+        }
     }
     if (getenv("AC3_RR_SELFTEST") || getenv("AC3_RR_INTERP") || getenv("AC3_RR_SURVEY")) {   /* etapa 8 */
         if (ac3_rr_install(V)) puts("AC3_RR: esta version aun no tiene direcciones");
         if (getenv("AC3_RR_SELFTEST")) rr_self = atoi(getenv("AC3_RR_SELFTEST"));
+        if (getenv("AC3_RR_SELFTEST_EVERY")) { rr_every = atoi(getenv("AC3_RR_SELFTEST_EVERY")); atexit(rr_self_summary); }
         if (getenv("AC3_RR_INTERP")) sscanf(getenv("AC3_RR_INTERP"), "%d,%d", &rr_from, &rr_len);
         psx_draw_list_hook = rr_hook;
+    }
+    if (getenv("AC3_WATCHWRITE")) { extern uint32_t mipsi_watch_write; mipsi_watch_write = (uint32_t)strtoul(getenv("AC3_WATCHWRITE"), NULL, 16); }
+    if (getenv("AC3_SKYCHECK") || getenv("AC3_SKYDUMP")) {
+        if (getenv("AC3_SKYDUMP")) sscanf(getenv("AC3_SKYDUMP"), "%d,%d", &g_sky0, &g_sky1);
+        psx_draw_list_hook = sky_hook; atexit(sky_summary);
+        if (!g_wide) ac3_wide_install(V);   /* para ac3_terrain_count (psx_gte_wide sigue en 1) */
+    }
+    if (getenv("AC3_UNCOVERED")) {
+        g_uncov_dir = getenv("AC3_UNCOVERED"); psx_draw_list_hook = uncov_hook; atexit(uncov_summary);
+        if (!g_wide) ac3_wide_install(V);   /* solo para saber cuando se dibuja terreno (psx_gte_wide sigue en 1) */
     }
     if (getenv("AC3_TRACE")) {
         char buf[256];

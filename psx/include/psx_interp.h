@@ -66,6 +66,17 @@ void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por soft
  * el emparejamiento del paso falla, las intermedias salen igual (el mundo exacto, lo movil quieto) */
 typedef int (*PsxInterpRebuild)(uint32_t ot, float t);
 void psx_interp_rebuild(PsxInterpRebuild fn);
+/* lo mismo en un hilo de dibujo (necesita hilos): prep, en el hilo del juego (DrawOTag), da 0 si
+ * este paso se puede redibujar (y guarda lo necesario); build, en el hilo de dibujo, construye la
+ * fase t a partir de la RAM y el scratchpad del paso y devuelve en *ram_out / *scr_out la memoria
+ * con la intermedia (0 si la construyo); done, al acabar las fases del paso. Sustituye a
+ * psx_interp_rebuild; NULL lo quita */
+typedef struct {
+    int (*prep)(uint32_t ot);
+    int (*build)(uint32_t ot, float t, const uint8_t *ram, const uint8_t *scr, uint8_t **ram_out, uint8_t **scr_out);
+    void (*done)(void);
+} PsxInterpRebuildAsync;
+void psx_interp_rebuild_async(const PsxInterpRebuildAsync *a);
 
 extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase

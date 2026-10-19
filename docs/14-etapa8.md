@@ -151,3 +151,129 @@ redibujo (cortes de plano), unos 5 ms de media por paso.
   interpolación en pantalla;
 - la orientación de los objetos del arreglo (+0x10/+0x14) no se interpola;
 - la europea, con su propia encuesta.
+
+## Prueba de la 1.9.5 en la Retroid y lo que salió
+
+**Informe del dueño:**
+- "se ve más estable", pero baja a **20-30 fps** en zonas con muchos
+  edificios u objetos;
+- en la pausa, **el velocímetro queda encima del menú rojo**;
+- de antes, solo en 16:9: **a veces, al girar, se deforma la imagen en los
+  bordes laterales** (captura en `imagenes bugs/`).
+
+### El HUD encima del menú de pausa
+
+- **Causa:**
+  - en la pausa el juego no ejecuta el dibujo estático: el rango guardado
+    era de otro paso, y desengancharlo rompía la cadena;
+  - además, el código de la pausa reserva primitivas más allá de
+    `g_render[5]` sin moverlo, así que lo redibujado se escribía encima;
+  - y la recolocación por clases (después / nuevo / antes) movía de sitio
+    paquetes del HUD que el juego pone en los mismos cajones.
+- **Corrección** (`psx/recomp/ac3_rerender.c`):
+  - el fin del dibujo estático solo vale si su inicio corrió en el mismo
+    paso;
+  - un rango de más de 3 VBlank de antigüedad no se redibuja;
+  - lo nuevo se escribe detrás del final real de lo que usa la cadena, no
+    de `g_render[5]`;
+  - en cada cajón, el orden de lo que ya estaba no se toca: lo nuevo va
+    justo donde estaba lo estático (tras su "ancla", el paquete que lo
+    precedía).
+- **Comprobación:** con t = 1, la pausa (VBlank 3065, misión 0) sale exacta
+  (0 píxeles distintos; antes, 614). Las demás pruebas siguen a 0.
+
+### Autoprueba en las 41 misiones
+
+`AC3_RR_SELFTEST=2600 AC3_RR_SELFTEST_EVERY=10`: compara con t = 1 cada 10
+VBlank, con el guion de `tools/misiones.py` más dos pausas.
+- **Resultado:** 5.592 imágenes, 150 distintas (2,7 %), en 7 misiones; 9
+  sin construir (cortes de plano y pausas).
+- **Causa de las distintas** (misión 22, VBlank 2600; registro de lecturas
+  del dibujo original frente al redibujo):
+  - el juego lee posiciones de la pila que **no inicializa**
+    (`0x801FFE48` desde `0x8007B5F0`, y otras);
+  - su contenido lo deja lo último que pasó por allí, y en el original una
+    interrupción de VBlank cae a mitad del dibujo. Es un comportamiento del
+    juego, como en la PS1, no del redibujo;
+  - el efecto: unos colores de la bruma con 1 de diferencia (45 frente a
+    44).
+- **De paso:** el redibujo en el hilo del juego gastaba el presupuesto de
+  instrucciones, y podía disparar un VBlank del juego a mitad del redibujo
+  (con la RAM de S0, que luego se restaura). Lo resuelve el hilo de dibujo
+  (abajo).
+
+### La franja deformada en los bordes (16:9)
+
+- **Causa:**
+  - las franjas del cielo (paso 19) se cierran con dos líneas del
+    horizonte;
+  - cada línea son dos puntos a ±X que la GTE proyecta (US `FUN_80093324`,
+    EU `FUN_80092f90`) y que se recortan a la pantalla (US `FUN_8005dd8c`,
+    ±160 × ±120);
+  - X lo calcula el juego (US `FUN_8009354c`: `0x3bff88 / H`; `FUN_8009497c`)
+    para que, en 4:3, los extremos caigan fuera de la pantalla (a 240 px del
+    centro, más allá de la esquina, a 200);
+  - con la x comprimida a 3/4, cuando la línea apunta hacia una esquina
+    (unos 29° de alabeo) un extremo queda dentro, y la franja se cierra
+    hasta la esquina con una cuña falsa.
+- **Corrección** (`ac3_wide_install`, nuevo campo `sky_lines` de
+  `Ac3Version`): al entrar en esa función, en pantalla ancha, la x de los
+  extremos se multiplica por 1 / `psx_gte_wide`. Quien la llama los
+  recalcula en cada imagen.
+- **Medida** (`AC3_SKYCHECK=1`): en las franjas del cielo, todo vértice debe
+  estar en el borde de la pantalla.
+  - Misiones 0, 2, 3, 5, 8, 12, 17 y 24, 4.574 imágenes con cielo.
+  - **16:9 sin la corrección** (`AC3_WIDE_NOSKY=1`): 7 imágenes con cuña (caso
+    positivo: la 2927 de la misión 3, extremo en (158,117)).
+  - **16:9 con la corrección:** 0 (el mismo extremo, en (160,119)).
+  - **4:3:** 0.
+
+### El redibujo, en un hilo de dibujo
+
+- **Medida** (misión 0, PC):
+  - el redibujo son unos 150.000 instrucciones del juego por paso, el
+    19,5 % de todas las de la partida (en vuelo, un 40 % más sobre el paso);
+  - de 4,6 ms por paso: dibujo del juego 3,2; restaurar 0,4; cadena y
+    cajones 0,6; S0 0,3.
+  - En el hilo del juego, eso baja la velocidad donde el juego ya va justo.
+- **Segunda copia del intérprete** (`psx/recomp/ac3_rr_async.c`,
+  `tools/rr_clone.sh`):
+  - `mipsi.c`, `recomp_rt.c`, `mem.c`, `gte.c`, `libgte.c`, `libgpu.c`,
+    `hle_*.c`, `ac3_versions.c` y `ac3_rerender.c` se enlazan dos veces;
+  - la segunda, con todos sus símbolos con el prefijo `rrw_`
+    (`objcopy --redefine-syms`, como el código americano en
+    `android_game/build.sh`);
+  - tiene su RAM, su scratchpad, su GTE, sus enganches y su presupuesto
+    (sin reloj). Solo comparte las tablas de `libgte_math.c` (de solo
+    lectura) y funciones sin estado.
+- **Reparto:**
+  - **hilo del juego** (`DrawOTag`): solo la instantánea
+    (`ac3_rr_snapshot`: rango, pila, entradas, S0, `psx_gte_wide`);
+  - S0 va en **dos búferes**: el del paso que se está redibujando queda
+    reservado hasta `ac3_rr_release`, y el juego guarda el siguiente en el
+    otro (si los dos están ocupados, ese paso no se redibuja);
+  - **hilo de dibujo 0** (`psx_interp_rebuild_async`): copia la RAM del paso
+    en la segunda copia, construye y dibuja cada fase.
+- **Comprobación:**
+  - en la misión 2 (pantalla ancha, a ritmo real), **324 de 326**
+    intermedias son idénticas por los dos caminos. Las otras 2 difieren
+    poco en todo el cuadro: en el camino viejo, la GTE del redibujo añadía
+    vértices al emparejamiento del paso siguiente, y en la copia no;
+  - la pausa sale bien;
+  - a ritmo real (`AC3_PACE=60`, misión 0): 707 de 721 pasos redibujados
+    (en el hilo del juego eran 718). El hilo de dibujo 0 tarda unos 17 ms
+    por paso en el PC (5,6 ms de media entre los 3 hilos, de los que solo
+    trabaja uno).
+- **Estabilidad:** las 41 misiones US en 16:9 con `AC3_RR=1` (hilo de
+  dibujo), sin ritmo real: **41 sin fallos**, 10.022 pasos redibujados.
+- **PC:** `AC3_RR=1` (hilo de dibujo) o `AC3_RR=2` (hilo del juego).
+  `AC3_PACE=60` va a ritmo real.
+
+**APK 1.9.6-alfa** (rama `etapa-8`, sin publicar): las tres correcciones.
+- **Qué mirar en la Retroid:**
+  - `VEL` debería seguir al 100 % en ciudades;
+  - `FPS`: si el hilo de dibujo no llega a tiempo, algunos pasos salen sin
+    intermedia (la imagen va a 30 en esos pasos, pero el juego no se
+    frena);
+  - la pausa;
+  - los bordes en giros.

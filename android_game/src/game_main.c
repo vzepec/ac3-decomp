@@ -67,6 +67,7 @@
  * descomprime de el y todo el codigo del juego lo ejecuta el interprete (psx/recomp/mipsi.c) */
 #include "ac3_versions.h"
 #include "ac3_rerender.h"
+#include "ac3_rr_async.h"
 #include "psx_acebin.h"
 static const Ac3Version *R;
 static uint8_t g_ace[0x200000];
@@ -206,7 +207,9 @@ static void frame_wait(void) {
     if (rr != rr_applied) {
         rr_applied = rr;
         G.rr_on = rr;
-        psx_interp_rebuild(rr ? ac3_rr_build : NULL);
+        /* el redibujo, en un hilo de dibujo (segunda copia del interprete): el del juego solo deja
+         * una instantanea por paso */
+        psx_interp_rebuild_async(rr ? ac3_rr_async() : NULL);
         if (rr && g_nfrac > 1) { g_nfrac = 1; interp_applied = -1; }
     }
 #endif
@@ -297,7 +300,7 @@ static void *game_thread(void *arg) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     ac3_wide_install(R);        /* pantalla ancha: el cono de vision del terreno */
-    if (ac3_rr_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
+    if (ac3_rr_install(R) || ac3_rr_async_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
 #else
     rc_register(R->funcs, *R->nfuncs);
     for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
