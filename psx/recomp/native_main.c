@@ -386,9 +386,28 @@ static int rr_vblank = -1;
 static uint32_t rd32(uint32_t a) { return *(uint32_t *)psx_ptr(a); }
 static void wr32(uint32_t a, uint32_t v) { *(uint32_t *)psx_ptr(a) = v; }
 static int rr_busy;   /* durante el redibujo no se mueven las marcas */
-static void rr_mark0(RCpu *c) { (void)c; if (!rr_busy) rr_st0 = rd32(rd32(RR_G_RENDER) + 20); }            /* FUN_8003308c */
-static void rr_mark1(RCpu *c) { (void)c; if (!rr_busy) rr_st1 = rd32(rd32(RR_G_RENDER) + 20) - 12; }       /* FUN_80039d84 */
+/* el estado al empezar el dibujo estatico (S0) y lo que ese dibujo escribe: para redibujar desde el
+ * mismo estado (el dibujo no es puro: cachés, listas que rotan en cada llamada) */
+static uint8_t rr_s0[PSX_RAM_SIZE], rr_s0_scr[0x400], rr_wt[PSX_RAM_SIZE / 32];
+static PsxGte rr_s0_gte;
+static uint32_t rr_s0_sp;   /* la pila con que el juego llamo al dibujo estatico */
 extern uint8_t *mipsi_rtrace, *mipsi_wtrace;
+static void rr_mark0(RCpu *c) {   /* FUN_8003308c */
+    if (rr_busy) return;
+    rr_st0 = rd32(rd32(RR_G_RENDER) + 20);
+    rr_s0_sp = c->r[29];
+    memcpy(rr_s0, psx_ram, sizeof rr_s0);
+    memcpy(rr_s0_scr, psx_scratch, sizeof rr_s0_scr);
+    rr_s0_gte = *(PsxGte *)psx_gte_get_context();
+    memset(rr_wt, 0, sizeof rr_wt);
+    mipsi_wtrace = rr_wt;
+}
+static void rr_mark1(RCpu *c) {   /* FUN_80039d84 */
+    (void)c;
+    if (rr_busy) return;
+    rr_st1 = rd32(rd32(RR_G_RENDER) + 20) - 12;
+    mipsi_wtrace = NULL;
+}
 static uint8_t rr_prev[PSX_RAM_SIZE];   /* RAM del paso anterior (en su DrawOTag) */
 static int rr_have_prev;
 /* encuesta (AC3_RERENDER_SURVEY=pasos): por palabra leida, cuantas veces cambio y el mayor salto */
@@ -418,12 +437,13 @@ static void rr_survey_print(void) {
     }
 }
 /* llamada a una funcion del juego con hasta 4 argumentos, como una interrupcion (pila propia) */
+static uint32_t guest_sp = 0x8000E000u;
 static void guest_call(uint32_t addr, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
     RCpu cb;
     memset(&cb, 0, sizeof cb);
     cb.r[4] = a0; cb.r[5] = a1; cb.r[6] = a2; cb.r[7] = a3;
     cb.r[28] = V->gp;
-    cb.r[29] = 0x8000E000u;
+    cb.r[29] = guest_sp;
     cb.r[31] = 0x8000FFF0u;
     uint32_t ret = rc_ret;
     rc_ret = cb.r[31];
@@ -454,6 +474,16 @@ static void rr_map(uint32_t ot, const char *when) {   /* depuracion: paquetes de
         }
     }
 }
+static void rr_chain_head(uint32_t ot, const char *when) {   /* depuracion: los 30 primeros paquetes */
+    printf("cadena (%s):", when);
+    uint32_t b = ot;
+    for (int i = 0; i < 30 && (b & 0xFFFFFF) != 0xFFFFFF; i++) {
+        uint32_t t = rd32(b | 0x80000000u);
+        printf(" %06x>%06x/%u", b & 0xFFFFFF, t & 0xFFFFFF, t >> 24);
+        b = t & 0xFFFFFF;
+    }
+    printf("\n");
+}
 static void rr_hook(PsxGpu *g, uint32_t ot) {
     if (last_vcount < rr_vblank || rr_vblank < 0 || !rr_st0 || rr_st1 <= rr_st0) {
         if (rr_vblank >= 0 && last_vcount >= rr_vblank - 8) { memcpy(rr_prev, psx_ram, sizeof rr_prev); rr_have_prev = 1; }
@@ -465,11 +495,33 @@ static void rr_hook(PsxGpu *g, uint32_t ot) {
     memcpy(ram, psx_ram, sizeof ram); memcpy(scr, psx_scratch, sizeof scr);
     PsxGte *gc = (PsxGte *)psx_gte_get_context();
     gte = *gc;
+    static PsxGpu g_orig;   /* prueba: la imagen original, para comparar en la VRAM */
+    static PsxHwPrim lp0[65536], lp1[65536];
+    static uint16_t ld0[1024 * 512], ld1[1024 * 512];
+    static PsxHwList L0, L1;
+    if (getenv("AC3_RERENDER_SELFTEST")) {
+        g_orig = *g;
+        L0 = (PsxHwList){.p = lp0, .max = 65536, .data = ld0, .maxdata = 1024 * 512, .main_x1 = g->area_x1, .main_y1 = g->area_y1,
+                         .main_x2 = g->area_x2, .main_y2 = g->area_y2};
+        psx_gpu_record(&L0, 0);
+        psx_gpu_draw_list(&g_orig, ot);
+        psx_gpu_record_flush(&g_orig);
+        psx_gpu_record(NULL, 0);
+    }
     if (getenv("AC3_RERENDER_MAP")) rr_map(ot, "antes");
-    /* 1. quitar de la cadena los paquetes del mundo estatico */
+    if (getenv("AC3_RERENDER_SELFTEST")) rr_chain_head(ot, "antes");
+    /* 1. quitar de la cadena los paquetes del mundo estatico (y anotar las cabeceras de la cadena: no
+     *    se restauran en 2a, son enlaces) */
+    static uint8_t inchain[PSX_RAM_SIZE / 32];
+    memset(inchain, 0, sizeof inchain);
     uint32_t a = ot, removed = 0, guard = 0;
     while ((a & 0xFFFFFF) != 0xFFFFFF && ++guard < 300000) {
+        uint32_t ra = a & 0x1FFFFC;
         uint32_t tag = rd32(a | 0x80000000u), next = tag & 0xFFFFFF;
+        for (uint32_t w = 0; w <= (tag >> 24) && ra + 4 * w < PSX_RAM_SIZE; w++) {   /* cabecera y cuerpo */
+            uint32_t q = ra + 4 * w;
+            inchain[q >> 5] |= (uint8_t)(1u << ((q >> 2) & 7));
+        }
         while (next != 0xFFFFFF && (next | 0x80000000u) >= rr_st0 && (next | 0x80000000u) < rr_st1) {
             next = rd32(next | 0x80000000u) & 0xFFFFFF;
             removed++;
@@ -480,24 +532,45 @@ static void rr_hook(PsxGpu *g, uint32_t ot) {
     /* 2. camara girada y el dibujo estatico otra vez, en el otro bufer de primitivas */
     uint32_t gr = rd32(RR_G_RENDER), gs = rd32(RR_G_STATE), cam = rd32(gr + 40);
     int cur = (int)rd32(gs + 4);
+    uint32_t prim_end = rd32(gr + 20);   /* el final de las primitivas de esta imagen */
+    {   /* 2a. el estado de S0 en lo que el dibujo estatico escribio (salvo tablas de orden y primitivas) */
+        uint32_t ex0 = rd32(gr + 24) & 0x1FFFFF, ex1 = (rd32(gr + 36) & 0x1FFFFF) + 0x1F800;
+        int nrest = 0;
+        for (uint32_t a = 0; a < PSX_RAM_SIZE; a += 4) {
+            if (!getenv("AC3_RERENDER_FULL") && !(rr_wt[a >> 5] >> ((a >> 2) & 7) & 1)) continue;
+            if (a >= ex0 && a < ex1) continue;
+            if (inchain[a >> 5] >> ((a >> 2) & 7) & 1) continue;
+            if (*(uint32_t *)(psx_ram + a) == *(uint32_t *)(rr_s0 + a)) continue;
+            *(uint32_t *)(psx_ram + a) = *(uint32_t *)(rr_s0 + a);
+            nrest++;
+        }
+        memcpy(psx_scratch, rr_s0_scr, sizeof rr_s0_scr);
+        *gc = rr_s0_gte;
+        wr32(gr + 20, prim_end);   /* las primitivas nuevas, detras de todas las de esta imagen */
+        if (getenv("AC3_RERENDER_MAP")) printf("rerender: %d palabras devueltas a su valor antes del dibujo estatico\n", nrest);
+    }
     (void)cur;   /* las primitivas nuevas, tras las de esta imagen (g_render[5] ya apunta ahi; el otro bufer
                   * tiene primitivas 2D de esta misma imagen) */
     int16_t *ang = (int16_t *)psx_ptr(cam + 0x14);
     printf("rerender: VBlank %d, %u paquetes estaticos quitados [%08x, %08x); camara %08x angulos %d %d %d\n", last_vcount, removed, rr_st0,
            rr_st1, cam, ang[0], ang[1], ang[2]);
     ang[1] += getenv("AC3_RERENDER_YAW") ? atoi(getenv("AC3_RERENDER_YAW")) : 64;
+    uint32_t new0 = rd32(gr + 20);
+    if (getenv("AC3_RERENDER_SELFTEST")) rr_chain_head(ot, "tras quitar y restaurar");
     if (getenv("AC3_RERENDER_NODRAW")) goto draw;   /* prueba: solo quitar */
     static uint8_t rt[PSX_RAM_SIZE / 32], wt[PSX_RAM_SIZE / 32];
     memset(rt, 0, sizeof rt);
     memset(wt, 0, sizeof wt);
     if (getenv("AC3_RERENDER_READS")) { mipsi_rtrace = rt; mipsi_wtrace = wt; }
     rr_busy = 1;
+    if (rr_s0_sp) guest_sp = rr_s0_sp;   /* la misma pila que el dibujo original (variables sin iniciar) */
     guest_call(0x8003304Cu, cam, gr + 0x2C, gr + 0x4C, 0);
     guest_call(0x8003308Cu, 0, 0, 0, 0);
     guest_call(0x80033140u, 0, 0, 0, 0);
     guest_call(0x80033194u, 0, 0, 0, 0);
     guest_call(0x800331D4u, 0, 0, 0, 0);
     rr_busy = 0;
+    guest_sp = 0x8000E000u;
     mipsi_rtrace = mipsi_wtrace = NULL;
     if (getenv("AC3_RERENDER_READS") && rr_have_prev) {
         /* lo leido que cambio desde el paso anterior (sin las primitivas ni las tablas de orden, que
@@ -518,9 +591,134 @@ static void rr_hook(PsxGpu *g, uint32_t ot) {
         if (!getenv("AC3_RERENDER_SURVEY"))
             printf("rerender: %d palabras leidas, %d cambiadas desde el paso anterior (sin primitivas ni OT %06x-%06x)\n", nread, nchg, ex0, ex1);
     }
+    if (getenv("AC3_RERENDER_SELFTEST")) {   /* paquetes del original frente a los del redibujo, en orden */
+        uint32_t p0 = rr_st0, p1 = new0, e1 = rd32(gr + 20);
+        int n = 0, shown = 0, shown_total = 0;
+        while (p0 < rr_st1 && p1 < e1 && n < 5000) {
+            uint32_t t0 = rd32(p0), t1 = rd32(p1), l0 = t0 >> 24, l1 = t1 >> 24;
+            int same = l0 == l1;
+            uint32_t op = rd32(p0 + 4) >> 24;
+            for (uint32_t i = 1; same && i <= l0; i++) {
+                uint32_t m = 0xFFFFFFFFu;
+                /* relleno que la GPU no lee: mitad alta de la uv del 3.er y 4.o vertice de los poligonos con
+                 * textura */
+                if ((op & 0xE4) == 0x24 && !(op & 0x10) && (i == 7 || i == 9)) m = 0xFFFF;
+                if ((op & 0xE4) == 0x24 && (op & 0x10) && (i == 9 || i == 12)) m = 0xFFFF;
+                same = (rd32(p0 + 4 * i) & m) == (rd32(p1 + 4 * i) & m);
+            }
+            if (!same) shown_total++;
+            if (!same && shown < 2) {
+                for (uint32_t i = 1; i <= l0 && i <= l1; i++)
+                    if (rd32(p0 + 4 * i) != rd32(p1 + 4 * i)) { printf("  (palabra %u: %08x / %08x)\n", i, rd32(p0 + 4 * i), rd32(p1 + 4 * i)); break; }
+                printf("  paquete %d distinto: original %08x len %u:", n, p0, l0);
+                for (uint32_t i = 1; i <= l0 && i <= 24; i++) printf(" %08x", rd32(p0 + 4 * i));
+                printf("\n             redibujo %08x len %u:", p1, l1);
+                for (uint32_t i = 1; i <= l1 && i <= 24; i++) printf(" %08x", rd32(p1 + 4 * i));
+                printf("\n");
+                shown++;
+            }
+            p0 += 4 * (l0 + 1); p1 += 4 * (l1 + 1); n++;
+        }
+        printf("rerender: %d paquetes comparados (%d distintos); original %u bytes, redibujo %u bytes\n", n, shown_total, rr_st1 - rr_st0, e1 - new0);
+    }
+    {   /* 3. orden dentro de cada cajon de la tabla de orden: el juego inserto (a la cabeza) primero lo
+         *    de antes del dibujo estatico, luego lo estatico y luego lo de despues (HUD, el desplazamiento
+         *    E5...): en la cadena, despues > estatico > antes. Lo redibujado entro el ultimo y quedo
+         *    delante de lo de "despues": se recoloca */
+        uint32_t ob = rd32(gr + 16) & 0x1FFFFF, oe = ob + 0x4000;   /* cajones de esta imagen */
+        uint32_t b = ot & 0xFFFFFF;
+        int moved = 0;
+        while (b != 0xFFFFFF) {
+            uint32_t ab = b & 0x1FFFFF;
+            if (!(ab >= ob && ab < oe)) { b = rd32(b | 0x80000000u) & 0xFFFFFF; continue; }
+            /* cajon: recoger su tramo hasta el siguiente cajon (o el fin) */
+            uint32_t seg[4096], nseg = 0, q = rd32(b | 0x80000000u) & 0xFFFFFF;
+            while (q != 0xFFFFFF && nseg < 4096) {
+                uint32_t aq = q & 0x1FFFFF;
+                if (aq >= ob && aq < oe) break;
+                seg[nseg++] = q;
+                q = rd32(q | 0x80000000u) & 0xFFFFFF;
+            }
+            uint32_t tail = q;   /* lo que sigue al tramo */
+            /* clases: 0 = despues (entre el fin del estatico y el final previo), 1 = nuevo, 2 = el resto */
+            uint32_t ord[4096], no = 0;
+            for (int cls = 0; cls < 3; cls++)
+                for (uint32_t i = 0; i < nseg; i++) {
+                    uint32_t A = seg[i] | 0x80000000u;
+                    int c2 = A >= new0 ? 1 : (A >= rr_st1 && A < new0) ? 0 : 2;
+                    if (c2 == cls) ord[no++] = seg[i];
+                }
+            if (no == nseg) {
+                int changed = 0;
+                for (uint32_t i = 0; i < nseg; i++) changed |= ord[i] != seg[i];
+                if (changed) {
+                    moved++;
+                    uint32_t prevp = b;
+                    for (uint32_t i = 0; i < nseg; i++) {
+                        uint32_t t = rd32(prevp | 0x80000000u);
+                        wr32(prevp | 0x80000000u, (t & 0xFF000000u) | ord[i]);
+                        prevp = ord[i];
+                    }
+                    uint32_t t = rd32(prevp | 0x80000000u);
+                    wr32(prevp | 0x80000000u, (t & 0xFF000000u) | tail);
+                }
+            }
+            b = tail;
+        }
+        if (getenv("AC3_RERENDER_MAP")) printf("rerender: %d cajones reordenados\n", moved);
+    }
+    if (getenv("AC3_RERENDER_SELFTEST")) rr_chain_head(ot, "tras redibujar");
+    if (getenv("AC3_RERENDER_SELFTEST")) {   /* bucles en la cadena */
+        static uint8_t seen[PSX_RAM_SIZE / 4];
+        memset(seen, 0, sizeof seen);
+        uint32_t b = ot, prevp = 0, n = 0;
+        while ((b & 0xFFFFFF) != 0xFFFFFF && n < 300000) {
+            uint32_t idx = (b & 0x1FFFFF) >> 2;
+            if (seen[idx]) {
+                printf("rerender: BUCLE en %08x (desde %08x, paquete %u); zona: %s\n", b | 0x80000000u, prevp, n,
+                       (b | 0x80000000u) >= new0 ? "nuevo" : (b | 0x80000000u) >= rr_st0 && (b | 0x80000000u) < rr_st1 ? "estatico viejo" : "otro");
+                break;
+            }
+            seen[idx] = 1;
+            prevp = b | 0x80000000u;
+            b = rd32(b | 0x80000000u) & 0xFFFFFF;
+            n++;
+        }
+    }
 draw:
     if (getenv("AC3_RERENDER_MAP")) rr_map(ot, "despues");
+    if (getenv("AC3_RERENDER_SELFTEST")) {
+        L1 = (PsxHwList){.p = lp1, .max = 65536, .data = ld1, .maxdata = 1024 * 512, .main_x1 = g->area_x1, .main_y1 = g->area_y1,
+                         .main_x2 = g->area_x2, .main_y2 = g->area_y2};
+        psx_gpu_record(&L1, 0);
+    }
     psx_gpu_draw_list(g, ot);
+    if (getenv("AC3_RERENDER_SELFTEST")) {   /* primitivas decodificadas: la primera diferencia con significado */
+        psx_gpu_record_flush(g);
+        psx_gpu_record(NULL, 0);
+        int nd = 0;
+        for (int i = 0; i < L0.n && i < L1.n; i++) {
+            PsxHwPrim a0 = lp0[i], a1 = lp1[i];
+            a0.data_off = a1.data_off = 0;
+            if (!memcmp(&a0, &a1, sizeof a0)) continue;
+            if (nd++ < 4)
+                printf("  primitiva %d: tipo %d/%d banderas %x/%x xy0 (%d,%d)/(%d,%d) xy1 (%d,%d)/(%d,%d) color %d,%d,%d/%d,%d,%d uv0 %d,%d/%d,%d\n", i,
+                       a0.kind, a1.kind, a0.flags, a1.flags, a0.x[0], a0.y[0], a1.x[0], a1.y[0], a0.x[1], a0.y[1], a1.x[1], a1.y[1], a0.r[0], a0.g[0],
+                       a0.b[0], a1.r[0], a1.g[0], a1.b[0], a0.u[0], a0.v[0], a1.u[0], a1.v[0]);
+        }
+        printf("rerender: primitivas %d / %d, distintas %d\n", L0.n, L1.n, nd);
+    }
+    if (getenv("AC3_RERENDER_SELFTEST")) {
+        int nd = 0, x1 = 9999, y1 = 9999, x2 = -1, y2 = -1;
+        for (int y = g->area_y1; y <= g->area_y2; y++)
+            for (int x = g->area_x1; x <= g->area_x2; x++)
+                if (g->vram[y * 1024 + x] != g_orig.vram[y * 1024 + x]) {
+                    nd++;
+                    if (x < x1) x1 = x; if (x > x2) x2 = x; if (y < y1) y1 = y; if (y > y2) y2 = y;
+                }
+        printf("rerender: prueba en la VRAM: %d pixeles distintos del original (area %d,%d-%d,%d; zona %d,%d-%d,%d)\n", nd, g->area_x1,
+               g->area_y1, g->area_x2, g->area_y2, x1, y1, x2, y2);
+    }
     /* 3. todo como estaba */
     memcpy(psx_ram, ram, sizeof ram); memcpy(psx_scratch, scr, sizeof scr);
     *gc = gte;

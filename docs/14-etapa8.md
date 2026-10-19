@@ -59,3 +59,32 @@ RAM del paso anterior). 400 pasos de la misión 2 (EU):
 **Corrección pendiente:** las primitivas nuevas no van al otro búfer (allí
 viven primitivas 2D de la misma imagen: cambiaba un dígito del altímetro),
 sino tras el final del búfer actual.
+
+## Redibujo exacto (validado)
+
+Con la misma cámara, el redibujo tiene que reproducir la imagen original
+**bit a bit**. Es la prueba de que el método no introduce errores propios
+(`AC3_RERENDER_SELFTEST=1`: compara las primitivas decodificadas y la VRAM).
+
+Hicieron falta cuatro cosas:
+1. **Partir del estado del juego al empezar el dibujo estático (S0).** En la
+   entrada de `FUN_8003308c` se guardan RAM, scratchpad, GTE y la pila; el
+   dibujo no es puro (cachés, listas que rotan en cada llamada). Antes de
+   redibujar se devuelven a S0 las palabras que escribió el dibujo original
+   (registro de escrituras del intérprete), salvo las tablas de orden, los
+   búferes de primitivas y los paquetes de la cadena (HUD, sprites 2D).
+2. **El puntero de primitivas no vuelve a S0:** si no, el redibujo escribía
+   encima de lo viejo y pisaba el HUD (un dígito del altímetro cambiaba).
+   Las primitivas nuevas van detrás de todas las de la imagen.
+3. **Los enlaces de la tabla de orden maestra (`0x800BC154`) no se
+   restauran:** quedaba un enlace a la dirección 0.
+4. **El orden dentro de cada cajón de la tabla de orden.**
+   - El juego inserta a la cabeza: primero lo de antes del dibujo estático,
+     luego lo estático y luego lo de después (el desplazamiento de dibujo E5
+     del frente). En la cadena queda: después > estático > antes.
+   - Lo redibujado entra el último y quedaba delante del E5: el cielo salía
+     sin su desplazamiento (160,128 píxeles de error, 22 primitivas).
+   - Se recoloca.
+
+**Resultado** (misión 2 EU, VBlank 4300, 4500 y 4700): 1.102, 755 y 1.116
+primitivas, **0 distintas** y **0 píxeles** distintos del original.

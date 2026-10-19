@@ -106,12 +106,12 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     uint32_t sh = (w >> 6) & 31, fn = w & 63, imm = w & 0xFFFF;
     uint32_t simm = (uint32_t)(int32_t)(int16_t)imm;
     if (w == 0) return;
-    if (mipsi_rtrace) {
+    if (mipsi_rtrace || mipsi_wtrace) {
         uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;
         if (a < 0x200000) {
             uint8_t bit = (uint8_t)(1u << ((a >> 2) & 7));
             if ((op >= 0x20 && op <= 0x26) || op == 0x32) {
-                if (!mipsi_wtrace || !(mipsi_wtrace[a >> 5] & bit)) mipsi_rtrace[a >> 5] |= bit;
+                if (mipsi_rtrace && (!mipsi_wtrace || !(mipsi_wtrace[a >> 5] & bit))) mipsi_rtrace[a >> 5] |= bit;
             } else if (mipsi_wtrace && ((op >= 0x28 && op <= 0x2E) || op == 0x3A)) mipsi_wtrace[a >> 5] |= bit;
         }
     }
