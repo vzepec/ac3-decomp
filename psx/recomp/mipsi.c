@@ -27,11 +27,21 @@ void (*rc_find(uint32_t addr))(RCpu *);         /* recomp_rt.c: funcion traducid
 /* instrucciones ejecutadas (medicion) */
 uint64_t mipsi_steps;
 
-/* enganche de pruebas: se llama al entrar en la funcion `addr` (p. ej. forzar la mision que
- * carga el juego: AC3_MISSION en native_main) */
-static uint32_t g_hook_addr;
-static void (*g_hook)(RCpu *);
-void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) { g_hook_addr = addr; g_hook = fn; }
+/* enganches: se llama a fn al entrar en la funcion `addr` (p. ej. forzar la mision que carga el
+ * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta 8; fn NULL lo quita */
+#define NHOOK 8
+static uint32_t g_hook_addr[NHOOK];
+static void (*g_hook_fn[NHOOK])(RCpu *);
+static int g_hook;
+void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) {
+    int k = -1;
+    for (int i = 0; i < NHOOK; i++) if (g_hook_fn[i] && g_hook_addr[i] == addr) k = i;
+    for (int i = 0; i < NHOOK && k < 0; i++) if (!g_hook_fn[i]) k = i;
+    if (k < 0) return;
+    g_hook_addr[k] = addr; g_hook_fn[k] = fn;
+    g_hook = 0;
+    for (int i = 0; i < NHOOK; i++) g_hook |= g_hook_fn[i] != NULL;
+}
 
 /* medicion (etapa 6, paso 12): funciones en las que se entra (un bit por palabra de la RAM) y
  * vigilancia de una lista de entradas (captura de estados reales para el comparador) */
@@ -75,7 +85,8 @@ static inline void on_entry(RCpu *c, uint32_t a) {
         }
     }
     if (g_watched && (g_watched[i >> 3] >> (i & 7) & 1)) g_watch_fn(c, a);
-    if (g_hook && a == g_hook_addr) g_hook(c);
+    if (g_hook)
+        for (int k = 0; k < NHOOK; k++) if (g_hook_fn[k] && a == g_hook_addr[k]) g_hook_fn[k](c);
 }
 
 static inline uint32_t fetch(uint32_t pc) {

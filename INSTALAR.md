@@ -1,7 +1,8 @@
 # AC3 Recomp — instalar y probar la alfa
 
 **AC3 Recomp** ejecuta *Ace Combat 3: Electrosphere* (PlayStation, Namco, 1999)
-de forma nativa en Android, a 60 imágenes por segundo en vuelo.
+de forma nativa en Android, a 60 imágenes por segundo en vuelo y en pantalla
+ancha (16:9).
 
 **El APK no contiene nada del juego.** Necesitas tu propia copia del disco:
 - La app lee el juego de esa copia al arrancar y ejecuta su código con un
@@ -22,7 +23,7 @@ de forma nativa en Android, a 60 imágenes por segundo en vuelo.
 | Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). No hay controles táctiles |
 | Juego | Tu propia imagen del disco de **Ace Combat 3: Electrosphere**:<br>• europea, `SCES-02066` (inglés, francés, alemán, español, italiano)<br>• americana, `SLUS-00972` |
 | Formato del disco | **`.bin` en bruto (2.352 bytes por sector)**, el que generan los volcados habituales (`.bin` + `.cue`; se elige el `.bin`). También sirve `.iso` de 2.048 bytes por sector, pero sin música ni vídeos (no lleva el audio XA) |
-| Espacio | 140 KB la app, más tu imagen del disco (~600 MB) |
+| Espacio | 150 KB la app, más tu imagen del disco (~600 MB) |
 
 La versión japonesa (*Ace Combat 3: Electrosphere*, `SLPS-02020/02021`) **no**
 está soportada.
@@ -61,7 +62,7 @@ PlayStation (DualShock, modo analógico):
 | Palanca derecha | Palanca derecha | Girar la cámara |
 | Start | START | Pausa |
 | Select | SELECT | Cambiar la vista |
-| **L3 + R3** (pulsar las dos palancas a la vez) | — | **De la app:** activa o desactiva las imágenes intermedias (60 fps en vuelo) |
+| **L3 + R3** (pulsar las dos palancas a la vez) | — | **De la app:** cambia el modo de imagen: 60 fps + 16:9 → 60 fps + 4:3 → original (4:3, sin imágenes intermedias) |
 
 "Según el juego" son botones que funcionan exactamente como en el original
 pero que no hemos documentado aún. Las funciones de la columna "En el juego"
@@ -77,6 +78,7 @@ Arriba a la izquierda se muestra:
 | `VEL` | Velocidad del juego frente a la consola original; **100 %** es la correcta (50 Hz la europea, 60 Hz la americana) |
 | `INT` | Imágenes intermedias por paso del juego (1-3; `-` si están desactivadas) |
 | `CPU` | Uso del hilo del juego |
+| `16:9` / `4:3` / `ORIG` | Modo de imagen (se cambia con L3+R3) |
 
 ## Qué esperar de la alfa
 
@@ -85,12 +87,18 @@ Arriba a la izquierda se muestra:
   original, y la app interpola las imágenes entre paso y paso.
   - En giros muy bruscos de avión o de cámara puede haber pequeños tirones o
     artefactos del terreno.
-  - L3+R3 vuelve a las imágenes originales.
+  - L3+R3 permite volver a las imágenes originales.
 - La versión **americana** se ve más estable que la europea con las
   intermedias.
 - Explosiones, humo y llamas de los motores van al ritmo original.
-- Imagen a la resolución original (320×240/256), escalada a 4:3. Todavía no
-  hay alta resolución ni pantalla ancha.
+- **Pantalla ancha (16:9)**, activada por defecto:
+  - **En la misión** se ve más escenario por los lados, sin deformar la
+    escena 3D. El HUD, las explosiones y el humo salen algo ensanchados.
+  - **Menús y briefing** se estiran a 16:9.
+  - **Los vídeos** siguen a 4:3, para no deformarlos.
+  - L3+R3 pasa a 4:3.
+- Imagen a la resolución original (320×240/256), escalada a la pantalla.
+  Todavía no hay alta resolución.
 
 ## Si algo falla
 

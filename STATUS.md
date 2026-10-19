@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.7-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.8-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 
@@ -69,7 +69,7 @@ rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
-## Etapa 7: APK libre — PUBLICADO (v1.7-alfa)
+## Etapa 7: APK libre — PUBLICADO (v1.7-alfa; v1.8-alfa con pantalla ancha)
 
 `docs/12-etapa7.md`. **El único APK que se genera:** `sh android_game/build.sh`
 → `data/android/AC3Recomp-<versión>.apk`.
@@ -86,18 +86,21 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Paso 7 de la etapa 6: las mejoras.**
-1. **GPU por GLES:** alta resolución con la precisión de nuestra GTE y
-   pantalla ancha.
-2. **Sprites que coloca la CPU** (explosiones, humo, llamas) a 60 fps.
+**La pantalla ancha está publicada** (release `v1.8-alfa`, paso 16).
 
-El recorrido 1:1 ya **funciona entero en las dos versiones** (`docs/pruebas/`):
-- las 41 misiones;
-- las secuencias de final con los créditos;
-- guardar y cargar;
-- el código validado: 95,9 % US / 96,3 % EU, 0 distintas.
+Siguiente: **alta resolución, por partes** (`docs/11-etapa6.md`, paso 16), en
+la rama `etapa-6-paso-17`:
+1. **Comparador automático:** misiones enteras en el PC, cada imagen por
+   software y por GLES a escala 1, avisando de zonas que difieran mucho.
+   Primero las 41 misiones, luego la Retroid.
+2. Recuperar de la rama `etapa-6-paso-15` solo el dibujo por GLES, sin
+   antitemblores, y corregir lo que encuentre el comparador. Pista: el bit
+   de máscara del radar.
+3. Subir de ×1 a ×2 y ×4; primero las imágenes reales y después las
+   intermedias. Como modo aparte de L3+R3, para comparar en el aparato.
+4. Antitemblores al final, aparte, solo si hace falta.
 
-La comparación con DuckStation queda para el final, por decisión del dueño.
+La comparación con DuckStation queda para el final.
 
 ## Pendiente
 

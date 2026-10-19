@@ -68,7 +68,7 @@ distribuido (`docs/06-legal.md`).
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **funciona entero en las dos versiones:** las 41 misiones, las secuencias de final con los créditos y guardar/cargar, sin fallos (`docs/pruebas/`). Falta la comparación con DuckStation, que el dueño deja para el final |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
-| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (la americana, estable; la europea, aparcada); sprites de la CPU, alta resolución y panorámico ⏳ |
+| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** ✅ publicada en la release `v1.8-alfa`; alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
 
 **Criterio de salida:** el juego completo, jugable de principio a fin en la
@@ -987,3 +987,79 @@ recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
   `2026-10-18-guardado.md`.
 - **Recorrido:** funciona 46/46 (arranque, menús, 41 misiones y final).
   Falta compararlo con DuckStation.
+
+### Paso 16: pantalla ancha (release v1.8-alfa)
+
+**Nombres:** las versiones de prueba se llamaron 1.10-alfa y 1.11-alfa. Lo
+publicado es la release **`v1.8-alfa`** (la 1.11, con `versionCode` 13).
+No tiene que ver con los APK de prueba "1.8/1.9-alfa" del primer intento,
+que nunca se publicaron.
+
+**Primer intento descartado (rama `etapa-6-paso-15`, APK 1.8/1.9-alfa).**
+Juntaba tres cosas: dibujo por GLES a alta resolución, vértices sin temblor
+y pantalla ancha. En la Retroid, en las dos versiones, aparecieron:
+- vértices que se estiran en líneas largas por la pantalla;
+- huecos en el modelo del avión y en el terreno lejano;
+- el mapa del radar fuera de su círculo.
+
+El dueño decidió deshacerlo todo y volver a añadir las tres cosas **una por
+una**, probando cada una en la Retroid. La rama queda guardada sin fusionar.
+
+**Solo pantalla ancha, sobre el dibujo por software de siempre.**
+- **GTE:** `psx_gte_wide = 0.75` comprime la x proyectada (RTPS/RTPT)
+  alrededor de OFX. El juego dibuja en 320 lo que cabría en 427 (16:9), y la
+  imagen se presenta ensanchada a 16:9 (`PSX_FIT_169`, `psx_present.c`).
+- **Cono de visión del terreno:** el juego elige las casillas visibles con
+  su propio cono, calculado con el ancho de pantalla de la cámara (short en
+  `a0+4`, vale 320) en EU `0x8005E140` / US `0x8005E3E4`.
+  - Sin tocarlo, faltaba terreno en las esquinas inferiores.
+  - Un enganche del intérprete pone 427 al entrar y devuelve 320 al entrar
+    en la función que lo sigue (EU `0x8005FD68` / US `0x8006000C`):
+    `ac3_wide_install`, en `psx/recomp/ac3_versions.c`.
+  - El intérprete admite ahora hasta 8 enganches (`mipsi_set_hook`).
+  - Direcciones US: por coincidencia de bytes del código EU (instrucciones
+    con dirección enmascaradas). Lectura comprobada con `AC3_WIDE_DBG=1`:
+    "ancho 320, alto 240" (US) / "alto 256" (EU).
+- **Solo en la misión:** la pantalla ancha se activa mientras el juego
+  calcula ese cono (cada imagen con terreno) y se apaga 15 VBlank después.
+  Menús, briefing y vídeos siguen a 4:3. Cada imagen de la cola lleva su
+  marca de pantalla ancha, para presentarla con su encaje.
+- **L3+R3:** 60 fps + 16:9 → 60 fps + 4:3 → original. El contador lo muestra
+  (`16:9`, `4:3`, `ORIG`).
+
+**Comprobado en el PC** (`AC3_WIDE=1` del binario libre):
+- misión 21 en la US y la EU, sin huecos en los lados ni fallos;
+- el radar con el dibujo por software queda dentro de su círculo, ensanchado
+  como el resto del HUD;
+- misión 2 (US) con imágenes intermedias: las mismas intermedias que a 4:3
+  (21 de 36 en la ventana), sin picos;
+- la capa: `make psx-check` sin cambios.
+
+**Pistas para el siguiente punto (alta resolución), sin comprobar:** con el
+dibujo por software el radar sale bien. Su desborde con GLES encaja con que
+`psx_hw.c` no emulaba el bit de máscara (`SIN RESOLVER`).
+
+**Conocido:** el HUD y los sprites de la CPU (explosiones, humo) salen
+ensanchados 4/3. Es lo normal de esta técnica.
+
+**Probado en la Retroid (1.10-alfa):** funciona y va mucho más estable que
+el primer intento.
+
+**1.11-alfa, menús también a 16:9** (petición del dueño):
+- En el modo `16:9` se presenta todo ensanchado, no solo la misión.
+- **Excepción, los vídeos:** van en color de 24 bits y siguen a 4:3, para
+  no deformarlos. Comprobado en el PC con `AC3_GEOM_DBG=1`:
+  - pantalla de título y menús: 15 bits (320×480);
+  - vídeo de la introducción: 24 bits (320×240).
+- **En los menús la GTE no comprime:** solo se estiran, así que sus modelos
+  3D (hangar) salen 4/3 más anchos.
+  - Comprimir allí podría descuadrar lo que el juego coloca a mano sobre lo
+    que proyecta la GTE (`SIN RESOLVER`: no se ha probado).
+  - En la misión la GTE sigue comprimiendo como en la 1.10.
+
+**Publicada como `v1.8-alfa`** (2026-10-19), a petición del dueño:
+- la rama `etapa-6-paso-16` se integra en `develop` y en `main`;
+- la release adjunta el APK con la auditoría a 0 y su SHA-256.
+
+Siguiente: la alta resolución por partes, con un comparador automático
+software/GLES por misiones enteras antes de ir a la Retroid (`STATUS.md`).

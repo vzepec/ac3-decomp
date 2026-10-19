@@ -62,6 +62,10 @@ void psx_present_frame(const uint32_t *rgba, int w, int h, int vw, int vh, int f
         int k = vw / w < vh / h ? vw / w : vh / h;
         if (k < 1) k = 1;
         dw = w * k; dh = h * k; dx = (vw - dw) / 2; dy = (vh - dh) / 2;
+    } else if (fit == PSX_FIT_169) {   /* pantalla ancha: la escena comprimida por la GTE, a 16:9 */
+        dw = vw; dh = vw * 9 / 16;
+        if (dh > vh) { dh = vh; dw = vh * 16 / 9; }
+        dx = (vw - dw) / 2; dy = (vh - dh) / 2;
     } else {   /* 4:3: el televisor muestra la imagen a 4:3 sea cual sea su ancho en pixeles */
         dw = vw; dh = vw * 3 / 4;
         if (dh > vh) { dh = vh; dw = vh * 4 / 3; }

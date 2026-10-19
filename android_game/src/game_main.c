@@ -12,7 +12,12 @@
  *    por paso, cada una con su hora de salida repartida en la duracion del paso (con un paso de
  *    retraso), y la pantalla muestra en cada refresco la ultima cuya hora ya paso. Las intermedias
  *    se dibujan en 3 hilos aparte (paso 6: en la 1.1 iban dentro del hilo del juego y en la
- *    Retroid lo frenaban). L3+R3 lo activa o desactiva;
+ *    Retroid lo frenaban);
+ *  - pantalla ancha (paso 16): todo se presenta a 16:9 salvo los videos (color de 24 bits), que
+ *    siguen a 4:3. En la mision, ademas, la GTE comprime la x a 3/4 (psx_gte_wide) para que la
+ *    escena 3D no salga deformada y el cono de vision del terreno se ensancha
+ *    (ac3_wide_install); los menus solo se estiran. L3+R3 recorre: 60 fps + 16:9 -> 60 fps + 4:3
+ *    -> el original (4:3, sin intermedias);
  *  - el juego y los hilos de dibujo van fijados a los nucleos rapidos (los de mayor frecuencia);
  *  - contador (arriba a la izquierda): imagenes distintas mostradas por segundo, velocidad del
  *    juego frente a la consola (100% = 50 VBlank por segundo), intermedias por paso y uso del
@@ -89,9 +94,12 @@ static struct {
     volatile float lx, ly, rx, ry;
     AAudioStream *audio;
     /* cola de imagenes con hora de salida (interpolacion) */
-    struct { uint32_t px[640 * 512]; int w, h; double due; int full; } q[8];
+    struct { uint32_t px[640 * 512]; int w, h; double due; int full, wide; } q[8];
     double interp_last;              /* ultima imagen entregada por la interpolacion */
     volatile int interp_enabled;
+    volatile int gfx_mode;           /* L3+R3: 0 = 60 fps + 16:9, 1 = 60 fps + 4:3, 2 = original */
+    volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0) */
+    int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 y no es un video) */
     uint32_t show[640 * 512];        /* copia de lo que se presenta (fuera del cerrojo) */
     /* cifras del contador, publicadas por el hilo del juego cada segundo */
     volatile int st_cpu, st_nfrac, st_core, st_skip, st_steps, st_unpaired;
@@ -183,18 +191,30 @@ static void frame_wait(void) {
         }
         __atomic_store_n(&G.ring_w, wpos + (uint32_t)g_spf, __ATOMIC_RELEASE);
     }
-    /* L3+R3 cambia G.interp_enabled en el hilo principal; aqui se aplica (hilo del juego) */
+    /* L3+R3 cambia G.gfx_mode en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1;
+    G.interp_enabled = G.gfx_mode != 2;
     if (interp_applied != G.interp_enabled) {
         interp_applied = G.interp_enabled;
         psx_interp_config(interp_applied ? g_nfrac : 0, 2, interp_sink);
     }
+#ifdef AC3_LIBRE
+    /* pantalla ancha: solo mientras el juego dibuja terreno (la mision; menus y videos a 4:3) */
+    static uint32_t terrain_last;
+    static int terrain_idle = 1000;
+    if (ac3_terrain_count != terrain_last) { terrain_last = ac3_terrain_count; terrain_idle = 0; }
+    else if (terrain_idle < 1000) terrain_idle++;
+    G.wide_now = G.gfx_mode == 0 && terrain_idle < 15;
+    psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
+#endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
     pthread_mutex_lock(&G.lock);
-    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; }
+    int gw, gh, gon, rgb24;
+    psx_display_geom(&gw, &gh, &gon, &rgb24);   /* los videos van en color de 24 bits: a 4:3 */
+    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; G.frame_wide = G.gfx_mode == 0 && !rgb24; }
     pthread_mutex_unlock(&G.lock);
 }
 
@@ -212,7 +232,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         if (G.q[i].due < G.q[k].due) k = i;
     }
     memcpy(G.q[k].px, rgba, (size_t)w * h * 4);
-    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1;
+    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = G.gfx_mode == 0;
     G.interp_last = now();
     pthread_mutex_unlock(&G.lock);
 }
@@ -260,6 +280,7 @@ static void *game_thread(void *arg) {
     rc_set_region(R->ovl_base, R->lib_lo, R->lib_hi, R->lib_main, R->gp);
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
+    ac3_wide_install(R);        /* pantalla ancha: el cono de vision del terreno */
 #else
     rc_register(R->funcs, *R->nfuncs);
     for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
@@ -399,10 +420,10 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         if (!m) return 0;
         if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) {
             G.keys |= m;
-            /* L3+R3: imagenes intermedias si/no (para comparar con el original) */
+            /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
-                G.interp_enabled = !G.interp_enabled;
-                LOG("imagenes intermedias: %s", G.interp_enabled ? "si" : "no");
+                G.gfx_mode = (G.gfx_mode + 1) % 3;
+                LOG("modo de imagen: %s", G.gfx_mode == 0 ? "60 fps, pantalla ancha" : G.gfx_mode == 1 ? "60 fps, 4:3" : "original");
             }
         }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;
@@ -454,6 +475,9 @@ static const struct { char c; uint8_t row[7]; } FONT[] = {
     {'A', {0x0e, 0x11, 0x11, 0x1f, 0x11, 0x11, 0x11}},
     {'%', {0x19, 0x1a, 0x02, 0x04, 0x08, 0x0b, 0x13}},
     {'-', {0x00, 0x00, 0x00, 0x1f, 0x00, 0x00, 0x00}},
+    {':', {0x00, 0x0c, 0x0c, 0x00, 0x0c, 0x0c, 0x00}},
+    {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
+    {'G', {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}},
 };
 
 /* texto de 5x7 en la imagen (pixeles de la PS1), sobre una franja oscura */
@@ -563,7 +587,7 @@ void android_main(struct android_app *app) {
         /* la imagen que toca, copiada bajo el cerrojo y presentada fuera de el */
         pthread_mutex_lock(&G.lock);
         double t = now();
-        int best = -1, sw = 0, sh = 0;   /* interpolacion activa: la ultima imagen cuya hora ya llego */
+        int best = -1, sw = 0, sh = 0, wide = 0;   /* interpolacion activa: la ultima imagen cuya hora ya llego */
         if (G.interp_enabled && t - G.interp_last < 0.15) {
             for (int i = 0; i < 8; i++)
                 if (G.q[i].full && G.q[i].due <= t && (best < 0 || G.q[i].due > G.q[best].due)) best = i;
@@ -571,8 +595,8 @@ void android_main(struct android_app *app) {
                 for (int i = 0; i < 8; i++)
                     if (G.q[i].full && G.q[i].due < G.q[best].due) G.q[i].full = 0;
         }
-        if (best >= 0) { sw = G.q[best].w; sh = G.q[best].h; memcpy(G.show, G.q[best].px, (size_t)sw * sh * 4); }
-        else if (G.fw && G.fh) { sw = G.fw; sh = G.fh; memcpy(G.show, G.frame, (size_t)sw * sh * 4); }
+        if (best >= 0) { sw = G.q[best].w; sh = G.q[best].h; wide = G.q[best].wide; memcpy(G.show, G.q[best].px, (size_t)sw * sh * 4); }
+        else if (G.fw && G.fh) { sw = G.fw; sh = G.fh; wide = G.frame_wide; memcpy(G.show, G.frame, (size_t)sw * sh * 4); }
         pthread_mutex_unlock(&G.lock);
         /* contador: imagenes distintas por segundo y velocidad del juego (VBlank por segundo) */
         static double c_t0;
@@ -589,8 +613,9 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%", G.st_nfrac, G.st_cpu);
-            else snprintf(line2, sizeof line2, "INT -  CPU %d%%", G.st_cpu);
+            const char *md = G.gfx_mode == 2 ? "ORIG" : G.gfx_mode == 0 ? "16:9" : "4:3";
+            if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
+            else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
             if (G.running)
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, cada hilo de dibujo %.1f", c_fps, c_vel, G.st_nfrac, G.st_cpu, G.st_core,
@@ -599,7 +624,7 @@ void android_main(struct android_app *app) {
         }
         if (sw && sh) {
             if (line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
-            psx_present_frame(G.show, sw, sh, G.w, G.h, PSX_FIT_43, 0);
+            psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         eglSwapBuffers(G.dpy, G.surf);
     }
