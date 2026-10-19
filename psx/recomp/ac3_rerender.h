@@ -34,7 +34,7 @@ void ac3_rr_static_range(uint32_t *a0, uint32_t *a1);
 /* ---- en otro hilo (ac3_rr_async.c): el juego deja una instantánea de lo que hace falta para
  * redibujar este paso y una segunda copia de este módulo (con su intérprete, su RAM y su GTE: los
  * mismos objetos con los símbolos renombrados, rrw_*) construye la intermedia ---- */
-#define AC3_RR_NFIELDS (9 + 32 * 3)
+#define AC3_RR_NFIELDS (9 + 33 * 6)   /* camara; 33 objetos (el de +0x3C4 y el arreglo) x posicion y 3 angulos */
 typedef struct {
     uint32_t st0, st1, sp;
     int32_t cur[AC3_RR_NFIELDS], prev[AC3_RR_NFIELDS];

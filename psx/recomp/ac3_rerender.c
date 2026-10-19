@@ -34,7 +34,7 @@ static const RrAddr RR_US = {0x800BB81Cu, 0x80033214u, {0x80033254u, 0x80033308u
  * 41 misiones US): la cámara y las posiciones del arreglo de objetos móviles del mundo (vehículos,
  * barcos: g_render+0x474 + k * 0x5C, 32 entradas; hasta la 26 usada en la misión 24). Lo demás que
  * cambia (búfer actual, contadores, desplazamientos del doble búfer) se queda como en el paso actual */
-enum { F_I32 = 0, F_ANG = 1 };
+enum { F_I32 = 0, F_ANG = 1, F_A16 = 2 };   /* F_A16: angulo de un objeto (short; vuelta = 4096) */
 typedef struct { int base; int off; int kind; int group; } RrField;   /* base: 0 = g_render, 1 = cámara */
 #define NOBJ 32
 #define NFIELDS AC3_RR_NFIELDS
@@ -46,8 +46,16 @@ static void fields_init(void) {
         {1, 0x9C, F_I32, 1}, {1, 0xA0, F_I32, 1}, {1, 0xA4, F_I32, 1},   /* vector de la cámara */
     };
     memcpy(FIELDS, cam, sizeof cam);
-    for (int k = 0; k < NOBJ; k++)
-        for (int j = 0; j < 3; j++) FIELDS[9 + k * 3 + j] = (RrField){0, 0x474 + k * 0x5C + j * 4, F_I32, 2 + k};
+    /* objetos: posicion (+0, +4, +8) y orientacion (shorts en +0x10, +0x12 y +0x14). El de
+     * g_render+0x3C4 tiene la misma forma: en la repeticion del final de mision (y la demostracion
+     * del titulo) es el avion que sigue la camara, y lo dibuja el dibujo estatico (paso 3) */
+    for (int k = 0; k <= NOBJ; k++) {
+        int base = k == 0 ? 0x3C4 : 0x474 + (k - 1) * 0x5C, f = 9 + k * 6;
+        for (int j = 0; j < 3; j++) FIELDS[f + j] = (RrField){0, base + j * 4, F_I32, 2 + k};
+        FIELDS[f + 3] = (RrField){0, base + 0x10, F_A16, 2 + k};
+        FIELDS[f + 4] = (RrField){0, base + 0x12, F_A16, 2 + k};
+        FIELDS[f + 5] = (RrField){0, base + 0x14, F_A16, 2 + k};
+    }
 }
 
 static const Ac3Version *g_v;
@@ -89,11 +97,11 @@ static uint32_t field_addr(int i) {
 }
 static int32_t field_get(int i) {
     uint32_t a = field_addr(i);
-    return FIELDS[i].kind == F_ANG ? (int32_t) * (int16_t *)psx_ptr(a) : (int32_t)rd32(a);
+    return FIELDS[i].kind != F_I32 ? (int32_t) * (int16_t *)psx_ptr(a) : (int32_t)rd32(a);
 }
 static void field_set(int i, int32_t v) {
     uint32_t a = field_addr(i);
-    if (FIELDS[i].kind == F_ANG) *(int16_t *)psx_ptr(a) = (int16_t)v;
+    if (FIELDS[i].kind != F_I32) *(int16_t *)psx_ptr(a) = (int16_t)v;
     else wr32(a, (uint32_t)v);
 }
 
@@ -187,6 +195,11 @@ static int32_t lerp_field(int i, float t) {
     if (FIELDS[i].kind == F_ANG) {   /* el camino corto en un círculo de 16384 */
         int32_t d = (b - a) & 0x3FFF;
         if (d >= 0x2000) d -= 0x4000;
+        return a + (int32_t)((float)d * t + (d >= 0 ? 0.5f : -0.5f));
+    }
+    if (FIELDS[i].kind == F_A16) {   /* el camino corto: en 16 bits si es corto; si no, en una vuelta de 4096 */
+        int32_t d = (int16_t)(b - a);
+        if (d > 2048 || d < -2048) { d = (b - a) & 0xFFF; if (d >= 0x800) d -= 0x1000; }
         return a + (int32_t)((float)d * t + (d >= 0 ? 0.5f : -0.5f));
     }
     return a + (int32_t)((double)((int64_t)b - a) * t + 0.5);

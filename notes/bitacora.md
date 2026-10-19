@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Etapa 8, paso 3a: el avión de la repetición, interpolado
+
+- **El avión doble** de la repetición del final de misión (informe del dueño)
+  se reproduce con la demostración del título: lo dibuja la parte estática,
+  con la entrada `g_render+0x3C4` (posición y ángulos), que no se
+  interpolaba.
+- **Corrección:** posición y tres ángulos de 33 objetos (esa entrada y el
+  arreglo de 32).
+- **Medida** (`tools/entre_medias.py`): intermedias entre sus reales, de 0/6 a
+  504/504. La autoprueba con t = 1 sigue a 0.
+
 ## 2026-10-19 — Etapa 8, paso 2: la imagen real solo en la GPU (APK 1.10.2-alfa)
 
 - **Software:** en la misión solo interpreta la lista (`only`). La GPU

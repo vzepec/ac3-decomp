@@ -423,3 +423,45 @@ la lista entera como referencia, mientras la GPU parte de lo que conserva.
 **Medida en el PC** (misión 0, `AC3_PACE=60`): el rasterizado de la imagen
 real pasa de 6,45 ms a **0,45 ms**. El total del hilo del juego, a ritmo real,
 lo enmascara el escalado de frecuencia de la CPU (18,8 → 16,9 ms).
+
+## Paso 3: lo que se mueve, en la interpolación nueva (rama `etapa-8-paso-3`)
+
+**Petición del dueño:** llevar a la interpolación nueva lo que falta (el avión,
+los proyectiles…). También vio un fallo: en la repetición del final de misión,
+el avión enfocado sale doble y parpadeando.
+
+### 3a: la repetición y la orientación de los objetos
+
+- **Reproducido** con la demostración del título (US, sin guion, VBlank
+  ~5700-6950: la misma cámara de repetición).
+  - Con `AC3_RR_NODRAW=1` (se quita lo estático sin redibujarlo) el avión
+    sale bien: forma parte del dibujo estático.
+  - **Encuesta** (`AC3_RR_SURVEY=1`) en la demostración: `g_render+0x3C4`,
+    con la forma de una entrada del arreglo de objetos (posición +0/+4/+8,
+    ángulos en shorts +0x10/+0x12/+0x14), cambia en casi cada paso. Es el
+    avión que sigue la cámara, y no se interpolaba: la cámara iba a medio
+    camino y el avión no.
+  - También cambia la orientación de las entradas del arreglo (+0x10/+0x14).
+- **Corrección** (`fields_init`): 33 objetos (el de `+0x3C4` y los 32 del
+  arreglo), con posición y tres ángulos.
+  - Los ángulos (`F_A16`) van por el camino corto: en 16 bits si la
+    diferencia es pequeña; si no, en una vuelta de 4096.
+  - Un objeto que salta de sitio se queda como en el paso actual.
+- **Medida** (`tools/entre_medias.py`): cada intermedia debe quedar entre sus
+  dos reales (d(I,A) y d(I,B) menores que d(A,B)).
+  - Antes: 0 de 6 (d(I,·) ~16 con d(A,B) ~5).
+  - Después: **504 de 504** en VBlank 5700-6950, y 2 pasos sin intermedia
+    (cortes de cámara).
+- **Sin romper nada:** autoprueba con t = 1 en las misiones 0, 10 y 24, 0
+  imágenes distintas.
+
+### 3b: aviones, misiles y efectos de la misión (pendiente)
+
+- Los dibujan los subsistemas que llama la lógica de la misión
+  (`FUN_80033034` en la US: `FUN_8006b088`, `FUN_8007c6e4`, `FUN_80083cfc`…),
+  antes del dibujo estático.
+- En la repetición (`FUN_80032fac`) solo se llaman `FUN_8006b5e4` y
+  `FUN_8007c6e4`: candidatos a ser dibujo puro.
+- **Lo que hace falta:** separar el dibujo de la lógica de cada subsistema,
+  guardar su estado al empezar y volver a llamarlo con las posiciones y
+  orientaciones a medio camino, como el mundo estático.

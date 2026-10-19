@@ -89,23 +89,18 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Etapa 8, paso 2 (rama `etapa-8-paso-2`, sin publicar):** probar en la
-Retroid el APK 1.10.2-alfa.
-- La imagen real, en la misión, solo la dibuja la GPU: menos trabajo en el
-  hilo del juego.
-- Mirar `FPS` y `VEL` en ciudades a baja altura; la pantalla de "MISSION
-  FAILED" (el reflejo); la pausa.
+**Probar en la Retroid el APK 1.10.3-alfa** (`data/android/AC3Recomp-1.10.3-alfa.apk`,
+rama `etapa-8-paso-3`, sobre `etapa-8-paso-2`; sin publicar).
+- **Paso 2:** en la misión, la imagen real solo la dibuja la GPU (menos
+  trabajo en el hilo del juego). Mirar `FPS`/`VEL` en ciudades a baja altura
+  y la pantalla de "MISSION FAILED" (el reflejo).
+- **Paso 3a:** la repetición del final de misión, sin el avión doble.
 
-**Paso 3 (en curso):** llevar a la interpolación nueva lo que se mueve.
-- **La repetición del final de misión** (el avión doble que vio el dueño):
-  - el avión lo dibuja la parte estática, leyendo `g_render+0x3C4`
-    (posición y ángulos), que no se interpola;
-  - se reproduce con la demostración del título (VBlank ~6000 en la US, sin
-    guion).
-- **Orientación de los objetos del arreglo** (+0x10 / +0x14).
-- **Aviones, misiles y efectos de la misión:** los dibujan los subsistemas que
-  llama la lógica (`FUN_80033034`: `FUN_8006b088`, `FUN_8007c6e4`,
-  `FUN_80083cfc`…). Hay que separar su dibujo de su lógica.
+**Paso 3b (siguiente):** aviones, misiles y efectos de la misión en la
+interpolación nueva (`docs/14-etapa8.md`).
+- Separar el dibujo de la lógica de los subsistemas que llama `FUN_80033034`
+  (US).
+- Volver a llamarlos con las transformaciones a medio camino.
 
 ## Pendiente
 
