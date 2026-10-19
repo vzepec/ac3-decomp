@@ -86,13 +86,25 @@ una copia propia del juego. Ver [`docs/06-legal.md`](docs/06-legal.md).
 
 | Área | Estado |
 |---|---|
-| Estructura de los discos EU y US | ✅ documentada |
-| Cabeceras PS-EXE de los 3 binarios | ✅ documentada |
-| Confirmación de librerías PsyQ de stock | ✅ |
-| Formato de índices `ACE.SPH` / `ACE.BPH` | ✅ resuelto, 100 % de cobertura |
-| Extracción de los 199 recursos | ✅ funciona |
-| Semántica del campo `tag` de cada entrada | ⚠️ sin resolver |
-| Formatos internos de cada recurso | ⚠️ sin empezar |
-| Desempaquetado de `ACE.BIN` | ⚠️ sin empezar — bloquea el análisis del código |
-| Decompilación | ⬜ no empezada |
-| Port Android | ⬜ no empezado |
+| **Discos y formatos** (etapas 1-2) | |
+| Estructura de los discos europeo y americano | ✅ documentada (`docs/01-disco.md`) |
+| Índices `ACE.SPH` / `ACE.BPH` y los 199 recursos | ✅ 100 % de cobertura, extracción completa |
+| Compresión ULZ de Namco | ✅ 659/659 secciones |
+| Texturas, modelos (con LOD), terreno, sonidos del SPU, audio XA y vídeo | ✅ convertibles (`docs/04-formatos.md`) |
+| `ACE.BIN` (el módulo principal, comprimido) | ✅ descomprimido y validado con sus sumas, en las dos versiones |
+| **Código** (etapas 3 y 5) | |
+| Análisis estático con Ghidra: residente y 5 overlays, librerías PsyQ marcadas | ✅ (`docs/09-codigo.md`) |
+| Capa de compatibilidad PsyQ (`psx/`): GTE, GPU, CD, SPU, mando, tarjeta… | ✅ 152/152 funciones de Sony que usa el juego |
+| **El juego nativo** (etapa 6) | |
+| Recompilación estática MIPS → C, validada función a función | ✅ 0 funciones distintas del original |
+| Intérprete MIPS propio, validado frente al de referencia | ✅ 95,9 % (US) / 96,3 % (EU) del código validado, 0 distintas |
+| Versiones europea (`SCES-02066`) y americana (`SLUS-00972`) | ✅ las dos; la americana es la de referencia |
+| Las 41 misiones | ✅ cargan y se juegan sin fallos (`docs/pruebas/`) |
+| Secuencias de final y créditos | ✅ se reproducen enteras |
+| Guardar y cargar en la tarjeta de memoria | ✅ partida válida, se carga |
+| 60 fps en vuelo (imágenes intermedias) | ✅ estable en la americana |
+| Comparación 1:1 con DuckStation | ⏳ pendiente (al final) |
+| Alta resolución y pantalla ancha (GPU por GLES) | ⏳ en curso (paso 7) |
+| **Android** (etapa 7) | |
+| APK publicable sin nada de Namco (`AC3Recomp-<versión>.apk`) | ✅ release `v1.7-alfa`; lee el juego del disco del usuario |
+| Probado en una Retroid Pocket Flip 2 | ✅ velocidad completa (`VEL` 100 %) |
