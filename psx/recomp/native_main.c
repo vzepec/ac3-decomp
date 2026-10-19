@@ -358,6 +358,181 @@ static void force_mission(RCpu *c) {
     g_force_mission = -1;
 }
 
+/* AC3_TRACE=dir[,dir...] (hex): cada entrada a esas funciones, con el VBlank, quien llama (ra) y
+ * los argumentos a0-a3 (etapa 8: localizar el dibujo de la mision). AC3_TRACE_FROM: desde ese
+ * VBlank; hasta 400 lineas */
+static void trace_hook(RCpu *c) {
+    static int n;
+    static int from = -1;
+    if (from < 0) from = getenv("AC3_TRACE_FROM") ? atoi(getenv("AC3_TRACE_FROM")) : 0;
+    if (last_vcount < from || n >= 400) return;
+    n++;
+    printf("traza: VBlank %d pc %08x ra %08x a0 %08x a1 %08x a2 %08x a3 %08x\n", last_vcount, c->r[0] == 0 ? 0u : 0u, c->r[31], c->r[4],
+           c->r[5], c->r[6], c->r[7]);
+}
+
+/* ---- etapa 8, prueba de concepto (AC3_RERENDER=vblank, direcciones de la EU): en ese VBlank, al
+ * llegar a DrawOTag, se quita de la tabla de orden lo que dibujo el mundo estatico (terreno, cielo,
+ * objetos de escena: lo que FUN_80033748 dibuja despues de la logica), se gira la camara y se
+ * vuelven a llamar las funciones de dibujo del juego; se dibuja esa imagen y se restaura todo. Si
+ * el terreno y el cielo salen girados y el HUD y el avion igual, el dibujo del juego se puede
+ * repetir con otra camara ---- */
+#include "psx_gpu.h"
+#include "psx_libgte.h"
+#define RR_G_RENDER 0x800BACC4u   /* puntero a la estructura de render */
+#define RR_G_STATE 0x800BACD0u
+static uint32_t rr_st0, rr_st1;   /* primitivas del mundo estatico: [rr_st0, rr_st1) */
+static int rr_vblank = -1;
+static uint32_t rd32(uint32_t a) { return *(uint32_t *)psx_ptr(a); }
+static void wr32(uint32_t a, uint32_t v) { *(uint32_t *)psx_ptr(a) = v; }
+static int rr_busy;   /* durante el redibujo no se mueven las marcas */
+static void rr_mark0(RCpu *c) { (void)c; if (!rr_busy) rr_st0 = rd32(rd32(RR_G_RENDER) + 20); }            /* FUN_8003308c */
+static void rr_mark1(RCpu *c) { (void)c; if (!rr_busy) rr_st1 = rd32(rd32(RR_G_RENDER) + 20) - 12; }       /* FUN_80039d84 */
+extern uint8_t *mipsi_rtrace, *mipsi_wtrace;
+static uint8_t rr_prev[PSX_RAM_SIZE];   /* RAM del paso anterior (en su DrawOTag) */
+static int rr_have_prev;
+/* encuesta (AC3_RERENDER_SURVEY=pasos): por palabra leida, cuantas veces cambio y el mayor salto */
+typedef struct { uint32_t a; int n; int64_t maxd; uint32_t last; } RrStat;
+static RrStat rr_st[4096];
+static int rr_nst, rr_steps;
+static void rr_survey_add(uint32_t a, uint32_t was, uint32_t now) {
+    int i = 0;
+    while (i < rr_nst && rr_st[i].a != a) i++;
+    if (i == rr_nst) { if (rr_nst == 4096) return; rr_st[rr_nst].a = a; rr_st[rr_nst].n = 0; rr_st[rr_nst].maxd = 0; rr_nst++; }
+    int64_t d = (int64_t)(int32_t)now - (int32_t)was;
+    if (d < 0) d = -d;
+    rr_st[i].n++;
+    if (d > rr_st[i].maxd) rr_st[i].maxd = d;
+    rr_st[i].last = now;
+}
+static void rr_survey_print(void) {
+    uint32_t gr = rd32(RR_G_RENDER), cam = rd32(gr + 40);
+    printf("encuesta: %d pasos; g_render %08x, camara %08x\n", rr_steps, gr, cam);
+    for (int i = 0; i < rr_nst; i++) {   /* por direccion */
+        for (int j = i + 1; j < rr_nst; j++) if (rr_st[j].a < rr_st[i].a) { RrStat t = rr_st[i]; rr_st[i] = rr_st[j]; rr_st[j] = t; }
+        uint32_t A = 0x80000000u | rr_st[i].a;
+        char where[48] = "";
+        if (A >= cam && A < cam + 0x200) snprintf(where, sizeof where, "camara+%03x", A - cam);
+        else if (A >= gr && A < gr + 0x1000) snprintf(where, sizeof where, "g_render+%03x", A - gr);
+        printf("  %08x %-14s cambia %3d de %d, salto max %lld, ultimo %08x\n", A, where, rr_st[i].n, rr_steps, (long long)rr_st[i].maxd, rr_st[i].last);
+    }
+}
+/* llamada a una funcion del juego con hasta 4 argumentos, como una interrupcion (pila propia) */
+static void guest_call(uint32_t addr, uint32_t a0, uint32_t a1, uint32_t a2, uint32_t a3) {
+    RCpu cb;
+    memset(&cb, 0, sizeof cb);
+    cb.r[4] = a0; cb.r[5] = a1; cb.r[6] = a2; cb.r[7] = a3;
+    cb.r[28] = V->gp;
+    cb.r[29] = 0x8000E000u;
+    cb.r[31] = 0x8000FFF0u;
+    uint32_t ret = rc_ret;
+    rc_ret = cb.r[31];
+    rc_call(&cb, addr);
+    rc_ret = ret;
+}
+extern void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
+static void rr_map(uint32_t ot, const char *when) {   /* depuracion: paquetes de la cadena por zona de memoria y orden de GPU */
+    {
+        uint32_t gr0 = rd32(RR_G_RENDER);
+        printf("rerender (%s): ot %08x, g_render[4] %08x [5] %08x, bufers de primitivas %08x %08x, ots %08x %08x\n", when, ot, rd32(gr0 + 16), rd32(gr0 + 20),
+               rd32(gr0 + 32), rd32(gr0 + 36), rd32(gr0 + 24), rd32(gr0 + 28));
+        int hist[4][256];
+        memset(hist, 0, sizeof hist);
+        uint32_t b = ot, gd = 0;
+        while ((b & 0xFFFFFF) != 0xFFFFFF && ++gd < 300000) {
+            uint32_t tag = rd32(b | 0x80000000u), n = tag >> 24;
+            int zone = (b | 0x80000000u) < rr_st0 ? 0 : (b | 0x80000000u) < rr_st1 ? 1 : 2;
+            if (((b | 0x80000000u) & 0xFFE00000u) == 0x1F800000u) zone = 3;
+            if (n) hist[zone][rd32((b | 0x80000000u) + 4) >> 24]++;
+            b = tag & 0xFFFFFF;
+        }
+        static const char *ZN[4] = {"antes", "rango", "despues", "scratch"};
+        for (int z = 0; z < 4; z++) {
+            printf("  %s:", ZN[z]);
+            for (int c2 = 0; c2 < 256; c2++) if (hist[z][c2]) printf(" %02x:%d", c2, hist[z][c2]);
+            printf("\n");
+        }
+    }
+}
+static void rr_hook(PsxGpu *g, uint32_t ot) {
+    if (last_vcount < rr_vblank || rr_vblank < 0 || !rr_st0 || rr_st1 <= rr_st0) {
+        if (rr_vblank >= 0 && last_vcount >= rr_vblank - 8) { memcpy(rr_prev, psx_ram, sizeof rr_prev); rr_have_prev = 1; }
+        psx_gpu_draw_list(g, ot);
+        return;
+    }
+    static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
+    static PsxGte gte;
+    memcpy(ram, psx_ram, sizeof ram); memcpy(scr, psx_scratch, sizeof scr);
+    PsxGte *gc = (PsxGte *)psx_gte_get_context();
+    gte = *gc;
+    if (getenv("AC3_RERENDER_MAP")) rr_map(ot, "antes");
+    /* 1. quitar de la cadena los paquetes del mundo estatico */
+    uint32_t a = ot, removed = 0, guard = 0;
+    while ((a & 0xFFFFFF) != 0xFFFFFF && ++guard < 300000) {
+        uint32_t tag = rd32(a | 0x80000000u), next = tag & 0xFFFFFF;
+        while (next != 0xFFFFFF && (next | 0x80000000u) >= rr_st0 && (next | 0x80000000u) < rr_st1) {
+            next = rd32(next | 0x80000000u) & 0xFFFFFF;
+            removed++;
+        }
+        wr32(a | 0x80000000u, (tag & 0xFF000000u) | next);
+        a = next | 0x80000000u;
+    }
+    /* 2. camara girada y el dibujo estatico otra vez, en el otro bufer de primitivas */
+    uint32_t gr = rd32(RR_G_RENDER), gs = rd32(RR_G_STATE), cam = rd32(gr + 40);
+    int cur = (int)rd32(gs + 4);
+    (void)cur;   /* las primitivas nuevas, tras las de esta imagen (g_render[5] ya apunta ahi; el otro bufer
+                  * tiene primitivas 2D de esta misma imagen) */
+    int16_t *ang = (int16_t *)psx_ptr(cam + 0x14);
+    printf("rerender: VBlank %d, %u paquetes estaticos quitados [%08x, %08x); camara %08x angulos %d %d %d\n", last_vcount, removed, rr_st0,
+           rr_st1, cam, ang[0], ang[1], ang[2]);
+    ang[1] += getenv("AC3_RERENDER_YAW") ? atoi(getenv("AC3_RERENDER_YAW")) : 64;
+    if (getenv("AC3_RERENDER_NODRAW")) goto draw;   /* prueba: solo quitar */
+    static uint8_t rt[PSX_RAM_SIZE / 32], wt[PSX_RAM_SIZE / 32];
+    memset(rt, 0, sizeof rt);
+    memset(wt, 0, sizeof wt);
+    if (getenv("AC3_RERENDER_READS")) { mipsi_rtrace = rt; mipsi_wtrace = wt; }
+    rr_busy = 1;
+    guest_call(0x8003304Cu, cam, gr + 0x2C, gr + 0x4C, 0);
+    guest_call(0x8003308Cu, 0, 0, 0, 0);
+    guest_call(0x80033140u, 0, 0, 0, 0);
+    guest_call(0x80033194u, 0, 0, 0, 0);
+    guest_call(0x800331D4u, 0, 0, 0, 0);
+    rr_busy = 0;
+    mipsi_rtrace = mipsi_wtrace = NULL;
+    if (getenv("AC3_RERENDER_READS") && rr_have_prev) {
+        /* lo leido que cambio desde el paso anterior (sin las primitivas ni las tablas de orden, que
+         * se reescriben cada imagen): lo que habria que interpolar */
+        uint32_t ex0 = rd32(gr + 24) & 0x1FFFFF, ex1 = (rd32(gr + 36) & 0x1FFFFF) + 0x20000;
+        int nread = 0, nchg = 0;
+        for (uint32_t a = 0; a < PSX_RAM_SIZE; a += 4) {
+            if (!(rt[a >> 5] >> ((a >> 2) & 7) & 1)) continue;
+            nread++;
+            if (a >= ex0 && a < ex1) continue;
+            uint32_t now = *(uint32_t *)(ram + a), was = *(uint32_t *)(rr_prev + a);
+            if (now == was) continue;
+            nchg++;
+            rr_survey_add(a, was, now);
+            if (nchg <= 120 && !getenv("AC3_RERENDER_SURVEY")) printf("  leido y cambiado: %08x  antes %08x  ahora %08x\n", 0x80000000u | a, was, now);
+        }
+        rr_steps++;
+        if (!getenv("AC3_RERENDER_SURVEY"))
+            printf("rerender: %d palabras leidas, %d cambiadas desde el paso anterior (sin primitivas ni OT %06x-%06x)\n", nread, nchg, ex0, ex1);
+    }
+draw:
+    if (getenv("AC3_RERENDER_MAP")) rr_map(ot, "despues");
+    psx_gpu_draw_list(g, ot);
+    /* 3. todo como estaba */
+    memcpy(psx_ram, ram, sizeof ram); memcpy(psx_scratch, scr, sizeof scr);
+    *gc = gte;
+    static int survey_left = -1;
+    if (survey_left < 0) survey_left = getenv("AC3_RERENDER_SURVEY") ? atoi(getenv("AC3_RERENDER_SURVEY")) : 0;
+    memcpy(rr_prev, ram, sizeof rr_prev);   /* (la RAM de este paso, para el siguiente) */
+    rr_have_prev = 1;
+    if (survey_left-- > 0) return;   /* encuesta: seguir en el siguiente paso */
+    rr_vblank = -1;   /* una vez */
+    if (getenv("AC3_RERENDER_SURVEY")) rr_survey_print();
+}
+
 /* AC3_SEQ=v: al entrar en el primer paso del modo 5 (la secuencia que reproduce el juego segun
  * g_state + 0x3AC: 0 la demostracion del menu, 2 el final de la campana, que sigue en los
  * creditos) se escribe v en g_state + 0x3AC, la primera vez */
@@ -444,6 +619,17 @@ int main(int argc, char **argv) {
     if (getenv("AC3_WIDE")) {   /* pantalla ancha en la mision */
         g_wide = 1;
         ac3_wide_install(V);
+    }
+    if (getenv("AC3_RERENDER")) {
+        rr_vblank = atoi(getenv("AC3_RERENDER"));
+        mipsi_set_hook(0x8003308Cu, rr_mark0);
+        mipsi_set_hook(0x80039D84u, rr_mark1);
+        psx_draw_list_hook = rr_hook;
+    }
+    if (getenv("AC3_TRACE")) {
+        char buf[256];
+        snprintf(buf, sizeof buf, "%s", getenv("AC3_TRACE"));
+        for (char *t = strtok(buf, ","); t; t = strtok(NULL, ",")) mipsi_set_hook((uint32_t)strtoul(t, NULL, 16), trace_hook);
     }
     if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
         g_force_mission = atoi(getenv("AC3_MISSION"));
