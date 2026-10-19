@@ -1280,3 +1280,26 @@ solo salen con la interpolación (en `ORIG` no).
 **SIN RESOLVER hasta probarlo en la Retroid:** si desaparecen los
 estiramientos visibles del vídeo. En el PC el vuelo guionizado no pasa por
 los mismos puentes.
+
+**Cielo que tiembla al cabecear** (petición del dueño con la 1.9.3: "el
+cielo suele temblar cuando muevo el avión, generalmente con movimientos
+verticales"):
+- **Medida** (misión 2, morro arriba y abajo, una intermedia por paso):
+  - el horizonte del terreno, en la intermedia, queda a mitad de camino
+    (148 → 152 → 156);
+  - la franja del degradado del cielo ya estaba en su posición final
+    (100 → 106 → 106).
+- **El cielo no se interpolaba:** saltaba un paso entero mientras el
+  terreno avanzaba a medias.
+- **Causa:**
+  - el cielo (4 franjas de −160 a 160) se dibuja al principio de la lista,
+    antes de su primera orden E3;
+  - el recorrido de la interpolación empezaba con el área "0", así que el
+    cielo quedaba en otro "espacio" que la escena 3D (`ref_spc` 0xbc0a0
+    frente a 0x100000bc0a0) y nadie lo movía.
+- **Corrección:** `walk()` empieza con el desplazamiento y el área que la
+  GPU tiene al arrancar la lista (los de `PutDrawEnv`).
+- **Resultado:** el cielo de la intermedia queda entre los dos pasos (100 →
+  102 → 106; 116 → 124 → 129).
+- **Sin romper nada:** huecos 9,2 px por imagen (antes 9,9), comparador GLES
+  sin fallos, `psx-check` bien.

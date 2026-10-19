@@ -177,9 +177,13 @@ static void walk_packet(uint32_t *p, int n) {
     }
 }
 
-static void walk(uint32_t addr) {
+/* ofs0 / area0: el desplazamiento (E5) y el origen del area (E3) que la GPU tiene al empezar la
+ * lista (los de PutDrawEnv). Con 0 (paso 19 y antes), lo que la lista dibuja antes de su primera
+ * E3 (el cielo, al principio) quedaba en otro "espacio" que la escena 3D y no se interpolaba:
+ * saltaba un paso entero mientras el terreno avanzaba a medias (el cielo temblaba al cabecear) */
+static void walk(uint32_t addr, int ofs0, int area0) {
     nref = nprim = prim_start = 0;
-    cur_ofs = cur_area = 0;   /* lo que haya antes de la lista: el entorno de PutDrawEnv */
+    cur_ofs = ofs0; cur_area = area0;
     int guard = 0;
     while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard < 200000) {
         uint32_t *p = (uint32_t *)psx_ptr(addr);
@@ -512,7 +516,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         Slot *s = slot(valt, val_gen, mix(cur[i].sxy | (1ull << 40)), 1);
         if (s && s->val == 0) s->val = (uint32_t)i + 1;
     }
-    walk(ot);
+    walk(ot, (g->off_x & 0x7FF) | (g->off_y & 0x7FF) << 11, (g->area_x1 & 0x3FF) | (g->area_y1 & 0x3FF) << 10);
     pocc_gen++;
     for (int pi = 0; pi < nprim && pi < MAXREF; pi++) {
         Slot *o = slot(pocc, pocc_gen, mix(prim_key[pi]), 1);
@@ -892,8 +896,9 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     if (dump_now) {   /* depuracion: primitiva, coordenada, estado */
         FILE *f = fopen(getenv("PSX_INTERP_PRIMDUMP"), "w");
         if (f) {
-            for (int i = 0; i < nref; i++) fprintf(f, "%d %d %d %d %d %d %d %d\n", ref_prim[i], lo(orig[i]), hi(orig[i]), moved[i], ddx[i], ddy[i],
-                                              ((ref_ofs[i] & 0x7FF) ^ 0x400) - 0x400, (((ref_ofs[i] >> 11) & 0x7FF) ^ 0x400) - 0x400);
+            for (int i = 0; i < nref; i++) fprintf(f, "%d %d %d %d %d %d %d %d %llx %llx\n", ref_prim[i], lo(orig[i]), hi(orig[i]), moved[i], ddx[i], ddy[i],
+                                              ((ref_ofs[i] & 0x7FF) ^ 0x400) - 0x400, (((ref_ofs[i] >> 11) & 0x7FF) ^ 0x400) - 0x400,
+                                              (unsigned long long)ref_spc[i], (unsigned long long)spc3d);
             fclose(f);
         }
     }

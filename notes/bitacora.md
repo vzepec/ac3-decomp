@@ -5,6 +5,22 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — El cielo no se interpolaba (temblaba al cabecear)
+
+**Causa:** el cielo se dibuja antes de la primera orden E3 de la lista, y
+el recorrido de la interpolación empezaba con área 0. El cielo quedaba en
+otro "espacio" que la escena 3D y saltaba un paso entero (medido:
+intermedia = real).
+
+**Corrección:** `walk()` parte del área y el desplazamiento reales de la
+GPU.
+
+**Resultado:** el cielo de la intermedia queda a mitad de camino.
+
+**Reproducir:** misión 2 con `2800:larr:40,2880:laba:40...`,
+`AC3_INTERP=1 AC3_INTERP_NAMEVB=1`; medir el horizonte y la franja del
+cielo en la columna central.
+
 ## 2026-10-19 — Interpolación: emparejamientos falsos entre piezas iguales (APK 1.9.3-alfa)
 
 **Diagnóstico:** confirmado que los estiramientos solo salen con
