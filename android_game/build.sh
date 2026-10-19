@@ -81,7 +81,7 @@ for r in $REGIONS; do
         $CC -O2 $CF -c src/regions.c -o "$B/obj/regions_eu.o"
     fi
 done
-for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_present.c"; do
+for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_present.c" "$ROOT/psx/gl/psx_hw.c"; do
     $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
 done
 if [ "$REGION" = libre ]; then

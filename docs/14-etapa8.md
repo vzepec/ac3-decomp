@@ -313,3 +313,59 @@ desde el VBlank 2700; `rr:` al salir del binario libre):
   juego y el redibujo.
 - En el aparato faltan las cifras por hilo: el contador solo da `CPU` del
   hilo del juego. `SIN RESOLVER` hasta medir en la Retroid.
+
+## Paso 1: dibujo por la GPU a resolución original (rama `etapa-8-paso-1`)
+
+**Decisión del dueño:** ir a la GPU, no repartir el software entre hilos,
+porque después viene la alta resolución.
+
+**Qué se integra:**
+- el dibujo por GLES de la etapa 6 (pasos 17-19, `psx/gl/psx_hw.c`, validado
+  con el comparador), que estaba en la app hasta el paso 19 (commit
+  `fb7fd72`; la rama `gles-alta-resolucion` se borró: su contenido está en
+  `develop`);
+- a escala 1 y con el tramado de la PS1: la misma imagen que por software;
+- con la interpolación nueva, el hilo de dibujo solo **anota** la intermedia
+  (`psx_gpu_record` con `only`): no la rasteriza. La GPU la dibuja en el hilo
+  de presentación;
+- la imagen real sigue dibujándose también por software en el hilo del
+  juego, porque la memoria de vídeo del juego es la del software.
+
+**Modos de la app (temporal, para comparar):** L3+R3 recorre `GPU 16:9` →
+`SW 16:9` → `GPU 4:3` → `ORIG`.
+- El registro (`adb logcat -s AC3Game`) da cada segundo el hilo de dibujo 0,
+  con el redibujo aparte.
+- También da los ms de GLES por imagen.
+
+**Comparador** (`AC3_RR=1 AC3_WIDE=1 AC3_INTERP=1`, `tools/hwcmp.py`, 41
+misiones): 140.538 listas (intermedias incluidas), 4 con bloques malos (7
+bloques).
+- **Misión 7, VBlank 2763** (se reproduce): una estela de triángulos muy
+  finos que GLES rasteriza un píxel al lado. Es el mismo tipo de caso límite
+  que la línea del túnel de la etapa 6.
+- **3 en menús** (misiones 5, 6 y 8): puntos sueltos que no se reproducen al
+  repetir la misión. `SIN RESOLVER`.
+- **Misión 37:** 86 % de píxeles idénticos y 201 listas por debajo del 99 %
+  de casi iguales. Sin interpolación ya da 89,8 % y 131: es el túnel. Las
+  intermedias solo añaden listas del mismo tipo.
+- Todas las misiones terminan sin fallos.
+
+**Medida en el PC** (misión 0, ciudad, `AC3_PACE=60`; `AC3_HW_NULL=1` anota
+las listas y las tira, sin GLES):
+
+| | Software | GPU |
+|---|---|---|
+| Hilo de dibujo 0 | ~17 ms (redibujo 8,7 + rasterizado 7,6) | ~9,5 ms (redibujo 8,9 + anotar 0,6) |
+| Hilo del juego | ~19 ms (rasterizado de la imagen real 6,5-6,8) | igual |
+
+- El rasterizado se mide aparte (`rr: rasterizado por software`).
+- **Cuidado:** `AC3_HW_NULL=` vacío también lo activa (`getenv`): una primera
+  medida salió mal por eso.
+
+**APK 1.10.1-alfa** (prueba, sin publicar).
+
+**Siguiente:**
+- según lo que dé la Retroid, la imagen real solo en la GPU (quitaría el
+  rasterizado del hilo del juego, unos 7 ms en el PC). Exige seguir qué
+  partes de la memoria de vídeo lee el juego;
+- después, la escala (alta resolución).

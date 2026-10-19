@@ -43,6 +43,8 @@ void psx_interp_threads(int n, void (*on_start)(void));
 typedef struct {
     int steps, jobs, skipped, unpaired, nfrac, threads;   /* unpaired: pasos sin bastantes parejas */
     double pair_ms, snap_ms, real_ms, worker_ms, worker_max_ms;
+    double worker0_ms;   /* el hilo de dibujo 0, por trabajo (con el redibujo asincrono es el unico que trabaja) */
+    double rebuild_ms;   /* de ello, el redibujo (psx_interp_rebuild_async), por fase redibujada */
 } PsxInterpPerf;
 void psx_interp_perf(PsxInterpPerf *p, int reset);
 

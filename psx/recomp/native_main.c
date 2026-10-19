@@ -485,6 +485,10 @@ static void rr_self_summary(void) {
     printf("rr: autoprueba t = 1: %d imagenes comprobadas, %d distintas del original, %d sin construir (corte o pausa)\n", rr_tests, rr_bad,
            rr_skipped);
 }
+static void hw_null_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
+                         int vb, double t_step) {
+    (void)l; (void)bg; (void)sw; (void)x0; (void)y0; (void)w; (void)h; (void)num; (void)den; (void)vb; (void)t_step;
+}
 static int g_rr_async;
 static void rr_stats(void) {
     extern double psx_interp_rebuild_s;
@@ -499,8 +503,11 @@ static void rr_stats(void) {
         printf("rr: hilo del juego (en vuelo, a ritmo real): ocupado %.1f ms por paso de %.1f; de ellos, emparejamiento %.2f, copias %.2f, "
                "imagen real (GPU por software) %.2f\n", 1000 * (span - g_pace_sleep) / nst, 1000 * span / nst, pf.pair_ms, pf.snap_ms, pf.real_ms);
     }
-    printf("rr: pasos %d, con intermedias %d, saltados (hilos ocupados) %d; hilo de dibujo %.2f ms de media, %.2f el peor\n", pf.steps, pf.jobs,
-           pf.skipped, pf.worker_ms, pf.worker_max_ms);
+    { extern double tm_raster_real, tm_raster_w; extern int tm_raster_nr, tm_raster_nw;
+      printf("rr: rasterizado por software: imagen real %.2f ms (%d), intermedia %.2f ms (%d)\n", tm_raster_nr ? 1000 * tm_raster_real / tm_raster_nr : 0.0,
+             tm_raster_nr, tm_raster_nw ? 1000 * tm_raster_w / tm_raster_nw : 0.0, tm_raster_nw); }
+    printf("rr: pasos %d, con intermedias %d, saltados (hilos ocupados) %d; hilo de dibujo 0 %.2f ms por trabajo (redibujo %.2f), %.2f el peor\n",
+           pf.steps, pf.jobs, pf.skipped, pf.worker0_ms, pf.rebuild_ms, pf.worker_max_ms);
     extern double ac3_rr_t[6];
     double t[6];
     if (g_rr_async) ac3_rr_async_times(t);
@@ -668,6 +675,9 @@ int main(int argc, char **argv) {
         puts("GTE de referencia: activa");
     }
 #endif
+    if (getenv("AC3_HW_NULL")) {   /* etapa 8, paso 1: medir la CPU con la GPU (las listas se anotan y se tiran, sin GLES) */
+        psx_interp_hw(hw_null_sink, 0);
+    }
     if (getenv("AC3_HWCMP")) {   /* paso 17: comparar el dibujo por GLES con el software, lista a lista */
         int psx_hwcmp_start(const char *dir);
         void psx_hwcmp_interp(void);

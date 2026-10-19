@@ -242,6 +242,8 @@ static int hw_prepare(PsxHwList *l, int x1, int y1, int x2, int y2) {
 }
 
 /* la imagen real del paso: por software y, con GLES, ademas anotada y entregada */
+double tm_raster_real, tm_raster_w; int tm_raster_nr, tm_raster_nw;
+static double tnow(void);
 static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
     int w, h, on, rgb24;
     psx_display_geom(&w, &h, &on, &rgb24);
@@ -249,7 +251,9 @@ static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
     static uint16_t bg[1024 * 512];
     if (!g_hwsink || !on || rgb24 || w <= 0 || h <= 0 || w * h > 1024 * 512 ||
         hw_prepare(&L, g->area_x1, g->area_y1, g->area_x2, g->area_y2)) {
+        double r0 = tnow();
         psx_gpu_draw_list(g, ot);
+        tm_raster_real += tnow() - r0; tm_raster_nr++;
         capture(g, num, den, vb);
         return;
     }
@@ -358,6 +362,8 @@ static struct {
     double worker_s, worker_max;
     int jobs, skipped, steps, unpaired;
     double pair_s, snap_s, real_s;
+    double worker0_s, rr_s;
+    int rr_n;
 } J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER};
 
 static double tnow(void);
@@ -419,7 +425,8 @@ static void *worker(void *arg) {
                     memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch);
                     pthread_mutex_lock(&J.mu); psx_interp_rebuild_fails++; pthread_mutex_unlock(&J.mu);
                 }
-                pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += tnow() - tr; psx_interp_rebuild_n++; pthread_mutex_unlock(&J.mu);
+                double dr = tnow() - tr;
+                pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += dr; psx_interp_rebuild_n++; J.rr_s += dr; J.rr_n++; pthread_mutex_unlock(&J.mu);
             } else if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
             else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
             memcpy(gpu, &J.gpu, sizeof *gpu);
@@ -435,7 +442,9 @@ static void *worker(void *arg) {
                 J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
                 continue;
             }
+            double r0 = tnow();
             psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
+            if (id == 0) { tm_raster_w += tnow() - r0; tm_raster_nw++; }
             psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
             J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
         }
@@ -443,6 +452,7 @@ static void *worker(void *arg) {
         double dt = tnow() - t0;
         pthread_mutex_lock(&J.mu);
         J.worker_s += dt;
+        if (id == 0) J.worker0_s += dt;
         if (dt > J.worker_max) J.worker_max = dt;
         if (--J.pending == 0) pthread_cond_broadcast(&J.done);
         pthread_mutex_unlock(&J.mu);
@@ -471,7 +481,12 @@ void psx_interp_perf(PsxInterpPerf *p, int reset) {
     p->pair_ms = J.pair_s * 1000 / n; p->snap_ms = J.snap_s * 1000 / n; p->real_ms = J.real_s * 1000 / n;
     p->worker_ms = J.jobs ? J.worker_s * 1000 / (J.jobs * (J.nthreads ? J.nthreads : 1)) : 0;
     p->worker_max_ms = J.worker_max * 1000;
-    if (reset) { J.steps = J.jobs = J.skipped = J.unpaired = 0; J.pair_s = J.snap_s = J.real_s = J.worker_s = J.worker_max = 0; }
+    p->worker0_ms = J.jobs ? J.worker0_s * 1000 / J.jobs : 0;
+    p->rebuild_ms = J.rr_n ? J.rr_s * 1000 / J.rr_n : 0;
+    if (reset) {
+        J.steps = J.jobs = J.skipped = J.unpaired = J.rr_n = 0;
+        J.pair_s = J.snap_s = J.real_s = J.worker_s = J.worker_max = J.worker0_s = J.rr_s = 0;
+    }
     pthread_mutex_unlock(&J.mu);
 }
 
