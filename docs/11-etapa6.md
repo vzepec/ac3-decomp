@@ -66,7 +66,7 @@ distribuido (`docs/06-legal.md`).
 | 2 | Salida de vídeo: el área visible de la VRAM a pantalla con GLES (PC con EGL y Android), imagen 1:1 | ✅ conversión exacta en 15/24 bits, GLES idéntico píxel a píxel, películas reales; compila para arm64 |
 | 3 | Recompilador MIPS → C (`tools/recomp/`): residente y 5 overlays, validado función a función contra `mipsemu` | ✅ 1.672/1.821 funciones validadas con estados aleatorios, 0 distintas; el resto, con estados reales en el paso 4 |
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
-| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | ⏳ **siguiente** (con la versión americana): solo está comprobado hasta la primera misión |
+| 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **las 41 misiones cargan y se vuelan sin fallos** (americana, `make misiones`); falta completarlas, los finales, guardar/cargar y la comparación con DuckStation |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
 | 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (la americana, estable; la europea, aparcada); sprites de la CPU, alta resolución y panorámico ⏳ |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
@@ -877,3 +877,49 @@ menos artefactos.
 - Las tres variantes se generan: universal de 7,0 MB y sueltas de 3,6 MB.
 
 **SIN RESOLVER:** la prueba en la Retroid con los dos discos.
+
+### Paso 11: las 41 misiones, una a una (versión americana)
+
+El dueño ha jugado varias misiones en la Retroid sin errores. Para
+comprobarlas todas sin completarlas en orden, se fuerza la misión que carga
+el juego.
+
+**Cómo elige el juego la misión** (decompilación de Ghidra):
+- La función que arranca la misión (EU `FUN_800355f0`, US `FUN_800357b8`)
+  toma el `short` de **`g_state + 0x390`**, la misión actual, y carga el
+  registro `mission_records[n]` del BPB.
+- `g_state` es el puntero en EU `0x800BACD0` y en US `0x800BB828`.
+- `mission_records` es una tabla de **41** entradas (registros 6 a 46),
+  idéntica en las dos versiones (EU `0x800AF748`, US `0x800AFB1C`).
+
+**Herramienta:**
+- `mipsi_set_hook`: el intérprete llama a una función del anfitrión al
+  entrar en una dirección.
+- `AC3_MISSION=N` en el binario libre escribe N en `g_state + 0x390` la
+  primera vez que se entra en la función de arranque. Las siguientes las
+  encadena el juego.
+- `tools/misiones.py` y `make misiones` recorren las misiones: 4.000
+  fotogramas cada una con un guion que llega a la misión y vuela a ciegas
+  disparando misiles. Anotan la misión que arranca, los fallos `rc_fault`, la
+  salida del proceso y las capturas, y generan hojas de contactos.
+
+**Resultado** (US, binario libre = el código del APK):
+- **41/41 misiones cargan, arrancan y terminan sin ningún fallo.** Cada una
+  dibuja su escenario: ciudades, costa, cañones, noche, nieve, despegues,
+  túneles del Geofront, el espacio, la Electrosfera…
+- **Encadenamientos:**
+  - La **16** es la secuencia del lanzamiento, sin juego. Al acabar, el juego
+    encadena la **17** ("Leaving atmosphere"), que se vuela en el espacio.
+  - La **1** (primera de la campaña) y la **29** muestran antes un texto de
+    la historia ("PEACEMAKER", "REVELATION"). Con Start se salta y se llega
+    a "ENGAGE" y al vuelo.
+- La misión que el juego arranca por sí solo en la partida nueva es la 1.
+
+**SIN RESOLVER:**
+- completar cada misión y los finales;
+- el árbol de decisiones de la historia;
+- guardar y cargar en la tarjeta;
+- la comparación con DuckStation.
+
+**Reproducir:** `make misiones` (`MISIONES=0-40`).
+

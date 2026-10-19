@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-18 — Las 41 misiones cargan y se vuelan sin fallos (americana)
+
+**Mecanismo:** la misión actual es el `short` de `g_state + 0x390`. La función
+de arranque (US `FUN_800357b8`, EU `FUN_800355f0`) carga
+`mission_records[n]`, una tabla de 41 registros (6..46), idéntica en las dos
+versiones. Con `AC3_MISSION=N` (enganche `mipsi_set_hook`) se fuerza la
+misión en el binario libre.
+
+**Resultado** (`make misiones`, US):
+- 41/41 misiones sin ningún fallo `rc_fault`, salida normal y escenario
+  propio en vuelo (hojas de contactos).
+- La 16 (lanzamiento) encadena la 17 (espacio).
+- La 1 y la 29 empiezan con texto de la historia, que se salta con Start.
+
+**Error propio durante la prueba:** un bucle de espera con `pgrep -f
+ac3_libre` se encontraba a sí mismo en su propia línea de comandos y no
+terminaba. `tools/misiones.py` espera a cada proceso por su identificador.
+
+**SIN RESOLVER:** completar misiones, finales, guardado y comparación con
+DuckStation.
+
 ## 2026-10-18 — Se trabaja con la versión americana; ramas limpias
 
 **Decisión del dueño:** la versión americana pasa a ser la referencia, porque

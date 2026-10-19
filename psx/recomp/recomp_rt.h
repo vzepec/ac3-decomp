@@ -147,5 +147,6 @@ void rc_host_callback(uint32_t addr, uint32_t a0, uint32_t a1);  /* callbacks de
 void rc_set_interpreter(void (*fn)(RCpu *, uint32_t));
 void mipsi_call(RCpu *c, uint32_t addr);
 extern uint64_t mipsi_steps;
+void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *));   /* pruebas: al entrar en `addr` */
 
 #endif

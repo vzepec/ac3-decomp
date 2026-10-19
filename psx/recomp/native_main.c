@@ -275,6 +275,26 @@ static void parse_script(const char *s) {
     }
 }
 
+#ifdef AC3_LIBRE
+/* AC3_MISSION=N: al entrar en la funcion que arranca la mision, la mision actual del estado de
+ * la partida (g_state + 0x390) pasa a ser N; el juego carga entonces mission_records[N] */
+static int g_force_mission = -1;
+static void force_mission(RCpu *c) {
+    (void)c;
+    uint32_t st = *(uint32_t *)psx_ptr(V->g_state_ptr);
+    int16_t *m = (int16_t *)psx_ptr(st + 0x390);
+    if (g_force_mission < 0) {   /* solo la primera vez: las siguientes las encadena el juego */
+        printf("mision: el juego arranca la %d en el fotograma %d\n", *m, last_vcount);
+        fflush(stdout);
+        return;
+    }
+    printf("mision: el juego arranca la %d en el fotograma %d; se fuerza la %d\n", *m, last_vcount, g_force_mission);
+    fflush(stdout);
+    *m = (int16_t)g_force_mission;
+    g_force_mission = -1;
+}
+#endif
+
 int main(int argc, char **argv) {
     if (argc < 4) { fprintf(stderr, "uso: %s <imagen> <ace_eu.bin> <fotogramas> [capturas] [cada_n] [guion]\n", argv[0]); return 2; }
     max_frames = atoi(argv[3]);
@@ -314,6 +334,10 @@ int main(int argc, char **argv) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     rc_set_hle(V->hle, *V->nhle);
+    if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
+        g_force_mission = atoi(getenv("AC3_MISSION"));
+        mipsi_set_hook(V->mission_start, force_mission);
+    }
 #else
     if (getenv("AC3_MIPSI")) {
         /* etapa 7: sin codigo traducido, todo lo ejecuta el interprete (psx/recomp/mipsi.c) */

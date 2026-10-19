@@ -13,6 +13,8 @@ typedef struct {
     const char *name;       /* "EU" / "US" */
     const char *boot_exe;   /* ejecutable de arranque del disco (SYSTEM.CNF) */
     uint32_t main, gp, bss_start, bss_end, ovl_base, lib_lo, lib_hi, lib_main, pad_buf;
+    uint32_t g_state_ptr;   /* puntero al estado de la partida (mision actual en +0x390, short) */
+    uint32_t mission_start; /* funcion que arranca la mision: registro = mission_records[+0x390] */
     int refresh;            /* 50 (PAL) / 60 (NTSC) */
     const RcFunc *hle;
     const unsigned *nhle;
