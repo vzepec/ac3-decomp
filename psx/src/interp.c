@@ -26,11 +26,12 @@ static int g_nfrac, g_min_vb;
 static PsxInterpSink g_sink;
 
 /* vertices de este paso y del anterior: clave del modelo (x, y, z) y posicion de pantalla */
-typedef struct { uint64_t base; uint32_t sxy; int next; } Vert;
+typedef struct { uint64_t base; uint32_t sxy; int next; uint32_t grp; } Vert;   /* grp: el objeto (matriz de la GTE) */
 static Vert cur[MAXV], prv[MAXV];
 static int ncur, nprv;
 static int16_t pdx[MAXV], pdy[MAXV];
 static uint8_t pok[MAXV];
+static int pbest[MAXV];                 /* vertice del paso anterior con que se emparejo */
 static float lsx[MAXV], lsy[MAXV];      /* prediccion local (vecinos emparejados) */
 static uint16_t lc[MAXV];
 static uint8_t in3d[MAXV];              /* vertice usado en el espacio 3D */
@@ -47,6 +48,13 @@ static uint32_t pocc_gen = 1, pprim_gen = 1;
 static uint32_t pp_xy[MAXREF];           /* coordenadas de las primitivas del paso anterior */
 static int pp_first[MAXREF], pp_n[MAXREF];
 static int have_prev, last_vb = -1;
+static long st_stretch, st_stretch_steps;
+static int st_reject, g_cut;
+static long st_cuts, st_rejects;
+static void stretch_summary(void) {
+    fprintf(stderr, "estirados: %ld poligonos en %ld pasos (corregidos: se mueven enteros); parejas descartadas %ld; cortes de camara %ld\n",
+            st_stretch, st_stretch_steps, st_rejects, st_cuts);
+}
 static int st_dup, st_gte, st_matched, st_paired, st_dragged, st_total, st_backdrop, st_stuck;
 
 static uint64_t mix(uint64_t x) {
@@ -78,13 +86,14 @@ void psx_interp_config(int nfrac, int min_vblanks, PsxInterpSink sink) {
     ncur = 0;
 }
 
-void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy) {
+void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp) {
     if (ncur >= MAXV) return;
     uint64_t base = mix(((uint64_t)(uint16_t)x) | ((uint64_t)(uint16_t)y << 16) | ((uint64_t)(uint16_t)z << 32) | (1ull << 48));
     Slot *o = slot(occ, occ_gen, base, 1);
     if (o) { if (o->cnt) st_dup++; o->cnt++; }
     cur[ncur].base = base;
     cur[ncur].sxy = ((uint32_t)(uint16_t)sy << 16) | (uint16_t)sx;
+    cur[ncur].grp = grp;
     ncur++;
 }
 
@@ -634,7 +643,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) continue;
             int big = abs(dx) > JUMP || abs(dy) > JUMP;
             if (pred ? bd > tol * tol && (pass == 1 || big) : big) continue;
-            pdx[i] = (int16_t)dx; pdy[i] = (int16_t)dy; pok[i] = 1;
+            pdx[i] = (int16_t)dx; pdy[i] = (int16_t)dy; pok[i] = 1; pbest[i] = best;
         }
     }
     /* 2b. el movimiento global otra vez, con todas las parejas 3D (las repetidas ya resueltas por
@@ -645,6 +654,79 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         for (int i = 0; i < ncur; i++)
             if (pok[i] && in3d[i]) { fx[n] = lo(cur[i].sxy); fy[n] = hi(cur[i].sxy); fdx[n] = pdx[i]; fdy[n] = pdy[i]; n++; }
         if (fit_affine(fx, fy, fdx, fdy, n, 24, A)) model = 1;
+    }
+    /* 2c. parejas que no cuadran con sus vecinos de malla (paso 19). Una clave del modelo unica en
+     *     los dos pasos puede ser de dos piezas distintas e iguales (tramos de puente, edificios
+     *     repetidos de las ciudades: el A visible en un paso, el B en el siguiente); el vertice
+     *     viajaria en las intermedias de una pieza a otra y el poligono se estiraria 1-3 imagenes.
+     *     En un paso, los vertices de un mismo objeto se mueven casi igual: se descarta la pareja
+     *     que se aparta de la mediana de sus vecinos (los otros vertices de sus poligonos) mas de
+     *     lo que explican el giro de la camara y el tamano del poligono; el vertice se mueve
+     *     entonces con sus vecinos (paso 3) */
+    st_reject = 0;
+    /* 2c-1. por objeto (la matriz con que lo proyecto la GTE): la mayoria de sus vertices viene de
+     *       un objeto del paso anterior; los que vienen de otro (una pieza igual de al lado, aunque
+     *       sean varios y se den la razon entre si) se descartan */
+    if (have_prev) {
+        static Slot vote[HSIZE], best[HSIZE];
+        static uint32_t vote_gen, best_gen;
+        vote_gen++; best_gen++;
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *v = slot(vote, vote_gen, mix(((uint64_t)cur[k].grp << 32) | prv[pbest[k]].grp), 1);
+            if (v) v->cnt++;
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *v = slot(vote, vote_gen, mix(((uint64_t)cur[k].grp << 32) | prv[pbest[k]].grp), 0);
+            Slot *b = slot(best, best_gen, mix((uint64_t)cur[k].grp | (3ull << 40)), 1);
+            if (v && b && v->cnt > b->cnt) { b->cnt = v->cnt; b->val = prv[pbest[k]].grp; }
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *b = slot(best, best_gen, mix((uint64_t)cur[k].grp | (3ull << 40)), 0);
+            if (b && b->cnt >= 3 && prv[pbest[k]].grp != b->val) { pok[k] = 0; st_reject++; }
+        }
+    }
+    if (have_prev) {
+        /* por vecino: tolerancia segun el lado que los une (un lado largo admite mas diferencia por
+         * perspectiva) y el movimiento del vecino (giros rapidos); se descarta si no cuadra con la
+         * mayoria */
+        enum { NB = 12 };
+        static int16_t nbx[MAXV][NB], nby[MAXV][NB];
+        static uint16_t nbl[MAXV][NB];
+        static uint8_t nbn[MAXV], rej[MAXV];
+        for (int i = 0; i < ncur; i++) { nbn[i] = 0; rej[i] = 0; }
+        for (int a = 0; a < nref;) {
+            int b = a;
+            while (b < nref && ref_prim[b] == ref_prim[a]) b++;
+            if (b - a <= 4)
+                for (int i = a; i < b; i++) {
+                    int ki = refk[i];
+                    if (ki < 0) continue;
+                    for (int j = a; j < b; j++) {
+                        int kj = refk[j];
+                        if (j == i || kj < 0 || kj == ki || !pok[kj] || nbn[ki] >= NB) continue;
+                        int ex = abs(lo(cur[ki].sxy) - lo(cur[kj].sxy)), ey = abs(hi(cur[ki].sxy) - hi(cur[kj].sxy));
+                        nbx[ki][nbn[ki]] = pdx[kj]; nby[ki][nbn[ki]] = pdy[kj];
+                        nbl[ki][nbn[ki]] = (uint16_t)(ex > ey ? ex : ey);
+                        nbn[ki]++;
+                    }
+                }
+            a = b;
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k] || nbn[k] < 2) continue;
+            int bad = 0;
+            for (int j = 0; j < nbn[k]; j++) {
+                double dev = hypot(pdx[k] - nbx[k][j], pdy[k] - nby[k][j]);
+                double tol = 6 + 0.25 * hypot(nbx[k][j], nby[k][j]) + 0.3 * nbl[k][j];
+                bad += dev > tol;
+            }
+            if (bad * 2 > nbn[k]) rej[k] = 1;
+        }
+        for (int k = 0; k < ncur; k++)
+            if (rej[k]) { pok[k] = 0; st_reject++; }
     }
     /* 3. desplazamiento de cada coordenada de la lista */
     for (int i = 0; i < nref; i++) {
@@ -754,6 +836,58 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         ddx[i] = (int16_t)((x >= 0 ? x + n / 2 : x - n / 2) / n);
         ddy[i] = (int16_t)((y >= 0 ? y + n / 2 : y - n / 2) / n);
     }
+    /* medicion (paso 19): poligonos 3D cuya forma "de antes" (con las parejas) no cuadra con la
+     * actual: un objeto rigido apenas cambia en un paso, asi que un lado que cambia mucho delata un
+     * emparejamiento falso (el vertice viaja de una pieza a otra en las intermedias: se estira) */
+    {
+        static const int Q[4] = {0, 1, 3, 2};
+        int nst = 0, n3d = 0;
+        for (int a = 0; a < nref;) {
+            int b = a;
+            while (b < nref && ref_prim[b] == ref_prim[a]) b++;
+            int nv = b - a, ok = nv >= 3 && nv <= 4 && ref_prim[a] < MAXREF && prim_poly[ref_prim[a]];
+            for (int i = a; ok && i < b; i++) ok = refk[i] >= 0 && moved[i];
+            n3d += ok;
+            if (ok)
+                for (int e = 0; e < nv; e++) {
+                    int p = a + (nv == 4 ? Q[e] : e), q = a + (nv == 4 ? Q[(e + 1) & 3] : (e + 1) % nv);
+                    double cx = lo(orig[p]) - lo(orig[q]), cy = hi(orig[p]) - hi(orig[q]);
+                    double px = cx + ddx[p] - ddx[q], py = cy + ddy[p] - ddy[q];
+                    double lc = sqrt(cx * cx + cy * cy), lp = sqrt(px * px + py * py);
+                    if (fabs(lp - lc) > 12 && (lp > 1.5 * lc || lc > 1.5 * lp)) {
+                        nst++;
+                        if (getenv("PSX_INTERP_STRETCH") && nst <= 4) {   /* donde: vertices actuales y desplazamientos */
+                            fprintf(stderr, "  estirado VBlank %d:", VSync(-1));
+                            for (int i = a; i < b; i++)
+                                fprintf(stderr, " (%d,%d)%+d%+d%s", lo(orig[i]), hi(orig[i]), ddx[i], ddy[i], moved[i] == 2 ? "" : "*");
+                            fprintf(stderr, "\n");
+                        }
+                        /* que no se estire: en las intermedias se mueve entero con la mediana de sus
+                         * vertices (sus coordenadas son suyas: no tocan las de otros poligonos) */
+                        int16_t mx[4], my[4];
+                        for (int i = 0; i < nv; i++) { mx[i] = ddx[a + i]; my[i] = ddy[a + i]; }
+                        for (int i = 1; i < nv; i++)
+                            for (int j = i; j > 0 && mx[j] < mx[j - 1]; j--) { int16_t t = mx[j]; mx[j] = mx[j - 1]; mx[j - 1] = t; }
+                        for (int i = 1; i < nv; i++)
+                            for (int j = i; j > 0 && my[j] < my[j - 1]; j--) { int16_t t = my[j]; my[j] = my[j - 1]; my[j - 1] = t; }
+                        int16_t cx2 = (int16_t)((mx[(nv - 1) / 2] + mx[nv / 2]) / 2), cy2 = (int16_t)((my[(nv - 1) / 2] + my[nv / 2]) / 2);
+                        for (int i = a; i < b; i++) { ddx[i] = cx2; ddy[i] = cy2; }
+                        break;
+                    }
+                }
+            a = b;
+        }
+        st_stretch += nst;
+        /* muchisimos a la vez: no son parejas sueltas sino un corte de camara (otro plano): ese paso
+         * va sin intermedias (si no, se mezclarian dos vistas sin relacion) */
+        g_cut = nst > 40 && nst * 10 > n3d;
+        st_cuts += g_cut;
+        st_rejects += st_reject;
+        st_stretch_steps++;
+        static int reg;
+        if (!reg && getenv("PSX_INTERP_STRETCH")) { reg = 1; atexit(stretch_summary); }
+        if (nst && getenv("PSX_INTERP_STRETCH")) fprintf(stderr, "estirados: VBlank %d, %d poligonos (parejas descartadas %d)\n", VSync(-1), nst, st_reject);
+    }
     int dump_now = getenv("PSX_INTERP_PRIMDUMP") && (getenv("PSX_INTERP_PROBE") ? abs(VSync(-1) - atoi(getenv("PSX_INTERP_PROBE"))) <= 1 : tm_n == 50);
     if (dump_now) {   /* depuracion: primitiva, coordenada, estado */
         FILE *f = fopen(getenv("PSX_INTERP_PRIMDUMP"), "w");
@@ -794,7 +928,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     st_stuck = stuck;
     if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d\n",
                                            VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model);
-    int ok = have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
+    int ok = !g_cut && have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
     have_prev = 1;
     ncur = 0;
     occ_gen++;

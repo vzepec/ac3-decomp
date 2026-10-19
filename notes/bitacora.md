@@ -5,6 +5,22 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Interpolación: emparejamientos falsos entre piezas iguales (APK 1.9.3-alfa)
+
+**Diagnóstico:** confirmado que los estiramientos solo salen con
+intermedias. La medida nueva (`PSX_INTERP_STRETCH=1`) muestra grupos de
+vértices de un objeto emparejados con otra pieza igual: el mismo salto para
+todos, y el resto del objeto quieto.
+
+**Corrección:**
+- voto por objeto (la matriz de la GTE de cada vértice);
+- descarte por mayoría de vecinos;
+- los polígonos que aun así no cuadran se mueven enteros;
+- los cortes de cámara van sin intermedias.
+
+**Resultado** (misión 0): de 9.178 a 2.078 polígonos incoherentes antes del
+remate. Huecos iguales y comparador GLES sin fallos.
+
 ## 2026-10-19 — La GTE comparada con la de Mednafen: error en IR0 corregido; 133 M de órdenes iguales
 
 **Oráculo:** `psx/test/gteref.c` + `tools/gteref.sh` (Beetle PSX en

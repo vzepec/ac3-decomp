@@ -234,7 +234,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
     }
     if (!shots || !interp_from) return;
     static double seen_t[8];
-    static int seen_step[8], seen_save[8], nsteps;
+    static int seen_step[8], seen_save[8], seen_vb[8], nsteps;
     pthread_mutex_lock(&sink_mu);
     int k = -1;
     for (int i = 0; i < 8; i++) if (seen_t[i] == t_step) k = i;
@@ -242,9 +242,10 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         k = nsteps & 7;
         seen_t[k] = t_step;
         seen_step[k] = nsteps++;
+        seen_vb[k] = last_vcount;
         seen_save[k] = last_vcount >= interp_from && last_vcount < interp_from + interp_len;
     }
-    int step = seen_step[k], save = seen_save[k];
+    int step = getenv("AC3_INTERP_NAMEVB") ? seen_vb[k] : seen_step[k], save = seen_save[k];   /* nombre por VBlank (paso 19) */
     pthread_mutex_unlock(&sink_mu);
     if (!save) return;
     char path[512];

@@ -173,7 +173,7 @@ static int64_t row_dot(PsxGte *g, int i, int64_t base, int16_t m0, int16_t m1, i
 }
 
 /* ---- RTPS / RTPT ---- */
-void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy);
+void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp);
 float psx_gte_wide = 1.0f;
 static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t x = vx(g, n), y = vy(g, n), z = vz(g, n);
@@ -202,7 +202,11 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t sx = lm_g(g, tx < -0x8000 ? -0x8000 : tx > 0x7FFF ? 0x7FFF : (int32_t)tx, F_SX2);
     int32_t sy = lm_g(g, ty < -0x8000 ? -0x8000 : ty > 0x7FFF ? 0x7FFF : (int32_t)ty, F_SY2);
     push_sxy(g, sx, sy);
-    if (psx_gte_vertex_hook) psx_gte_vertex_hook(x, y, z, sx, sy);   /* interpolacion de imagenes */
+    if (psx_gte_vertex_hook) {   /* interpolacion de imagenes */
+        uint32_t grp = 2166136261u;   /* el objeto: rotacion (c0-c4) y traslacion (c5-c7) */
+        for (int i = 0; i < 8; i++) grp = (grp ^ (uint32_t)g->c[i]) * 16777619u;
+        psx_gte_vertex_hook(x, y, z, sx, sy, grp);
+    }
     if (last) {
         /* IR0 se satura desde el valor completo, no desde MAC0 truncado a 32 bits: con el vertice
          * muy cerca (q grande) DQA * q desborda MAC0 y, truncado, IR0 saldria 0x1000 (niebla

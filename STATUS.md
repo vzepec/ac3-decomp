@@ -86,21 +86,18 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Fidelidad a la PS1** (rama `etapa-6-paso-18`, sobre la 17; ninguna
-fusionada ni subida):
-- La GTE ya coincide con la de Mednafen en las 41 misiones (`make gteref`).
-  Se corrigió IR0 de RTPS/RTPT. APK de prueba:
-  `data/android/AC3Recomp-1.9.2-alfa.apk`.
-- **Siguiente: la interpolación.** Emparejamientos entre piezas repetidas de
-  las ciudades, que se estiran 1-3 fotogramas.
-  1. Confirmar con el dueño si los estiramientos salen en `ORIG`.
-  2. Grabar la partida en la Retroid (mando por VBlank y modo) y
-     reproducirla igual en el PC.
-  3. Medir y corregir el emparejamiento.
-- Después, si hace falta, el mismo método con la GPU (Mednafen) y la CPU.
+**Probar en la Retroid el APK 1.9.3-alfa** (`data/android/AC3Recomp-1.9.3-alfa.apk`,
+rama `etapa-6-paso-19` ← `etapa-6-paso-18` ← `etapa-6-paso-17`; ninguna
+fusionada ni subida).
+- Lleva la GTE corregida (paso 18) y la interpolación sin emparejamientos
+  falsos entre piezas iguales (paso 19).
+- **Qué mirar:** ciudades con puentes y autopistas, que no se estiren
+  vértices.
 
-La alta resolución por GLES (paso 17) queda validada en rendimiento por el
-dueño (1.9.1). Falta fusionarla.
+Si quedan estiramientos: grabar la partida en la Retroid (mando por VBlank y
+modo) y reproducirla igual en el PC para medirlos en el mismo sitio.
+
+La comparación con DuckStation queda para el final.
 
 ## Pendiente
 

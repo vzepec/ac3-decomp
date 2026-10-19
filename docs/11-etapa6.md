@@ -1229,3 +1229,54 @@ SQR, AVSZ3/4, GPF, GPL, NCS, NCT).
   estiramiento de 1-3 fotogramas, como en el vídeo.
 - Hay que confirmar si los estiramientos salen también en `ORIG` (sin
   intermedias) y reproducir la partida en el PC.
+
+### Paso 19: estiramientos de la interpolación en las ciudades (APK 1.9.3-alfa, sin publicar)
+
+**Confirmado por el dueño con la 1.9.2:** las deformaciones de vértices
+solo salen con la interpolación (en `ORIG` no).
+
+**Medida** (`PSX_INTERP_STRETCH=1`):
+- por cada polígono 3D, su forma "de antes" (posición actual + pareja) se
+  compara con la actual;
+- un objeto rígido apenas cambia en un paso, así que un lado que cambia más
+  de 12 px y más del 50 % delata un emparejamiento falso;
+- con la variable de entorno imprime los casos (vértices y desplazamientos)
+  y un resumen al salir.
+
+**Lo que mostró** (misión 0, ciudad):
+- grupos de vértices de un mismo objeto emparejados con un salto común
+  (p. ej. −42,+44) mientras el resto del objeto no se mueve;
+- son piezas iguales (claves del modelo "únicas" en los dos pasos, pero de
+  instancias distintas);
+- al ser varios, se dan la razón entre sí: un filtro por vecinos no basta.
+
+**Corrección** (`psx/src/interp.c`):
+1. **Por objeto:** la GTE pasa a la interpolación un resumen de la matriz
+   (rotación + traslación) con que proyectó cada vértice. Cada objeto de un
+   paso vota de qué objeto del anterior vienen sus vértices, y se descartan
+   las parejas que vienen de otro.
+2. **Por vecinos:** se descarta la pareja que no cuadra con la mayoría de
+   sus vecinos de malla. La tolerancia por vecino crece con el lado que los
+   une (perspectiva) y con su movimiento (giros).
+3. **Remate:** el polígono que aun así no cuadra se mueve entero en las
+   intermedias con la mediana de sus vértices (sus coordenadas son suyas,
+   no tocan las de otros polígonos).
+4. **Cortes de cámara:** con más de 40 polígonos incoherentes y más del
+   10 % del 3D en un paso, no es un emparejamiento sino otro plano. Ese paso
+   va sin intermedias.
+
+**Resultado** (misión 0, US):
+- polígonos incoherentes de 9.178 a 2.078 antes del remate, y los que
+  quedan se mueven enteros;
+- unas 6 parejas descartadas por paso (de miles);
+- 3-5 cortes por misión.
+
+**Sin romper nada:**
+- huecos de la interpolación iguales (`tools/interp_holes.py`: 10,1 → 9,9
+  px por imagen);
+- comparador GLES con intermedias sin bloques malos;
+- `make psx-check` bien.
+
+**SIN RESOLVER hasta probarlo en la Retroid:** si desaparecen los
+estiramientos visibles del vídeo. En el PC el vuelo guionizado no pasa por
+los mismos puentes.
