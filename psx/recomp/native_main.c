@@ -31,6 +31,7 @@
 /* etapa 7, modo libre: solo codigo del repositorio. La version se detecta en el disco, ACE.BIN
  * se lee de el y todo lo ejecuta el interprete (make libre) */
 #include "ac3_versions.h"
+#include "psx_gte.h"
 #include "psx_acebin.h"
 static const Ac3Version *V;
 #define AC3_MAIN (V->main)
@@ -96,10 +97,27 @@ static void save_screen(int frame) {
 }
 
 /* cada fotograma nuevo (lo avance el reloj o VSync): mando, capturas, parada */
+#ifdef AC3_LIBRE
+/* AC3_WIDE=1: pantalla ancha (paso 16) mientras el juego dibuja terreno (la mision): la GTE
+ * comprime la x a 3/4. Las capturas salen comprimidas: hay que ensancharlas a 16:9 para verlas */
+static int g_wide;
+static void wide_update(void) {
+    static uint32_t last;
+    static int idle = 1000;
+    if (!g_wide) return;
+    if (ac3_terrain_count != last) { last = ac3_terrain_count; idle = 0; }
+    else if (idle < 1000) idle++;
+    psx_gte_wide = idle < 15 ? 0.75f : 1.0f;
+}
+#endif
+
 static void frame_check(void) {
     int v = VSync(-1);
     while (last_vcount < v) {
         last_vcount++;
+#ifdef AC3_LIBRE
+        wide_update();
+#endif
         uint32_t all = 0;
         for (int i = 0; i < nscript; i++)
             if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) all |= script[i].mask;
@@ -403,6 +421,10 @@ int main(int argc, char **argv) {
     if (getenv("AC3_SEQ")) {   /* prueba: forzar la secuencia del modo 5 (final: 2) */
         g_force_seq = atoi(getenv("AC3_SEQ"));
         mipsi_set_hook(V->seq_start, force_seq);
+    }
+    if (getenv("AC3_WIDE")) {   /* pantalla ancha en la mision */
+        g_wide = 1;
+        ac3_wide_install(V);
     }
     if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
         g_force_mission = atoi(getenv("AC3_MISSION"));

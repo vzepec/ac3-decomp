@@ -8,7 +8,7 @@
 
 #include <stdint.h>
 
-enum { PSX_FIT_43 = 0, PSX_FIT_EXACT = 1, PSX_FIT_INTEGER = 2 };
+enum { PSX_FIT_43 = 0, PSX_FIT_EXACT = 1, PSX_FIT_INTEGER = 2, PSX_FIT_169 = 3 };   /* 16:9: pantalla ancha */
 
 int psx_present_init(void);   /* 0 si va bien (contexto GLES 3 ya activo) */
 void psx_present_frame(const uint32_t *rgba, int w, int h, int view_w, int view_h, int fit, int linear);

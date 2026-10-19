@@ -5,6 +5,32 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Pantalla ancha sola (APK 1.10-alfa); el primer intento con GLES se aparca
+
+**Primer intento (rama `etapa-6-paso-15`, 1.8/1.9-alfa) descartado.**
+Juntaba GLES a alta resolución, vértices sin temblor y pantalla ancha. En la
+Retroid (vídeo del dueño) dio:
+- vértices estirados en líneas largas;
+- huecos en el avión y en el terreno;
+- el mapa del radar fuera del círculo.
+
+Se rehace por partes, empezando por la pantalla ancha sobre el dibujo por
+software.
+
+**Pantalla ancha:**
+- La GTE comprime la x a 3/4 y la imagen se presenta a 16:9.
+- **Hallazgo:** el juego elige las casillas de terreno con un cono de visión
+  que calcula con el ancho 320 de la cámara (EU `0x8005E140`, US
+  `0x8005E3E4`; short en `a0+4`). Un enganche lo pone a 427 durante ese
+  cálculo.
+- Solo se activa mientras se dibuja terreno.
+
+**Reproducir:**
+`AC3_WIDE=1 AC3_WIDE_DBG=1 AC3_MISSION=21 psx/build/ac3_libre <disco> - 3300 <capturas> 100 <guion>`.
+Las capturas salen comprimidas: hay que verlas ensanchadas a 16:9.
+
+**Resultado:** US y EU sin huecos; el radar, dentro del círculo.
+
 ## 2026-10-18 — Finales, créditos, guardar y cargar: funcionan en US y EU
 
 - **Finales:** `FUN_80037d58` pone `g_state + 0x3AC` = 1 (nodo `0x2E`) o 2

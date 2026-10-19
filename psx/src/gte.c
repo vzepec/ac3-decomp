@@ -174,6 +174,7 @@ static int64_t row_dot(PsxGte *g, int i, int64_t base, int16_t m0, int16_t m1, i
 
 /* ---- RTPS / RTPT ---- */
 void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy);
+float psx_gte_wide = 1.0f;
 static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t x = vx(g, n), y = vy(g, n), z = vz(g, n);
     int64_t s3 = 0;
@@ -194,6 +195,7 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int64_t q = unr_divide(g, h, (uint32_t)g->d[19]);
     /* SX/SY salen del valor de 64 bits desplazado; MAC0 solo comprueba el desbordamiento */
     int64_t px = (int64_t)g->c[24] + ir(g, 1) * q, py = (int64_t)g->c[25] + ir(g, 2) * q;
+    if (psx_gte_wide != 1.0f) px = (int64_t)g->c[24] + (int64_t)((double)(ir(g, 1) * q) * psx_gte_wide);
     F(g, px);
     g->d[24] = F(g, py);                                  /* MAC0 queda con el ultimo calculo */
     int64_t tx = px >> 16, ty = py >> 16;
