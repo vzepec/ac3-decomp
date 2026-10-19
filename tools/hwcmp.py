@@ -22,6 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import misiones  # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+LOW = re.compile(r'hwcmp: (\d+) listas por debajo del 99 % de casi iguales; la peor, ([\d.]+) %')
 SUMMARY = re.compile(r'hwcmp: (\d+) listas comparadas, (\d+) con bloques malos \((\d+) bloques\); '
                      r'pixeles identicos ([\d.]+) %, casi iguales ([\d.]+) %')
 
@@ -54,16 +55,21 @@ def main():
             del running[m]
             text = open(os.path.join(out, str(m), 'log.txt'), errors='replace').read()
             s = SUMMARY.search(text)
-            results[m] = (p.returncode, text.count('recomp: fallo'), s.groups() if s else None)
+            lo = LOW.search(text)
+            results[m] = (p.returncode, text.count('recomp: fallo'), s.groups() if s else None, lo.groups() if lo else None)
             r = results[m]
-            print('mision %2d: salida %d, %d fallos; %s' % (m, r[0], r[1], 'listas %s, con bloques malos %s (%s bloques); '
-                  'identicos %s %%, casi iguales %s %%' % r[2] if r[2] else 'SIN RESUMEN'), flush=True)
+            print('mision %2d: salida %d, %d fallos; %s; %s' % (m, r[0], r[1], 'listas %s, con bloques malos %s (%s bloques); '
+                  'identicos %s %%, casi iguales %s %%' % r[2] if r[2] else 'SIN RESUMEN',
+                  'por debajo del 99 %%: %s (la peor, %s %%)' % r[3] if r[3] else '-'), flush=True)
         if running:
             time.sleep(1)
     lists = sum(int(r[2][0]) for r in results.values() if r[2])
     bad = sum(int(r[2][1]) for r in results.values() if r[2])
     blocks = sum(int(r[2][2]) for r in results.values() if r[2])
-    print('TOTAL: %d misiones, %d listas, %d con bloques malos (%d bloques)' % (len(results), lists, bad, blocks))
+    low = sum(int(r[3][0]) for r in results.values() if r[3])
+    worst = min((float(r[3][1]) for r in results.values() if r[3]), default=100.0)
+    print('TOTAL: %d misiones, %d listas, %d con bloques malos (%d bloques); %d por debajo del 99 %% de casi iguales '
+          '(la peor, %.2f %%)' % (len(results), lists, bad, blocks, low, worst))
     return 0 if bad == 0 and all(r[2] for r in results.values()) else 1
 
 

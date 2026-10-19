@@ -2,6 +2,7 @@
 #include "psx_hw.h"
 
 #include <GLES3/gl3.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -51,7 +52,7 @@ static const char *FS =
     "  vec2 uv = v_uv - u_delta * (dFdx(v_uv) + dFdy(v_uv));\n"
     "  if ((flags & 128) == 0) uv = clamp(uv, v_uvr.xy, v_uvr.zw);   /* sin salirse de la textura del poligono */\n"
     "  vec3 col = v_col - u_delta * (dFdx(v_col) + dFdy(v_col));\n"
-    "  if ((flags & 128) != 0) { uint d = fetch(int(floor(uv.x)), int(floor(uv.y))); bool s = (d & 0x8000u) != 0u;\n"
+    "  if ((flags & 128) != 0) { uint d = fetch(int(floor(uv.x + 0.001)), int(floor(uv.y + 0.001))); bool s = (d & 0x8000u) != 0u;\n"
     "    if ((u_pass == 1 && s) || (u_pass == 2 && !s)) discard; o = vec4(x5(d), 1.0); return; }\n"
     "  if ((flags & 1) == 0) {\n"
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
@@ -335,12 +336,25 @@ static void draw_prim(const PsxHwPrim *p) {
             float ma = xm ? ax : ay, mb = xm ? bx : by, na = xm ? ay : ax, dm = mb - ma, dn = xm ? dy : dx;
             float k = dm != 0 ? dn / dm : 0;
             float lo = ma < mb ? ma : mb, hi = (ma < mb ? mb : ma) + 1;
-            float off = dn > 0 ? -0.49f : -0.5f;
+            /* la cobertura se mira en (menor + d, mayor + d), d = u_delta en pixeles de la VRAM: el
+             * pixel del menor m cuenta si m >= n(mayor) + off + (k - 1) d. Se quiere m >= n - 0.5 + e
+             * (empate hacia arriba, como la GPU con d menor > 0) o n - 0.5 - e (hacia abajo con
+             * d menor < 0: lejos de cero) */
+            float dl = (1.0f / 128.0f) / (float)g_scale, e = 0.01f;
+            float off = (dn > 0 ? -0.5f + e : -0.5f - e) - (k - 1) * dl;
             float n1 = na + k * (lo - ma) + off, n2 = na + k * (hi - ma) + off;
             /* color en cada extremo del paralelogramo (el de a en el lado de a) */
             int ra = p->r[0], ga = p->g[0], ba = p->b[0];
             int c1r = ma <= mb ? ra : r1, c1g = ma <= mb ? ga : g1, c1b = ma <= mb ? ba : b1;
             int c2r = ma <= mb ? r1 : ra, c2g = ma <= mb ? g1 : ga, c2b = ma <= mb ? b1 : ba;
+            /* el paralelogramo llega un pixel mas alla del ultimo: ahi el color sigue la misma recta
+             * (la GPU va de a a b en `pasos`) */
+            int steps = (int)(dm < 0 ? -dm : dm);
+            if (gr && steps) {
+#define EXT(c2, c1) c2 = (int)lrintf((float)c2 + (float)(c2 - c1) / (float)steps), c2 = c2 < 0 ? 0 : c2 > 255 ? 255 : c2
+                EXT(c2r, c1r); EXT(c2g, c1g); EXT(c2b, c1b);
+#undef EXT
+            }
             HwVert *v = push(6);
 #define LV(i, m, n, R, G, B) vert(&v[i], xm ? (m) : (n), xm ? (n) : (m), 0, 0, R, G, B, t)
             LV(0, lo, n1, c1r, c1g, c1b);
@@ -396,6 +410,9 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     g_blend = -2; g_pass = -1; g_st = -2;
     g_track = 0;
     for (int i = 0; i < l->n && !g_track; i++) g_track = (l->p[i].flags & PSX_HWF_MASKCHK) && l->p[i].kind != PSX_HW_UPLOAD;
+    static int nomask = -1;   /* prueba del comparador (caso positivo conocido): sin bit de mascara */
+    if (nomask < 0) nomask = getenv("PSX_HW_NOMASK") != NULL;
+    if (nomask) g_track = 0;
     /* fondo y texturas de partida: la VRAM de antes de la lista (con su bit 15 en el stencil) */
     upload(bg);
     int32_t t[4] = {0, 0, F_DIRECT << 4, 0};

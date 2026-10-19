@@ -190,6 +190,8 @@ psx-hw: $(GLINC)/GLES3/gl3.h
 	@mkdir -p psx/build
 	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include -I$(GLINC) psx/test/test_hw.c psx/gl/psx_hw.c psx/src/gpu.c psx/src/mem.c $(GLLIBS) -lm -o psx/build/test_hw
 	@psx/build/test_hw data/bench/mision.gpu psx/build/hw
+	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include -I$(GLINC) psx/test/test_hwlines.c psx/gl/psx_hw.c psx/src/gpu.c psx/src/mem.c $(GLLIBS) -lm -o psx/build/test_hwlines
+	@psx/build/test_hwlines
 
 psx-android:
 	@rm -rf psx/build/android && mkdir -p psx/build/android

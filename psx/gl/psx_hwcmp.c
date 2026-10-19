@@ -4,9 +4,11 @@
  * dibuja la GPU por software anotando las primitivas (la referencia) y GLES la vuelve a dibujar a
  * escala 1, con tramado, desde la VRAM de antes de la lista. Se comparan las dos en el area de
  * dibujo por bloques de 8x8: un pixel es "malo" si algun canal difiere en mas de BAD_DIFF (los
- * redondeos de la mezcla y el tramado quedan muy por debajo) y un bloque es "malo" con BAD_PIX o
- * mas pixeles malos. Asi salen los fallos que se ven (poligonos estirados, huecos, recortes por
- * mascara) y no las diferencias de redondeo.
+ * redondeos de la mezcla y el tramado quedan muy por debajo) y ademas su color no esta en los 3x3
+ * vecinos de la otra imagen (en un sentido o en el otro): un borde o una linea movidos un pixel
+ * no cuentan (GL coloca los vertices con 1/256 de pixel y en los empates exactos puede caer al
+ * lado), un hueco, un pico o un recorte por mascara si. Un bloque es "malo" con BAD_PIX o mas
+ * pixeles malos.
  *
  * Salida: una linea por lista con bloques malos (hwcmp: ...) y, para algunas, <dir>/c<VBlank>.ppm
  * con software | GLES | mapa de bloques malos (rojo). Al salir, el resumen. Requiere un contexto
@@ -18,6 +20,7 @@
 
 #include "psx_gpu.h"
 #include "psx_hw.h"
+#include "psx_mem.h"
 
 #define BAD_DIFF 40
 #define BAD_PIX 8
@@ -32,9 +35,33 @@ static EGLSurface g_surf;
 static EGLContext g_ctx;
 static long g_lists, g_bad_lists, g_bad_blocks, g_pixels, g_same, g_close;
 static int g_saves, g_last_save = -1000;
+/* listas con menos del 99 % de pixeles casi iguales (diferencias repartidas que los bloques no
+ * ven: p. ej. el fondo leido un pixel al lado) y la peor */
+static long g_low;
+static double g_worst = 101.0;
+static int g_worst_vb;
 static PsxHwPrim g_prims[65536];
 static uint16_t g_data[1024 * 512], g_bg[1024 * 512];
 static uint32_t g_sw[1024 * 512], g_hw[1024 * 512];
+
+static int dmax(uint32_t a, uint32_t b) {
+    int m = 0;
+    for (int k = 0; k < 24; k += 8) {
+        int d = abs((int)((a >> k) & 255) - (int)((b >> k) & 255));
+        if (d > m) m = d;
+    }
+    return m;
+}
+
+/* el color c esta en los 3x3 vecinos de (x, y) de img */
+static int near(const uint32_t *img, int w, int h, int x, int y, uint32_t c) {
+    for (int dy = -1; dy <= 1; dy++)
+        for (int dx = -1; dx <= 1; dx++) {
+            int X = x + dx, Y = y + dy;
+            if (X >= 0 && Y >= 0 && X < w && Y < h && dmax(img[Y * w + X], c) <= BAD_DIFF) return 1;
+        }
+    return 0;
+}
 
 static uint32_t x5(uint16_t c) {
     int r = c & 31, g = (c >> 5) & 31, b = (c >> 10) & 31;
@@ -66,6 +93,17 @@ static void save(int vb, int w, int h, const uint8_t *badmap, int bw) {
 static void hook(PsxGpu *g, uint32_t ot) {
     int x0 = g->area_x1, y0 = g->area_y1, w = g->area_x2 - g->area_x1 + 1, h = g->area_y2 - g->area_y1 + 1;
     if (w <= 0 || h <= 0 || w > 1024 || h > 512) { psx_gpu_draw_list(g, ot); return; }
+    int dv;   /* depuracion: AC3_HWCMP_DUMP=vblank,archivo: la lista para psx/test/test_hw (como PSX_GPU_DUMP) */
+    char dpath[400];
+    if (getenv("AC3_HWCMP_DUMP") && sscanf(getenv("AC3_HWCMP_DUMP"), "%d,%399s", &dv, dpath) == 2 && VSync(-1) == dv) {
+        FILE *f = fopen(dpath, "wb");
+        if (f) {
+            fwrite(&ot, 4, 1, f);
+            fwrite(g, sizeof *g, 1, f);
+            fwrite(psx_ram, 1, PSX_RAM_SIZE, f);
+            fclose(f);
+        }
+    }
     memcpy(g_bg, g->vram, sizeof g_bg);
     PsxHwList l = {.p = g_prims, .max = 65536, .data = g_data, .maxdata = 1024 * 512,
                    .main_x1 = g->area_x1, .main_y1 = g->area_y1, .main_x2 = g->area_x2, .main_y2 = g->area_y2};
@@ -99,7 +137,7 @@ static void hook(PsxGpu *g, uint32_t ot) {
             } else if (q->kind == PSX_HW_RECT || q->kind == PSX_HW_FILL || q->kind == PSX_HW_VRAM)
                 in = X >= q->x[0] && X < q->x[0] + q->x[1] && Y >= q->y[0] && Y < q->y[0] + q->y[1];
             if (in)
-                printf("sonda: prim %d tipo %d banderas %#x (%d,%d) (%d,%d) (%d,%d) uv (%d,%d) (%d,%d) (%d,%d) area %d,%d-%d,%d\n", i, q->kind, q->flags,
+                printf("sonda: prim %d tipo %d banderas %#x abr %d prof %d pag %d,%d clut %d,%d ventana %d,%d,%d,%d color %d,%d,%d (%d,%d) (%d,%d) (%d,%d) uv (%d,%d) (%d,%d) (%d,%d) area %d,%d-%d,%d\n", i, q->kind, q->flags, q->abr, q->depth, q->tp_x, q->tp_y, q->clut_x, q->clut_y, q->tw_mx, q->tw_my, q->tw_ox, q->tw_oy, q->r[0], q->g[0], q->b[0],
                        q->x[0] - x0, q->y[0] - y0, q->x[1] - x0, q->y[1] - y0, q->x[2] - x0, q->y[2] - y0, q->u[0], q->v[0], q->u[1], q->v[1],
                        q->u[2], q->v[2], q->ax1 - x0, q->ay1 - y0, q->ax2 - x0, q->ay2 - y0);
         }
@@ -117,14 +155,10 @@ static void hook(PsxGpu *g, uint32_t ot) {
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w; x++) {
             uint32_t a = g_sw[y * w + x], b = g_hw[y * w + x];
-            int dmax = 0;
-            for (int k = 0; k < 24; k += 8) {
-                int d = abs((int)((a >> k) & 255) - (int)((b >> k) & 255));
-                if (d > dmax) dmax = d;
-            }
-            same += dmax == 0;
-            close += dmax <= 8;
-            if (dmax > BAD_DIFF) cnt[(y / 8) * bw + x / 8]++;
+            int d = dmax(a, b);
+            same += d == 0;
+            close += d <= 8;
+            if (d > BAD_DIFF && (!near(g_sw, w, h, x, y, b) || !near(g_hw, w, h, x, y, a))) cnt[(y / 8) * bw + x / 8]++;
         }
     for (int i = 0; i < bw * bh; i++) {
         badmap[i] = cnt[i] >= BAD_PIX;
@@ -138,6 +172,9 @@ static void hook(PsxGpu *g, uint32_t ot) {
     }
     g_lists++;
     g_pixels += (long)w * h; g_same += same; g_close += close;
+    double pc = 100.0 * close / ((double)w * h);
+    if (pc < 99.0) g_low++;
+    if (pc < g_worst) { g_worst = pc; g_worst_vb = VSync(-1); }
     if (!nbad) return;
     g_bad_lists++;
     g_bad_blocks += nbad;
@@ -154,6 +191,8 @@ static void hook(PsxGpu *g, uint32_t ot) {
 static void summary(void) {
     printf("hwcmp: %ld listas comparadas, %ld con bloques malos (%ld bloques); pixeles identicos %.2f %%, casi iguales %.2f %%\n",
            g_lists, g_bad_lists, g_bad_blocks, g_pixels ? 100.0 * g_same / g_pixels : 0.0, g_pixels ? 100.0 * g_close / g_pixels : 0.0);
+    printf("hwcmp: %ld listas por debajo del 99 %% de casi iguales; la peor, %.2f %% (VBlank %d)\n", g_low, g_lists ? g_worst : 100.0,
+           g_worst_vb);
 }
 
 int psx_hwcmp_start(const char *dir) {

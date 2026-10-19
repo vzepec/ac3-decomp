@@ -100,6 +100,14 @@ int main(int argc, char **argv) {
     psx_hw_frame(&list, bg, x0, y0, w, h, 1);
     psx_hw_read(hw);
     psx_hw_dither(0);
+    if (getenv("HW_PIX")) {   /* depuracion: HW_PIX=x,y: 12 pixeles de esa fila (fondo, software, GLES) */
+        int qx, qy;
+        sscanf(getenv("HW_PIX"), "%d,%d", &qx, &qy);
+        printf("fondo:   "); for (int x = qx; x < qx + 12; x++) printf(" %06x", x5(bg[(y0 + qy) * 1024 + x0 + x] & 31) | x5((bg[(y0 + qy) * 1024 + x0 + x] >> 5) & 31) << 8 | x5((bg[(y0 + qy) * 1024 + x0 + x] >> 10) & 31) << 16);
+        printf("\nsoftware:"); for (int x = qx; x < qx + 12; x++) printf(" %06x", sw[qy * w + x] & 0xFFFFFF);
+        printf("\nGLES:    "); for (int x = qx; x < qx + 12; x++) printf(" %06x", hw[qy * w + x] & 0xFFFFFF);
+        printf("\n");
+    }
     long same = 0, close = 0;
     double err = 0;
     for (int i = 0; i < w * h; i++) {
