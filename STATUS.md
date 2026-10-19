@@ -86,13 +86,14 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.10-alfa** (`data/android/AC3Recomp-1.10-alfa.apk`,
+**Probar en la Retroid el APK 1.11-alfa** (`data/android/AC3Recomp-1.11-alfa.apk`,
 rama `etapa-6-paso-16`, sin fusionar ni subir).
-- Es **solo la pantalla ancha**, sobre el dibujo por software.
+- La pantalla ancha (1.10) ya funciona en la Retroid.
+- La 1.11 pone también los menús a 16:9; los vídeos siguen a 4:3.
 - L3+R3 recorre 60 fps + 16:9 → 60 fps + 4:3 → original.
 
 El paso 7 se rehace por partes, probando cada una en la Retroid:
-1. pantalla ancha (en prueba);
+1. pantalla ancha (funciona; menús a 16:9 en prueba);
 2. alta resolución: rehacer el dibujo por GLES de la rama `etapa-6-paso-15`
    y buscar los fallos que dio. Pista: bit de máscara en el radar;
 3. antitemblores, si hace falta.

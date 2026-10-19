@@ -87,6 +87,11 @@ static void save_screen(int frame) {
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
     if (!w || !h) return;
+    if (getenv("AC3_GEOM_DBG")) {   /* depuracion: modo de pantalla de cada captura */
+        int gw, gh, on, rgb24;
+        psx_display_geom(&gw, &gh, &on, &rgb24);
+        printf("captura %d: %dx%d, color de %d bits\n", frame, gw, gh, rgb24 ? 24 : 15);
+    }
     char path[512];
     snprintf(path, sizeof path, "%s/f%05d.ppm", shots, frame);
     FILE *f = fopen(path, "wb");

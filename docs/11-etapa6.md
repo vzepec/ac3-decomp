@@ -68,7 +68,7 @@ distribuido (`docs/06-legal.md`).
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **funciona entero en las dos versiones:** las 41 misiones, las secuencias de final con los créditos y guardar/cargar, sin fallos (`docs/pruebas/`). Falta la comparación con DuckStation, que el dueño deja para el final |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
-| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** en prueba (APK 1.10-alfa, rama `etapa-6-paso-16`); alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
+| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** ✅ en la Retroid (1.10-alfa; menús a 16:9 en la 1.11-alfa, rama `etapa-6-paso-16`); alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
 
 **Criterio de salida:** el juego completo, jugable de principio a fin en la
@@ -1036,3 +1036,18 @@ dibujo por software el radar sale bien. Su desborde con GLES encaja con que
 
 **Conocido:** el HUD y los sprites de la CPU (explosiones, humo) salen
 ensanchados 4/3. Es lo normal de esta técnica.
+
+**Probado en la Retroid (1.10-alfa):** funciona y va mucho más estable que
+el primer intento.
+
+**1.11-alfa, menús también a 16:9** (petición del dueño):
+- En el modo `16:9` se presenta todo ensanchado, no solo la misión.
+- **Excepción, los vídeos:** van en color de 24 bits y siguen a 4:3, para
+  no deformarlos. Comprobado en el PC con `AC3_GEOM_DBG=1`:
+  - pantalla de título y menús: 15 bits (320×480);
+  - vídeo de la introducción: 24 bits (320×240).
+- **En los menús la GTE no comprime:** solo se estiran, así que sus modelos
+  3D (hangar) salen 4/3 más anchos.
+  - Comprimir allí podría descuadrar lo que el juego coloca a mano sobre lo
+    que proyecta la GTE (`SIN RESOLVER`: no se ha probado).
+  - En la misión la GTE sigue comprimiendo como en la 1.10.

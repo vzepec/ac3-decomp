@@ -13,9 +13,11 @@
  *    retraso), y la pantalla muestra en cada refresco la ultima cuya hora ya paso. Las intermedias
  *    se dibujan en 3 hilos aparte (paso 6: en la 1.1 iban dentro del hilo del juego y en la
  *    Retroid lo frenaban);
- *  - pantalla ancha (paso 16): en la mision la GTE comprime la x a 3/4 (psx_gte_wide) y la imagen
- *    se presenta a 16:9; el cono de vision del terreno se ensancha (ac3_wide_install). L3+R3
- *    recorre: 60 fps + 16:9 -> 60 fps + 4:3 -> el original (4:3, sin intermedias);
+ *  - pantalla ancha (paso 16): todo se presenta a 16:9 salvo los videos (color de 24 bits), que
+ *    siguen a 4:3. En la mision, ademas, la GTE comprime la x a 3/4 (psx_gte_wide) para que la
+ *    escena 3D no salga deformada y el cono de vision del terreno se ensancha
+ *    (ac3_wide_install); los menus solo se estiran. L3+R3 recorre: 60 fps + 16:9 -> 60 fps + 4:3
+ *    -> el original (4:3, sin intermedias);
  *  - el juego y los hilos de dibujo van fijados a los nucleos rapidos (los de mayor frecuencia);
  *  - contador (arriba a la izquierda): imagenes distintas mostradas por segundo, velocidad del
  *    juego frente a la consola (100% = 50 VBlank por segundo), intermedias por paso y uso del
@@ -97,7 +99,7 @@ static struct {
     volatile int interp_enabled;
     volatile int gfx_mode;           /* L3+R3: 0 = 60 fps + 16:9, 1 = 60 fps + 4:3, 2 = original */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0) */
-    int frame_wide;                  /* G.frame se dibujo en pantalla ancha */
+    int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 y no es un video) */
     uint32_t show[640 * 512];        /* copia de lo que se presenta (fuera del cerrojo) */
     /* cifras del contador, publicadas por el hilo del juego cada segundo */
     volatile int st_cpu, st_nfrac, st_core, st_skip, st_steps, st_unpaired;
@@ -210,7 +212,9 @@ static void frame_wait(void) {
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
     pthread_mutex_lock(&G.lock);
-    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; G.frame_wide = G.wide_now; }
+    int gw, gh, gon, rgb24;
+    psx_display_geom(&gw, &gh, &gon, &rgb24);   /* los videos van en color de 24 bits: a 4:3 */
+    if (w && h) { memcpy(G.frame, img, (size_t)w * h * 4); G.fw = w; G.fh = h; G.frame_wide = G.gfx_mode == 0 && !rgb24; }
     pthread_mutex_unlock(&G.lock);
 }
 
@@ -228,7 +232,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
         if (G.q[i].due < G.q[k].due) k = i;
     }
     memcpy(G.q[k].px, rgba, (size_t)w * h * 4);
-    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = G.wide_now;
+    G.q[k].w = w; G.q[k].h = h; G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = G.gfx_mode == 0;
     G.interp_last = now();
     pthread_mutex_unlock(&G.lock);
 }
@@ -609,7 +613,7 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            const char *md = G.gfx_mode == 2 ? "ORIG" : G.wide_now ? "16:9" : "4:3";
+            const char *md = G.gfx_mode == 2 ? "ORIG" : G.gfx_mode == 0 ? "16:9" : "4:3";
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
             if (G.running)
