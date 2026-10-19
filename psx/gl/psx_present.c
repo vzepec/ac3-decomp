@@ -3,7 +3,7 @@
 
 #include "psx_present.h"
 
-static GLuint g_prog, g_tex, g_vao, g_vbo;
+static GLuint g_prog, g_tex, g_vao, g_vbo, g_otex;
 static int g_tw, g_th;
 
 static const char *VS = "#version 300 es\n"
@@ -38,6 +38,9 @@ int psx_present_init(void) {
     return 0;
 }
 
+static int g_dx, g_dy, g_dw, g_dh, g_iw, g_ih;   /* ultimo recuadro de destino y tamano de la imagen */
+static void draw_tex(GLuint tex, int w, int h, int vw, int vh, int fit, int linear);
+
 void psx_present_frame(const uint32_t *rgba, int w, int h, int vw, int vh, int fit, int linear) {
     if (w <= 0 || h <= 0) return;
     glBindTexture(GL_TEXTURE_2D, g_tex);
@@ -49,6 +52,16 @@ void psx_present_frame(const uint32_t *rgba, int w, int h, int vw, int vh, int f
     } else {
         glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
     }
+    draw_tex(g_tex, w, h, vw, vh, fit, linear);
+}
+
+void psx_present_texture(unsigned tex, int w, int h, int vw, int vh, int fit, int linear) {
+    if (w <= 0 || h <= 0 || !tex) return;
+    draw_tex(tex, w, h, vw, vh, fit, linear);
+}
+
+static void draw_tex(GLuint tex, int w, int h, int vw, int vh, int fit, int linear) {
+    glBindTexture(GL_TEXTURE_2D, tex);
     GLint flt = linear ? GL_LINEAR : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, flt);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, flt);
@@ -89,12 +102,36 @@ void psx_present_frame(const uint32_t *rgba, int w, int h, int vw, int vh, int f
     glUseProgram(g_prog);
     glUniform1i(glGetUniformLocation(g_prog, "tex"), 0);
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, g_tex);
+    glBindTexture(GL_TEXTURE_2D, tex);
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    g_dx = dx; g_dy = dy; g_dw = dw; g_dh = dh;
+}
+
+/* superpone rgba (w x h, alfa 0 = transparente) en la esquina superior izquierda de la ultima
+ * imagen presentada, a la escala de una imagen de ref_w x ref_h pixeles de la PS1 */
+void psx_present_overlay(const uint32_t *rgba, int w, int h, int ref_w, int ref_h) {
+    if (!g_dw || !g_dh || ref_w <= 0 || ref_h <= 0) return;
+    if (!g_otex) glGenTextures(1, &g_otex);
+    glBindTexture(GL_TEXTURE_2D, g_otex);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    int ow = g_dw * w / ref_w, oh = g_dh * h / ref_h;
+    glViewport(g_dx, g_dy + g_dh - oh, ow, oh);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(g_prog);
+    glBindVertexArray(g_vao);
+    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    glDisable(GL_BLEND);
 }
 
 void psx_present_shutdown(void) {
     if (g_tex) glDeleteTextures(1, &g_tex);
+    if (g_otex) glDeleteTextures(1, &g_otex);
+    g_otex = 0;
     if (g_vbo) glDeleteBuffers(1, &g_vbo);
     if (g_vao) glDeleteVertexArrays(1, &g_vao);
     if (g_prog) glDeleteProgram(g_prog);

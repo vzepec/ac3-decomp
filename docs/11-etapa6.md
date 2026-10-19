@@ -68,7 +68,7 @@ distribuido (`docs/06-legal.md`).
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **funciona entero en las dos versiones:** las 41 misiones, las secuencias de final con los créditos y guardar/cargar, sin fallos (`docs/pruebas/`). Falta la comparación con DuckStation, que el dueño deja para el final |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
-| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** ✅ publicada en la release `v1.8-alfa`; alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
+| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅ (desde la `v1.9-alfa`, la de la etapa 8); **pantalla ancha** ✅ publicada en la release `v1.8-alfa`; alta resolución ⏳ (GLES validado con el comparador pero aparcado en la rama `gles-alta-resolucion`, pasos 17-20) |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
 
 **Criterio de salida:** el juego completo, jugable de principio a fin en la
@@ -990,6 +990,12 @@ recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
 
 ### Paso 16: pantalla ancha (release v1.8-alfa)
 
+> **Corrección posterior (etapa 8, 1.9.6-alfa):** al ladear el avión, las
+> franjas del cielo podían cerrarse con una cuña falsa en los bordes. Los
+> extremos de las líneas del horizonte, comprimidos, quedaban dentro de la
+> pantalla. Se alargan antes de proyectarlos (`sky_lines` en
+> `ac3_wide_install`). Ver `docs/14-etapa8.md`.
+
 **Nombres:** las versiones de prueba se llamaron 1.10-alfa y 1.11-alfa. Lo
 publicado es la release **`v1.8-alfa`** (la 1.11, con `versionCode` 13).
 No tiene que ver con los APK de prueba "1.8/1.9-alfa" del primer intento,
@@ -1063,3 +1069,264 @@ el primer intento.
 
 Siguiente: la alta resolución por partes, con un comparador automático
 software/GLES por misiones enteras antes de ir a la Retroid (`STATUS.md`).
+
+### Paso 17: alta resolución por GLES, comprobada antes de ir a la Retroid (APK 1.9-alfa, sin publicar)
+
+Punto 2 del plan por partes (pantalla ancha → alta resolución →
+antitemblores). Rama `etapa-6-paso-17`. Del primer intento (rama
+`etapa-6-paso-15`) se recupera solo el dibujo por GLES: `psx_hw.c`, el
+registro de primitivas de `gpu.c` y el reparto por la interpolación. **Sin
+antitemblores.**
+
+#### 1. El comparador
+
+- **Cómo funciona** (`psx/gl/psx_hwcmp.c`, `AC3_HWCMP=<dir>` del binario
+  libre, `tools/hwcmp.py`, `make hwcmp`):
+  - en partida real, cada lista de dibujo del juego la dibuja la GPU por
+    software (la referencia) y GLES la vuelve a dibujar a escala 1, desde
+    la misma VRAM de partida;
+  - con `AC3_INTERP` + `AC3_INTERP_THREADS` compara también las imágenes
+    intermedias de los 60 fps: los hilos de dibujo las rasterizan por
+    software además de anotarlas (`psx_interp_hw(sumidero, 1)`).
+- **Qué cuenta como "bloque malo"** (8×8):
+  - 8 o más píxeles que difieren en más de 40 en algún canal;
+  - y cuyo color no está en los 3×3 vecinos de la otra imagen.
+  - Así un borde o una línea movidos un píxel no cuentan, y un hueco, un
+    pico o un recorte de máscara sí.
+- **Además:** listas por debajo del 99 % de píxeles casi iguales, para
+  diferencias repartidas.
+
+**Validado con el caso positivo conocido** (regla 3):
+- con el bit de máscara desactivado a propósito (`PSX_HW_NOMASK=1`), la
+  misión 0 da **570 listas con bloques malos** (el radar);
+- con la máscara, **0**.
+- En la primera pasada, el comparador detectó el radar desbordado de la
+  Retroid en todas las imágenes de misión: 34 bloques en (8,8)-(79,79).
+
+#### 2. Lo que encontró, y la corrección
+
+| Fallo | Causa | Corrección |
+|---|---|---|
+| Radar desbordado de su círculo (el del vídeo del dueño) | `psx_hw.c` no emulaba el **bit de máscara**. En el radar, las primitivas que comprueban la máscara son semitransparentes con textura | **Stencil** de 1 bit = bit 15. Cada primitiva escribe lo que la GPU dejaría (texel / poner máscara; dos pasadas en las texturadas). Las que comprueban, pintan solo donde vale 0. El fondo lleva su bit 15 de partida. Solo si la lista tiene alguna primitiva que comprueba |
+| Bordes de polígono un píxel fuera | GL mira el centro del píxel; la GPU, la esquina | Geometría desplazada casi medio píxel de salida (`u_shift`). Color, uv y tramado se llevan a la esquina exacta (`u_delta`). Si no, una uv decreciente lee el texel anterior: era la línea de más del borde del mapa del radar |
+| Líneas: pendiente y redondeo | El cuadrilátero alargado un píxel cambiaba la pendiente | Paralelogramo con la pendiente exacta y desempate como la GPU (lejos de cero), compensando el desplazamiento de muestreo. `psx/test/test_hwlines.c`: **5043 de 5043 líneas idénticas** |
+| Fondo leído un píxel al lado | La copia directa de la VRAM no tenía el margen de +0,001 | Margen añadido. Una lista de la misión 2 pasa de 37 a 49 dB |
+
+**Fotograma de prueba** (`make psx-hw`): de 37,2 dB y 97,7 % casi iguales a
+**50,5 dB y 99,88 %**.
+
+#### 3. Resultado en las 41 misiones (US, escala 1)
+
+- **127.072 listas, 1 con bloques malos:** una línea de la rejilla del túnel
+  (misión 37), desplazada un píxel.
+- **Imágenes intermedias** (misión 2, 3 por paso): 4.207 listas, de ellas
+  1.077 intermedias, **0 bloques malos**.
+- **Conclusión:** GLES dibuja las intermedias igual que el software. Los
+  picos del primer intento no venían del dibujo GLES. Quedan como
+  sospechosos (`SIN RESOLVER`):
+  - los antitemblores de entonces;
+  - el driver de la Retroid (Adreno), que Mesa no reproduce;
+  - o la propia interpolación, que también se ve con el dibujo por
+    software (el dueño ve parpadeos en edificios con la 1.8).
+- **Diferencias que quedan:**
+  - degradados de las líneas: un escalón de 5 bits, porque el software
+    trunca hacia cero;
+  - redondeo de la mezcla semitransparente (GL en 8 bits, la consola en 5).
+  - Ninguna se ve como fallo.
+
+#### 4. APK 1.9-alfa
+
+- **L3+R3** recorre GLES ×N + 16:9 (`GLX4 16:9`) → software 16:9
+  (`SW 16:9`, como la 1.8) → software 4:3 (`SW 4:3`) → original (`ORIG`).
+- **Escala:** la entera que quepa en la pantalla, hasta ×4.
+- Los menús a 60 imágenes por segundo siguen por software.
+
+#### 5. Rendimiento (APK 1.9.1-alfa)
+
+**En la Retroid, la 1.9-alfa se ve bien pero va lenta:** 10-20 imágenes por
+segundo en `GLX4 16:9`, según los objetos y el mapa.
+
+**Causa, medida en el PC** (`test_hw` imprime las llamadas por imagen a
+escala 4): **1.141 a 1.433 llamadas de dibujo por imagen**, casi dos por
+primitiva, cada una con su propia subida de vértices. En un móvil cada
+llamada cuesta decenas de microsegundos, y la app dibuja hasta 60 imágenes por
+segundo. Venía de:
+- semitransparencia en dos pasadas con estados distintos;
+- stencil en dos pasadas en todas las texturas, en cuanto la lista comprueba
+  la máscara (el radar: todas las imágenes de misión);
+- una subida de vértices por lote.
+
+**Corrección** (`psx/gl/psx_hw.c`):
+- **Mezcla única** `ONE, ONE_MINUS_SRC_ALPHA`: el shader saca color
+  premultiplicado y alfa según el modo (opaco 1; abr 0: F/2 con alfa 0,5;
+  abr 1: F con alfa 0; abr 3: F/4 con alfa 0). Solo la resta (abr 2) tiene
+  su propio estado.
+- **Stencil exacto (dos pasadas) solo en lo necesario:** primitivas
+  anteriores a la última que comprueba la máscara y que tocan su zona.
+- **Lotes:** las llamadas se encolan con su estado y los vértices de cada
+  tramo (entre subidas de VRAM) suben de una vez.
+- **Texturas:** la VRAM va en 3 texturas que se turnan, y solo se suben las
+  franjas de 16 filas que cambian.
+- **App:** el hilo de pantalla intercambia los búferes con la ranura en vez
+  de copiarlos.
+
+| Fotograma | Llamadas antes | Llamadas ahora |
+|---|---|---|
+| Prueba | 1.141 | 104 |
+| Misión 2 | 1.433 | 106 |
+| Túnel | 224 | 51 |
+
+**Mismo resultado:**
+- mismos dB a escala 1;
+- comparador sin bloques malos en la misión 2 (con intermedias) y en la 21;
+- `test_hwlines` 5043/5043.
+
+**Contador:** en `GLX4` hay una tercera línea, `GL x.x  SWAP y.y`: ms por
+imagen en el dibujo (CPU) y en `eglSwapBuffers`. También va a logcat, con
+llamadas y subidas por imagen. Sirve para ver si sigue limitando la CPU del
+hilo de pantalla o la GPU (`SIN RESOLVER` hasta probarlo).
+
+### Paso 18: fidelidad a la PS1 — la GTE contra una de referencia (APK 1.9.2-alfa, sin publicar)
+
+**Problema.** Con la 1.9.1 (rendimiento bien), el dueño sigue viendo
+titileos, parpadeos y vértices que se estiran, sobre todo en ciudades
+(vídeo e imágenes en `imagenes bugs/`).
+
+**Análisis del vídeo** (detector de "cambia y vuelve" por bloques entre
+fotogramas consecutivos):
+- los peores eventos son tramos de puente y autopista que se estiran
+  durante 1-3 fotogramas y vuelven (t = 24,97 s, 25,67 s, 27,30 s);
+- también hay parpadeos de piezas cercanas.
+
+**Estrategia de raíz: comparar cada capa con una referencia contrastada
+con hardware, en partida real.** La GPU ya tiene su comparador (paso 17).
+La **GTE** solo se había validado con la especificación y pruebas propias
+(etapa 5, "sin verificar contra hardware").
+
+**Oráculo de la GTE** (`psx/test/gteref.c`, `tools/gteref.sh`,
+`make gteref`):
+- cada orden COP2 del juego se repite en la GTE de Mednafen (Beetle PSX,
+  commit fijo), con los 64 registros de entrada;
+- se comparan los 32 de datos y FLAG.
+- La de Mednafen es GPL: se descarga a `data/ref/` (fuera de git) y solo la
+  enlaza el binario de pruebas `psx/build/ac3_gteref`. Nunca entra en el
+  repositorio ni en el APK.
+
+**Hallazgo: IR0 de RTPS/RTPT** (el factor de niebla de cada vértice):
+- con el vértice muy cerca de la cámara, `DQA * (H/SZ)` desborda MAC0;
+- el hardware satura IR0 desde el valor completo y da **0** (sin niebla);
+- la nuestra lo hacía desde MAC0 truncado y daba **0x1000** (niebla total).
+- El terreno y los objetos guardan IR0 por vértice (`terrain_draw`:
+  `stIR0` tras cada RTPT): los polígonos más cercanos pasaban de golpe al
+  color de la niebla.
+- Antes de corregirlo, el comparador dio ~120.000 diferencias en IR0 en la
+  misión 0 (caso positivo); después, 0.
+
+**Resultado:** las 41 misiones US, **133.445.920 órdenes de la GTE, 0
+diferencias** con Mednafen (RTPS, RTPT, NCLIP, MVMVA, DPCS, DPCT, INTPL,
+SQR, AVSZ3/4, GPF, GPL, NCS, NCT).
+
+**Siguiente sospechosa: la interpolación** (`SIN RESOLVER`):
+- una clave de modelo "única" en los dos pasos se empareja sin contrastarla
+  con el movimiento de la cámara (salvo saltos de más de 48 px);
+- en ciudades de piezas repetidas, el tramo A de un paso y el B del
+  siguiente (idénticos) pueden emparejarse;
+- en las intermedias, esos vértices viajarían de una pieza a otra:
+  estiramiento de 1-3 fotogramas, como en el vídeo.
+- Hay que confirmar si los estiramientos salen también en `ORIG` (sin
+  intermedias) y reproducir la partida en el PC.
+
+### Paso 19: estiramientos de la interpolación en las ciudades (APK 1.9.3-alfa, sin publicar)
+
+**Confirmado por el dueño con la 1.9.2:** las deformaciones de vértices
+solo salen con la interpolación (en `ORIG` no).
+
+**Medida** (`PSX_INTERP_STRETCH=1`):
+- por cada polígono 3D, su forma "de antes" (posición actual + pareja) se
+  compara con la actual;
+- un objeto rígido apenas cambia en un paso, así que un lado que cambia más
+  de 12 px y más del 50 % delata un emparejamiento falso;
+- con la variable de entorno imprime los casos (vértices y desplazamientos)
+  y un resumen al salir.
+
+**Lo que mostró** (misión 0, ciudad):
+- grupos de vértices de un mismo objeto emparejados con un salto común
+  (p. ej. −42,+44) mientras el resto del objeto no se mueve;
+- son piezas iguales (claves del modelo "únicas" en los dos pasos, pero de
+  instancias distintas);
+- al ser varios, se dan la razón entre sí: un filtro por vecinos no basta.
+
+**Corrección** (`psx/src/interp.c`):
+1. **Por objeto:** la GTE pasa a la interpolación un resumen de la matriz
+   (rotación + traslación) con que proyectó cada vértice. Cada objeto de un
+   paso vota de qué objeto del anterior vienen sus vértices, y se descartan
+   las parejas que vienen de otro.
+2. **Por vecinos:** se descarta la pareja que no cuadra con la mayoría de
+   sus vecinos de malla. La tolerancia por vecino crece con el lado que los
+   une (perspectiva) y con su movimiento (giros).
+3. **Remate:** el polígono que aun así no cuadra se mueve entero en las
+   intermedias con la mediana de sus vértices (sus coordenadas son suyas,
+   no tocan las de otros polígonos).
+4. **Cortes de cámara:** con más de 40 polígonos incoherentes y más del
+   10 % del 3D en un paso, no es un emparejamiento sino otro plano. Ese paso
+   va sin intermedias.
+
+**Resultado** (misión 0, US):
+- polígonos incoherentes de 9.178 a 2.078 antes del remate, y los que
+  quedan se mueven enteros;
+- unas 6 parejas descartadas por paso (de miles);
+- 3-5 cortes por misión.
+
+**Sin romper nada:**
+- huecos de la interpolación iguales (`tools/interp_holes.py`: 10,1 → 9,9
+  px por imagen);
+- comparador GLES con intermedias sin bloques malos;
+- `make psx-check` bien.
+
+**SIN RESOLVER hasta probarlo en la Retroid:** si desaparecen los
+estiramientos visibles del vídeo. En el PC el vuelo guionizado no pasa por
+los mismos puentes.
+
+**Cielo que tiembla al cabecear** (petición del dueño con la 1.9.3: "el
+cielo suele temblar cuando muevo el avión, generalmente con movimientos
+verticales"):
+- **Medida** (misión 2, morro arriba y abajo, una intermedia por paso):
+  - el horizonte del terreno, en la intermedia, queda a mitad de camino
+    (148 → 152 → 156);
+  - la franja del degradado del cielo ya estaba en su posición final
+    (100 → 106 → 106).
+- **El cielo no se interpolaba:** saltaba un paso entero mientras el
+  terreno avanzaba a medias.
+- **Causa:**
+  - el cielo (4 franjas de −160 a 160) se dibuja al principio de la lista,
+    antes de su primera orden E3;
+  - el recorrido de la interpolación empezaba con el área "0", así que el
+    cielo quedaba en otro "espacio" que la escena 3D (`ref_spc` 0xbc0a0
+    frente a 0x100000bc0a0) y nadie lo movía.
+- **Corrección:** `walk()` empieza con el desplazamiento y el área que la
+  GPU tiene al arrancar la lista (los de `PutDrawEnv`).
+- **Resultado:** el cielo de la intermedia queda entre los dos pasos (100 →
+  102 → 106; 116 → 124 → 129).
+- **Sin romper nada:** huecos 9,2 px por imagen (antes 9,9), comparador GLES
+  sin fallos, `psx-check` bien.
+
+### Paso 20: la línea principal sin el modo GLES (APK 1.9.4-alfa, sin publicar)
+
+**Decisión del dueño, tras probar la 1.9.3:**
+- "me gusta como se ve en panorámico con interpolación (a resolución
+  original); la versión con resolución aumentada no se ve muy bonita";
+- el modo de alta resolución queda en una rama aparte para una integración
+  futura.
+
+**Ramas:**
+- **`gles-alta-resolucion`**: todo lo de los pasos 15-19 con el modo GLES
+  integrado en la app (L3+R3: `GLX4 16:9` / `SW 16:9` / `SW 4:3` / `ORIG`).
+- **`etapa-6-paso-20`** (sale de la 19): `android_game/src/game_main.c` y
+  `build.sh` vuelven a los de la 1.8 publicada (L3+R3: `16:9` / `4:3` /
+  `ORIG`, todo por software). Se quedan las correcciones de la capa:
+  - la GTE igual que la de Mednafen (paso 18);
+  - la interpolación sin emparejamientos falsos (paso 19);
+  - el cielo interpolado (paso 19).
+- **El código de GLES y los comparadores siguen en el repositorio**
+  (`psx/gl/psx_hw.c`, `psx_hwcmp.c`, `make hwcmp`, `make psx-hw`): son
+  herramientas probadas. El APK no los lleva (152 KB).

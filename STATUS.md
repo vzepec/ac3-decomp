@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-18 (se trabaja con la versión americana; ramas fusionadas borradas)
+**Última actualización:** 2026-10-19 (release `v1.9-alfa`: interpolación nueva; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,9 +10,12 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.8-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.9-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
+**Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
+(`docs/14-etapa8.md`). El mundo se redibuja con el código del juego en cada
+imagen intermedia, en un hilo de dibujo.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -86,21 +89,20 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**La pantalla ancha está publicada** (release `v1.8-alfa`, paso 16).
+**Rendimiento** (petición del dueño tras la `v1.9-alfa`): bajones de fps
+mirando ciudades muy pobladas.
+- **Primero, análisis:** ¿conviene llevar el dibujo a la GPU (GLES) en lugar
+  de la GPU por software? Base: el comparador `psx_hwcmp` y el dibujo por
+  GLES ya validado en la rama `gles-alta-resolucion` (pasos 17-20 de la
+  etapa 6).
+- **Medir antes de decidir:** en qué se va el tiempo de cada hilo en la
+  Retroid (juego, redibujo, dibujo por software).
 
-Siguiente: **alta resolución, por partes** (`docs/11-etapa6.md`, paso 16), en
-la rama `etapa-6-paso-17`:
-1. **Comparador automático:** misiones enteras en el PC, cada imagen por
-   software y por GLES a escala 1, avisando de zonas que difieran mucho.
-   Primero las 41 misiones, luego la Retroid.
-2. Recuperar de la rama `etapa-6-paso-15` solo el dibujo por GLES, sin
-   antitemblores, y corregir lo que encuentre el comparador. Pista: el bit
-   de máscara del radar.
-3. Subir de ×1 a ×2 y ×4; primero las imágenes reales y después las
-   intermedias. Como modo aparte de L3+R3, para comparar en el aparato.
-4. Antitemblores al final, aparte, solo si hace falta.
-
-La comparación con DuckStation queda para el final.
+**Después:**
+- objetos móviles por su identidad (aviones, misiles);
+- orientación de los objetos del arreglo;
+- la europea (las 2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
+- la comparación con DuckStation, al final.
 
 ## Pendiente
 

@@ -16,8 +16,12 @@
  *  - pantalla ancha (paso 16): todo se presenta a 16:9 salvo los videos (color de 24 bits), que
  *    siguen a 4:3. En la mision, ademas, la GTE comprime la x a 3/4 (psx_gte_wide) para que la
  *    escena 3D no salga deformada y el cono de vision del terreno se ensancha
- *    (ac3_wide_install); los menus solo se estiran. L3+R3 recorre: 60 fps + 16:9 -> 60 fps + 4:3
- *    -> el original (4:3, sin intermedias);
+ *    (ac3_wide_install); los menus solo se estiran;
+ *  - interpolacion nueva (etapa 8, psx/recomp/ac3_rerender.c): en cada imagen intermedia el mundo
+ *    estatico (terreno, cielo, ciudades) se vuelve a dibujar con el codigo del juego y la camara a
+ *    medio camino; solo lo movil se interpola en pantalla. Una intermedia por paso (30 -> 60 fps).
+ *    L3+R3 recorre: 16:9 -> 4:3 -> el original (la interpolacion anterior, la de la etapa 6, se
+ *    quito de la app en la 1.9-alfa; sin la nueva, en los APK personales, es la que se usa);
  *  - el juego y los hilos de dibujo van fijados a los nucleos rapidos (los de mayor frecuencia);
  *  - contador (arriba a la izquierda): imagenes distintas mostradas por segundo, velocidad del
  *    juego frente a la consola (100% = 50 VBlank por segundo), intermedias por paso y uso del
@@ -63,6 +67,8 @@
 /* etapa 7, APK libre (sin nada de Namco): la version se detecta en el disco, ACE.BIN se lee y
  * descomprime de el y todo el codigo del juego lo ejecuta el interprete (psx/recomp/mipsi.c) */
 #include "ac3_versions.h"
+#include "ac3_rerender.h"
+#include "ac3_rr_async.h"
 #include "psx_acebin.h"
 static const Ac3Version *R;
 static uint8_t g_ace[0x200000];
@@ -97,7 +103,9 @@ static struct {
     struct { uint32_t px[640 * 512]; int w, h; double due; int full, wide; } q[8];
     double interp_last;              /* ultima imagen entregada por la interpolacion */
     volatile int interp_enabled;
-    volatile int gfx_mode;           /* L3+R3: 0 = 60 fps + 16:9, 1 = 60 fps + 4:3, 2 = original */
+    /* L3+R3: 0 = 16:9 + interpolacion, 1 = 4:3 + interpolacion, 2 = original */
+    volatile int gfx_mode;
+    volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 y no es un video) */
     uint32_t show[640 * 512];        /* copia de lo que se presenta (fuera del cerrojo) */
@@ -161,7 +169,7 @@ static void frame_wait(void) {
         else if (avg < 3) want = g_nfrac - 1, good = 0;
         else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) { if (++good >= 5) want = g_nfrac + 1, good = 0; }
         else good = 0;
-        want = want < 1 ? 1 : want > 3 ? 3 : want;
+        want = want < 1 ? 1 : want > (G.rr_on ? 1 : 3) ? (G.rr_on ? 1 : 3) : want;   /* la nueva: 30 -> 60 fps con una */
         if (want != g_nfrac && G.interp_enabled) {
             g_nfrac = want;
             psx_interp_config(g_nfrac, 2, interp_sink);
@@ -194,6 +202,18 @@ static void frame_wait(void) {
     /* L3+R3 cambia G.gfx_mode en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1;
     G.interp_enabled = G.gfx_mode != 2;
+#ifdef AC3_LIBRE
+    static int rr_applied = -1;
+    int rr = G.gfx_mode <= 1;
+    if (rr != rr_applied) {
+        rr_applied = rr;
+        G.rr_on = rr;
+        /* el redibujo, en un hilo de dibujo (segunda copia del interprete): el del juego solo deja
+         * una instantanea por paso */
+        psx_interp_rebuild_async(rr ? ac3_rr_async() : NULL);
+        if (rr && g_nfrac > 1) { g_nfrac = 1; interp_applied = -1; }
+    }
+#endif
     if (interp_applied != G.interp_enabled) {
         interp_applied = G.interp_enabled;
         psx_interp_config(interp_applied ? g_nfrac : 0, 2, interp_sink);
@@ -281,6 +301,7 @@ static void *game_thread(void *arg) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     ac3_wide_install(R);        /* pantalla ancha: el cono de vision del terreno */
+    if (ac3_rr_install(R) || ac3_rr_async_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
 #else
     rc_register(R->funcs, *R->nfuncs);
     for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
@@ -423,7 +444,7 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
                 G.gfx_mode = (G.gfx_mode + 1) % 3;
-                LOG("modo de imagen: %s", G.gfx_mode == 0 ? "60 fps, pantalla ancha" : G.gfx_mode == 1 ? "60 fps, 4:3" : "original");
+                LOG("modo de imagen: %s", G.gfx_mode == 0 ? "60 fps + 16:9" : G.gfx_mode == 1 ? "60 fps + 4:3" : "original");
             }
         }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;

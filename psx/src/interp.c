@@ -10,6 +10,7 @@
 #include "psx_gpu.h"
 #include "psx_gte.h"
 #include "psx_interp.h"
+#include "psx_libgte.h"
 #include "psx_libetc.h"
 #include "psx_mem.h"
 
@@ -26,11 +27,12 @@ static int g_nfrac, g_min_vb;
 static PsxInterpSink g_sink;
 
 /* vertices de este paso y del anterior: clave del modelo (x, y, z) y posicion de pantalla */
-typedef struct { uint64_t base; uint32_t sxy; int next; } Vert;
+typedef struct { uint64_t base; uint32_t sxy; int next; uint32_t grp; } Vert;   /* grp: el objeto (matriz de la GTE) */
 static Vert cur[MAXV], prv[MAXV];
 static int ncur, nprv;
 static int16_t pdx[MAXV], pdy[MAXV];
 static uint8_t pok[MAXV];
+static int pbest[MAXV];                 /* vertice del paso anterior con que se emparejo */
 static float lsx[MAXV], lsy[MAXV];      /* prediccion local (vecinos emparejados) */
 static uint16_t lc[MAXV];
 static uint8_t in3d[MAXV];              /* vertice usado en el espacio 3D */
@@ -47,6 +49,13 @@ static uint32_t pocc_gen = 1, pprim_gen = 1;
 static uint32_t pp_xy[MAXREF];           /* coordenadas de las primitivas del paso anterior */
 static int pp_first[MAXREF], pp_n[MAXREF];
 static int have_prev, last_vb = -1;
+static long st_stretch, st_stretch_steps;
+static int st_reject, g_cut;
+static long st_cuts, st_rejects;
+static void stretch_summary(void) {
+    fprintf(stderr, "estirados: %ld poligonos en %ld pasos (corregidos: se mueven enteros); parejas descartadas %ld; cortes de camara %ld\n",
+            st_stretch, st_stretch_steps, st_rejects, st_cuts);
+}
 static int st_dup, st_gte, st_matched, st_paired, st_dragged, st_total, st_backdrop, st_stuck;
 
 static uint64_t mix(uint64_t x) {
@@ -78,13 +87,14 @@ void psx_interp_config(int nfrac, int min_vblanks, PsxInterpSink sink) {
     ncur = 0;
 }
 
-void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy) {
+void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp) {
     if (ncur >= MAXV) return;
     uint64_t base = mix(((uint64_t)(uint16_t)x) | ((uint64_t)(uint16_t)y << 16) | ((uint64_t)(uint16_t)z << 32) | (1ull << 48));
     Slot *o = slot(occ, occ_gen, base, 1);
     if (o) { if (o->cnt) st_dup++; o->cnt++; }
     cur[ncur].base = base;
     cur[ncur].sxy = ((uint32_t)(uint16_t)sy << 16) | (uint16_t)sx;
+    cur[ncur].grp = grp;
     ncur++;
 }
 
@@ -168,9 +178,13 @@ static void walk_packet(uint32_t *p, int n) {
     }
 }
 
-static void walk(uint32_t addr) {
+/* ofs0 / area0: el desplazamiento (E5) y el origen del area (E3) que la GPU tiene al empezar la
+ * lista (los de PutDrawEnv). Con 0 (paso 19 y antes), lo que la lista dibuja antes de su primera
+ * E3 (el cielo, al principio) quedaba en otro "espacio" que la escena 3D y no se interpolaba:
+ * saltaba un paso entero mientras el terreno avanzaba a medias (el cielo temblaba al cabecear) */
+static void walk(uint32_t addr, int ofs0, int area0) {
     nref = nprim = prim_start = 0;
-    cur_ofs = cur_area = 0;   /* lo que haya antes de la lista: el entorno de PutDrawEnv */
+    cur_ofs = ofs0; cur_area = area0;
     int guard = 0;
     while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard < 200000) {
         uint32_t *p = (uint32_t *)psx_ptr(addr);
@@ -206,6 +220,46 @@ static void capture(PsxGpu *g, int num, int den, int vb) {
     int w, h;
     psx_display_frame_at(g->area_x1, g->area_y1, img, 1024 * 512, &w, &h);
     if (w && h) g_sink(img, w, h, num, den, vb, g_tstep);
+}
+
+/* ---- dibujo por GLES (paso 7, psx_interp_hw): en vez de la imagen se entrega la lista anotada
+ * (psx_gpu_record) con la VRAM de antes de dibujarla; el anfitrion la dibuja a alta resolucion
+ * (psx/gl/psx_hw.c). La imagen real se sigue dibujando por software (la VRAM del juego); las
+ * intermedias, solo se interpretan (registro sin dibujar la imagen principal) ---- */
+static PsxInterpHwSink g_hwsink;
+static int g_hwfull;
+void psx_interp_hw(PsxInterpHwSink sink, int full) { g_hwsink = sink; g_hwfull = full; }
+
+static int hw_prepare(PsxHwList *l, int x1, int y1, int x2, int y2) {
+    if (!l->p) {
+        l->max = 65536; l->p = malloc((size_t)l->max * sizeof *l->p);
+        l->maxdata = 1024 * 512; l->data = malloc((size_t)l->maxdata * 2);
+        if (!l->p || !l->data) return -1;
+    }
+    l->n = l->ndata = 0;
+    l->main_x1 = x1; l->main_y1 = y1; l->main_x2 = x2; l->main_y2 = y2;
+    return 0;
+}
+
+/* la imagen real del paso: por software y, con GLES, ademas anotada y entregada */
+static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
+    int w, h, on, rgb24;
+    psx_display_geom(&w, &h, &on, &rgb24);
+    static PsxHwList L;
+    static uint16_t bg[1024 * 512];
+    if (!g_hwsink || !on || rgb24 || w <= 0 || h <= 0 || w * h > 1024 * 512 ||
+        hw_prepare(&L, g->area_x1, g->area_y1, g->area_x2, g->area_y2)) {
+        psx_gpu_draw_list(g, ot);
+        capture(g, num, den, vb);
+        return;
+    }
+    int x0 = g->area_x1, y0 = g->area_y1;
+    memcpy(bg, g->vram, sizeof bg);
+    psx_gpu_record(&L, 0);
+    psx_gpu_draw_list(g, ot);
+    psx_gpu_record_flush(g);
+    psx_gpu_record(NULL, 0);
+    g_hwsink(&L, bg, g->vram, x0, y0, w, h, num, den, vb, g_tstep);
 }
 
 /* ---- posiciones de una fase. La lista lleva, por primitiva con algo que mover, todas sus
@@ -289,12 +343,17 @@ static struct {
     void (*on_start)(void);
     /* el trabajo */
     uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
+    uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
+    int rebuilt;
+    int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
     PsxGpu gpu;
     PhaseList L;
     int den, interval, x0, y0, dw, dh, on, rgb24;
     uint32_t ot;
     double t;
     PsxInterpSink sink;
+    PsxInterpHwSink hwsink;
+    int ax1, ay1, ax2, ay2;   /* area principal (la de la imagen) */
     /* rendimiento */
     double worker_s, worker_max;
     int jobs, skipped, steps, unpaired;
@@ -303,12 +362,42 @@ static struct {
 
 static double tnow(void);
 
+/* etapa 8: redibujo del mundo estatico por fase (psx_interp_rebuild) */
+static PsxInterpRebuild g_rebuild;
+static const PsxInterpRebuildAsync *g_rra;
+void psx_interp_rebuild(PsxInterpRebuild fn) { g_rebuild = fn; if (fn) g_rra = NULL; }
+void psx_interp_rebuild_async(const PsxInterpRebuildAsync *a) { g_rra = a; if (a) g_rebuild = NULL; }
+int psx_interp_rebuild_fails;   /* pasos en que no se pudo (corte de plano, sin datos) */
+double psx_interp_rebuild_s;   /* tiempo total en el redibujo (medicion) */
+int psx_interp_rebuild_n;
+static int rebuild_phases(uint32_t ot, int den) {
+    double t0 = tnow();
+    static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
+    static PsxGte gte;
+    PsxGte *gc = (PsxGte *)psx_gte_get_context();
+    memcpy(ram, psx_ram, sizeof ram); memcpy(scr, psx_scratch, sizeof scr); gte = *gc;
+    int ok = 1;
+    for (int k = 1; k < den && ok; k++) {
+        if (!J.ramk[k]) { J.ramk[k] = malloc(PSX_RAM_SIZE); J.scrk[k] = malloc(0x400); }
+        if (!J.ramk[k] || !J.scrk[k]) { ok = 0; break; }
+        /* fase k: la coordenada intermedia es la real + d * (den - k) / den, de modo que t = k / den */
+        if (g_rebuild(ot, (float)k / (float)den)) ok = 0;
+        else { memcpy(J.ramk[k], psx_ram, PSX_RAM_SIZE); memcpy(J.scrk[k], psx_scratch, 0x400); }
+        memcpy(psx_ram, ram, sizeof ram); memcpy(psx_scratch, scr, sizeof scr); *gc = gte;
+    }
+    if (!ok) psx_interp_rebuild_fails++;
+    psx_interp_rebuild_s += tnow() - t0;
+    psx_interp_rebuild_n++;
+    return ok;
+}
+
 static void *worker(void *arg) {
     int id = (int)(intptr_t)arg;
     if (J.on_start) J.on_start();
     uint8_t *ram = malloc(PSX_RAM_SIZE), scratch[0x400];
     PsxGpu *gpu = malloc(sizeof *gpu);
     uint32_t *out = malloc(1024 * 512 * 4);
+    PsxHwList hl = {0};
     uint32_t seen = 0;
     for (;;) {
         pthread_mutex_lock(&J.mu);
@@ -319,15 +408,38 @@ static void *worker(void *arg) {
         if (id >= nt) continue;   /* hilo sobrante (se pidieron menos): no cuenta */
         double t0 = tnow();
         int copied = 0;
-        for (int k = id + 1; k < J.den; k += nt) {
-            if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
+        /* con el redibujo en este hilo (una sola copia del interprete), el hilo 0 hace todas las fases */
+        int rra = J.rr_async, k0 = rra ? (id == 0 ? 1 : J.den) : id + 1, kstep = rra ? 1 : nt;
+        for (int k = k0; k < J.den; k += kstep) {
+            uint8_t *R = ram, *Sc = scratch;
+            if (rra) {
+                double tr = tnow();
+                if (g_rra->build(J.ot, (float)k / (float)J.den, J.ram, J.scratch, &R, &Sc)) {
+                    R = ram; Sc = scratch;
+                    memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch);
+                    pthread_mutex_lock(&J.mu); psx_interp_rebuild_fails++; pthread_mutex_unlock(&J.mu);
+                }
+                pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += tnow() - tr; psx_interp_rebuild_n++; pthread_mutex_unlock(&J.mu);
+            } else if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
+            else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
             memcpy(gpu, &J.gpu, sizeof *gpu);
             int den = J.den;
-            apply_phase(&J.L, k, den, ram, scratch);
-            psx_gpu_draw_list_mem(gpu, J.ot, ram, scratch);
+            apply_phase(&J.L, k, den, R, Sc);
+            if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
+                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
+                 * con full (comparador), tambien la imagen por software */
+                psx_gpu_record(&hl, !g_hwfull);
+                psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
+                psx_gpu_record_flush(gpu);
+                psx_gpu_record(NULL, 0);
+                J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
+                continue;
+            }
+            psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
             psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
             J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
         }
+        if (rra && id == 0) g_rra->done();
         double dt = tnow() - t0;
         pthread_mutex_lock(&J.mu);
         J.worker_s += dt;
@@ -450,7 +562,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         Slot *s = slot(valt, val_gen, mix(cur[i].sxy | (1ull << 40)), 1);
         if (s && s->val == 0) s->val = (uint32_t)i + 1;
     }
-    walk(ot);
+    walk(ot, (g->off_x & 0x7FF) | (g->off_y & 0x7FF) << 11, (g->area_x1 & 0x3FF) | (g->area_y1 & 0x3FF) << 10);
     pocc_gen++;
     for (int pi = 0; pi < nprim && pi < MAXREF; pi++) {
         Slot *o = slot(pocc, pocc_gen, mix(prim_key[pi]), 1);
@@ -581,7 +693,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) continue;
             int big = abs(dx) > JUMP || abs(dy) > JUMP;
             if (pred ? bd > tol * tol && (pass == 1 || big) : big) continue;
-            pdx[i] = (int16_t)dx; pdy[i] = (int16_t)dy; pok[i] = 1;
+            pdx[i] = (int16_t)dx; pdy[i] = (int16_t)dy; pok[i] = 1; pbest[i] = best;
         }
     }
     /* 2b. el movimiento global otra vez, con todas las parejas 3D (las repetidas ya resueltas por
@@ -592,6 +704,79 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         for (int i = 0; i < ncur; i++)
             if (pok[i] && in3d[i]) { fx[n] = lo(cur[i].sxy); fy[n] = hi(cur[i].sxy); fdx[n] = pdx[i]; fdy[n] = pdy[i]; n++; }
         if (fit_affine(fx, fy, fdx, fdy, n, 24, A)) model = 1;
+    }
+    /* 2c. parejas que no cuadran con sus vecinos de malla (paso 19). Una clave del modelo unica en
+     *     los dos pasos puede ser de dos piezas distintas e iguales (tramos de puente, edificios
+     *     repetidos de las ciudades: el A visible en un paso, el B en el siguiente); el vertice
+     *     viajaria en las intermedias de una pieza a otra y el poligono se estiraria 1-3 imagenes.
+     *     En un paso, los vertices de un mismo objeto se mueven casi igual: se descarta la pareja
+     *     que se aparta de la mediana de sus vecinos (los otros vertices de sus poligonos) mas de
+     *     lo que explican el giro de la camara y el tamano del poligono; el vertice se mueve
+     *     entonces con sus vecinos (paso 3) */
+    st_reject = 0;
+    /* 2c-1. por objeto (la matriz con que lo proyecto la GTE): la mayoria de sus vertices viene de
+     *       un objeto del paso anterior; los que vienen de otro (una pieza igual de al lado, aunque
+     *       sean varios y se den la razon entre si) se descartan */
+    if (have_prev) {
+        static Slot vote[HSIZE], best[HSIZE];
+        static uint32_t vote_gen, best_gen;
+        vote_gen++; best_gen++;
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *v = slot(vote, vote_gen, mix(((uint64_t)cur[k].grp << 32) | prv[pbest[k]].grp), 1);
+            if (v) v->cnt++;
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *v = slot(vote, vote_gen, mix(((uint64_t)cur[k].grp << 32) | prv[pbest[k]].grp), 0);
+            Slot *b = slot(best, best_gen, mix((uint64_t)cur[k].grp | (3ull << 40)), 1);
+            if (v && b && v->cnt > b->cnt) { b->cnt = v->cnt; b->val = prv[pbest[k]].grp; }
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            Slot *b = slot(best, best_gen, mix((uint64_t)cur[k].grp | (3ull << 40)), 0);
+            if (b && b->cnt >= 3 && prv[pbest[k]].grp != b->val) { pok[k] = 0; st_reject++; }
+        }
+    }
+    if (have_prev) {
+        /* por vecino: tolerancia segun el lado que los une (un lado largo admite mas diferencia por
+         * perspectiva) y el movimiento del vecino (giros rapidos); se descarta si no cuadra con la
+         * mayoria */
+        enum { NB = 12 };
+        static int16_t nbx[MAXV][NB], nby[MAXV][NB];
+        static uint16_t nbl[MAXV][NB];
+        static uint8_t nbn[MAXV], rej[MAXV];
+        for (int i = 0; i < ncur; i++) { nbn[i] = 0; rej[i] = 0; }
+        for (int a = 0; a < nref;) {
+            int b = a;
+            while (b < nref && ref_prim[b] == ref_prim[a]) b++;
+            if (b - a <= 4)
+                for (int i = a; i < b; i++) {
+                    int ki = refk[i];
+                    if (ki < 0) continue;
+                    for (int j = a; j < b; j++) {
+                        int kj = refk[j];
+                        if (j == i || kj < 0 || kj == ki || !pok[kj] || nbn[ki] >= NB) continue;
+                        int ex = abs(lo(cur[ki].sxy) - lo(cur[kj].sxy)), ey = abs(hi(cur[ki].sxy) - hi(cur[kj].sxy));
+                        nbx[ki][nbn[ki]] = pdx[kj]; nby[ki][nbn[ki]] = pdy[kj];
+                        nbl[ki][nbn[ki]] = (uint16_t)(ex > ey ? ex : ey);
+                        nbn[ki]++;
+                    }
+                }
+            a = b;
+        }
+        for (int k = 0; k < ncur; k++) {
+            if (!pok[k] || !in3d[k] || nbn[k] < 2) continue;
+            int bad = 0;
+            for (int j = 0; j < nbn[k]; j++) {
+                double dev = hypot(pdx[k] - nbx[k][j], pdy[k] - nby[k][j]);
+                double tol = 6 + 0.25 * hypot(nbx[k][j], nby[k][j]) + 0.3 * nbl[k][j];
+                bad += dev > tol;
+            }
+            if (bad * 2 > nbn[k]) rej[k] = 1;
+        }
+        for (int k = 0; k < ncur; k++)
+            if (rej[k]) { pok[k] = 0; st_reject++; }
     }
     /* 3. desplazamiento de cada coordenada de la lista */
     for (int i = 0; i < nref; i++) {
@@ -614,6 +799,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
      * proponen todas, igual en cada una. Con un valor por primitiva, los vertices compartidos
      * se separaban y asomaba el fondo entre los poligonos (grietas negras al girar rapido) */
     drag_gen++;
+    int sky_exact = 0, sky_model = 0, sky_none = 0;   /* medicion: como se mueve el fondo (PSX_INTERP_SKY) */
     /* bordes del area de dibujo en coordenadas de ese espacio */
     int o3x = ((ofs3d & 0x7FF) ^ 0x400) - 0x400, o3y = (((ofs3d >> 11) & 0x7FF) ^ 0x400) - 0x400;
     int bx0 = g->area_x1 - o3x, bx1 = g->area_x2 - o3x, by0 = g->area_y1 - o3y, by1 = g->area_y2 - o3y;
@@ -665,6 +851,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
                     int dx = lo(pp_xy[q + i - a]) - lo(orig[i]), dy = hi(pp_xy[q + i - a]) - hi(orig[i]);
                     if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) exact = 0;
                 }
+                if (exact) sky_exact++;
                 if (exact)
                     for (int i = a; i < b; i++) {
                         int px = lo(pp_xy[q + i - a]) - lo(orig[i]), py = hi(pp_xy[q + i - a]) - hi(orig[i]);
@@ -675,6 +862,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
                         moved[i] = 3; st_backdrop++;
                     }
             }
+            int big = b - a >= 3 && (x1 - x0 >= BACKDROP || y1 - y0 >= BACKDROP);
+            if (big && !exact) { if (model) sky_model++; else sky_none++; }
             if (!exact && model && b - a >= 3 && (x1 - x0 >= BACKDROP || y1 - y0 >= BACKDROP))
                 for (int i = a; i < b; i++) {
                     int x = lo(orig[i]), y = hi(orig[i]);
@@ -693,6 +882,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         }
         a = b;
     }
+    if (getenv("PSX_INTERP_SKY") && (sky_exact || sky_model || sky_none))
+        fprintf(stderr, "cielo: VBlank %d, exactas %d, por el modelo %d, quietas %d\n", VSync(-1), sky_exact, sky_model, sky_none);
     for (int i = 0; i < nref; i++) {
         if (moved[i] != 3) continue;
         Slot *d = slot(dragt, drag_gen, mix(orig[i] | (2ull << 40)), 0);
@@ -701,12 +892,65 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         ddx[i] = (int16_t)((x >= 0 ? x + n / 2 : x - n / 2) / n);
         ddy[i] = (int16_t)((y >= 0 ? y + n / 2 : y - n / 2) / n);
     }
+    /* medicion (paso 19): poligonos 3D cuya forma "de antes" (con las parejas) no cuadra con la
+     * actual: un objeto rigido apenas cambia en un paso, asi que un lado que cambia mucho delata un
+     * emparejamiento falso (el vertice viaja de una pieza a otra en las intermedias: se estira) */
+    {
+        static const int Q[4] = {0, 1, 3, 2};
+        int nst = 0, n3d = 0;
+        for (int a = 0; a < nref;) {
+            int b = a;
+            while (b < nref && ref_prim[b] == ref_prim[a]) b++;
+            int nv = b - a, ok = nv >= 3 && nv <= 4 && ref_prim[a] < MAXREF && prim_poly[ref_prim[a]];
+            for (int i = a; ok && i < b; i++) ok = refk[i] >= 0 && moved[i];
+            n3d += ok;
+            if (ok)
+                for (int e = 0; e < nv; e++) {
+                    int p = a + (nv == 4 ? Q[e] : e), q = a + (nv == 4 ? Q[(e + 1) & 3] : (e + 1) % nv);
+                    double cx = lo(orig[p]) - lo(orig[q]), cy = hi(orig[p]) - hi(orig[q]);
+                    double px = cx + ddx[p] - ddx[q], py = cy + ddy[p] - ddy[q];
+                    double lc = sqrt(cx * cx + cy * cy), lp = sqrt(px * px + py * py);
+                    if (fabs(lp - lc) > 12 && (lp > 1.5 * lc || lc > 1.5 * lp)) {
+                        nst++;
+                        if (getenv("PSX_INTERP_STRETCH") && nst <= 4) {   /* donde: vertices actuales y desplazamientos */
+                            fprintf(stderr, "  estirado VBlank %d:", VSync(-1));
+                            for (int i = a; i < b; i++)
+                                fprintf(stderr, " (%d,%d)%+d%+d%s", lo(orig[i]), hi(orig[i]), ddx[i], ddy[i], moved[i] == 2 ? "" : "*");
+                            fprintf(stderr, "\n");
+                        }
+                        /* que no se estire: en las intermedias se mueve entero con la mediana de sus
+                         * vertices (sus coordenadas son suyas: no tocan las de otros poligonos) */
+                        int16_t mx[4], my[4];
+                        for (int i = 0; i < nv; i++) { mx[i] = ddx[a + i]; my[i] = ddy[a + i]; }
+                        for (int i = 1; i < nv; i++)
+                            for (int j = i; j > 0 && mx[j] < mx[j - 1]; j--) { int16_t t = mx[j]; mx[j] = mx[j - 1]; mx[j - 1] = t; }
+                        for (int i = 1; i < nv; i++)
+                            for (int j = i; j > 0 && my[j] < my[j - 1]; j--) { int16_t t = my[j]; my[j] = my[j - 1]; my[j - 1] = t; }
+                        int16_t cx2 = (int16_t)((mx[(nv - 1) / 2] + mx[nv / 2]) / 2), cy2 = (int16_t)((my[(nv - 1) / 2] + my[nv / 2]) / 2);
+                        for (int i = a; i < b; i++) { ddx[i] = cx2; ddy[i] = cy2; }
+                        break;
+                    }
+                }
+            a = b;
+        }
+        st_stretch += nst;
+        /* muchisimos a la vez: no son parejas sueltas sino un corte de camara (otro plano): ese paso
+         * va sin intermedias (si no, se mezclarian dos vistas sin relacion) */
+        g_cut = nst > 40 && nst * 10 > n3d;
+        st_cuts += g_cut;
+        st_rejects += st_reject;
+        st_stretch_steps++;
+        static int reg;
+        if (!reg && getenv("PSX_INTERP_STRETCH")) { reg = 1; atexit(stretch_summary); }
+        if (nst && getenv("PSX_INTERP_STRETCH")) fprintf(stderr, "estirados: VBlank %d, %d poligonos (parejas descartadas %d)\n", VSync(-1), nst, st_reject);
+    }
     int dump_now = getenv("PSX_INTERP_PRIMDUMP") && (getenv("PSX_INTERP_PROBE") ? abs(VSync(-1) - atoi(getenv("PSX_INTERP_PROBE"))) <= 1 : tm_n == 50);
     if (dump_now) {   /* depuracion: primitiva, coordenada, estado */
         FILE *f = fopen(getenv("PSX_INTERP_PRIMDUMP"), "w");
         if (f) {
-            for (int i = 0; i < nref; i++) fprintf(f, "%d %d %d %d %d %d %d %d\n", ref_prim[i], lo(orig[i]), hi(orig[i]), moved[i], ddx[i], ddy[i],
-                                              ((ref_ofs[i] & 0x7FF) ^ 0x400) - 0x400, (((ref_ofs[i] >> 11) & 0x7FF) ^ 0x400) - 0x400);
+            for (int i = 0; i < nref; i++) fprintf(f, "%d %d %d %d %d %d %d %d %llx %llx\n", ref_prim[i], lo(orig[i]), hi(orig[i]), moved[i], ddx[i], ddy[i],
+                                              ((ref_ofs[i] & 0x7FF) ^ 0x400) - 0x400, (((ref_ofs[i] >> 11) & 0x7FF) ^ 0x400) - 0x400,
+                                              (unsigned long long)ref_spc[i], (unsigned long long)spc3d);
             fclose(f);
         }
     }
@@ -741,7 +985,10 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     st_stuck = stuck;
     if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d\n",
                                            VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model);
-    int ok = have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
+    int ok = !g_cut && have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
+    /* etapa 8: con el redibujo, el mundo sale exacto aunque el emparejamiento falle; lo movil, quieto */
+    int nodyn = 0;
+    if (!ok && (g_rebuild || g_rra) && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
     have_prev = 1;
     ncur = 0;
     occ_gen++;
@@ -755,8 +1002,7 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         J.unpaired++;
         pthread_mutex_unlock(&J.mu);
         g_tstep = ta;
-        psx_gpu_draw_list(g, ot);
-        capture(g, 1, 1, interval);
+        draw_real(g, ot, 1, 1, interval);
         return 1;
     }
     g_tstep = ta;
@@ -773,14 +1019,21 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             memcpy(J.scratch, psx_scratch, sizeof J.scratch);
             memcpy(&J.gpu, g, sizeof J.gpu);
             build_list(&J.L);
+            if (nodyn) J.L.n = J.L.np = 0;
+            J.rebuilt = g_rebuild ? rebuild_phases(ot, g_nfrac + 1) : 0;
+            J.rr_async = g_rra && !g_rra->prep(ot);
+            if (g_rra && !J.rr_async) psx_interp_rebuild_fails++;
+            if (nodyn && !J.rebuilt) J.L.n = J.L.np = 0;
             J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
             J.x0 = g->area_x1; J.y0 = g->area_y1;
+            J.ax1 = g->area_x1; J.ay1 = g->area_y1; J.ax2 = g->area_x2; J.ay2 = g->area_y2;
             psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
             if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
+            J.hwsink = J.on && !J.rgb24 ? g_hwsink : NULL;
+            if (J.rr_async && !(J.dw > 0 && J.dh > 0)) { g_rra->done(); J.rr_async = 0; }   /* sin trabajo: se suelta */
         }
         double tc = tnow();
-        psx_gpu_draw_list(g, ot);
-        capture(g, g_nfrac + 1, g_nfrac + 1, interval);
+        draw_real(g, ot, g_nfrac + 1, g_nfrac + 1, interval);
         if (!busy && J.dw > 0 && J.dh > 0) {
             paste_rect(J.gpu.vram, g->vram, J.x0, J.y0, J.dw, J.dh);
             pthread_mutex_lock(&J.mu);

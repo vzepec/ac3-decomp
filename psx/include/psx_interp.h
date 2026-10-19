@@ -26,7 +26,7 @@ typedef void (*PsxInterpSink)(const uint32_t *rgba, int w, int h, int phase_num,
 /* nfrac imagenes intermedias por paso (0 = desactivado); solo si el paso dura >= min_vblanks */
 void psx_interp_config(int nfrac, int min_vblanks, PsxInterpSink sink);
 /* gancho de la GTE (psx_gte_vertex_hook) tras proyectar un vertice */
-void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy);
+void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp);
 /* llamado por DrawOTag: dibuja (intermedias + real) y devuelve 1, o 0 si no actua */
 int psx_interp_draw(void *gpu, uint32_t ot_addr);
 /* estadisticas del ultimo paso: vertices de la GTE, coordenadas de la lista reconocidas,
@@ -45,6 +45,38 @@ typedef struct {
     double pair_ms, snap_ms, real_ms, worker_ms, worker_max_ms;
 } PsxInterpPerf;
 void psx_interp_perf(PsxInterpPerf *p, int reset);
+
+/* dibujo por GLES (etapa 6, pasos 15 y 17). Con un sumidero, las imagenes de la mision (real e
+ * intermedias, estas solo con hilos de dibujo) llegan como la lista anotada (psx_gpu_record) y
+ * bg, la VRAM de antes de dibujarla (1024x512), para dibujarlas con psx/gl/psx_hw.c a alta
+ * resolucion. sw es la VRAM tras dibujarla por software: siempre en la real; en las intermedias
+ * solo con full (comparador, psx/gl/psx_hwcmp.c: los hilos de dibujo rasterizan tambien la imagen
+ * por software); si no, NULL. El sumidero se llama desde el hilo del juego (real) y los de dibujo
+ * (intermedias) y debe copiar lo que use */
+#include "psx_gpu.h"
+typedef void (*PsxInterpHwSink)(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h,
+                                int phase_num, int phase_den, int vblanks, double t_step);
+void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por software, como hasta ahora */
+
+/* etapa 8: redibujo del mundo estatico. fn(ot, t) construye en psx_ram la lista de la intermedia de
+ * fase t (0 = paso anterior, 1 = este) con el codigo de dibujo del juego (psx/recomp/ac3_rerender.c)
+ * y devuelve 0, o -1 si no puede (sin datos, corte de plano). Se llama en el hilo del juego, una vez
+ * por fase; la capa guarda y restaura RAM, scratchpad y GTE alrededor. Los hilos de dibujo parten de
+ * esa RAM y sobre ella interpolan en pantalla solo lo que se mueve por su cuenta (lo emparejado). Si
+ * el emparejamiento del paso falla, las intermedias salen igual (el mundo exacto, lo movil quieto) */
+typedef int (*PsxInterpRebuild)(uint32_t ot, float t);
+void psx_interp_rebuild(PsxInterpRebuild fn);
+/* lo mismo en un hilo de dibujo (necesita hilos): prep, en el hilo del juego (DrawOTag), da 0 si
+ * este paso se puede redibujar (y guarda lo necesario); build, en el hilo de dibujo, construye la
+ * fase t a partir de la RAM y el scratchpad del paso y devuelve en *ram_out / *scr_out la memoria
+ * con la intermedia (0 si la construyo); done, al acabar las fases del paso. Sustituye a
+ * psx_interp_rebuild; NULL lo quita */
+typedef struct {
+    int (*prep)(uint32_t ot);
+    int (*build)(uint32_t ot, float t, const uint8_t *ram, const uint8_t *scr, uint8_t **ram_out, uint8_t **scr_out);
+    void (*done)(void);
+} PsxInterpRebuildAsync;
+void psx_interp_rebuild_async(const PsxInterpRebuildAsync *a);
 
 extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase

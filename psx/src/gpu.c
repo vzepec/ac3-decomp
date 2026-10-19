@@ -21,6 +21,79 @@ static int sx11(uint32_t v) { return (int)((int32_t)(v << 21) >> 21); }   /* 11 
 static _Thread_local int g_tri_cx, g_tri_by;
 static const int DITHER[4][4] = {{-4, 0, -3, 1}, {2, -2, 3, -1}, {-3, 1, -4, 0}, {3, -1, 2, -2}};
 
+/* registro de primitivas (ver psx_gpu.h) */
+static _Thread_local PsxHwList *g_rec;
+static _Thread_local int g_rec_only;
+void psx_gpu_record(PsxHwList *list, int only) {
+    g_rec = list;
+    g_rec_only = list && only;
+    if (list) list->dirty = list->blit = 0;
+}
+/* rectangulo (inclusivo) totalmente fuera del area principal */
+static int rec_off(int x1, int y1, int x2, int y2) {
+    const PsxHwList *l = g_rec;
+    return x2 < l->main_x1 || x1 > l->main_x2 || y2 < l->main_y1 || y1 > l->main_y2;
+}
+static void rec_dirty(int x1, int y1, int x2, int y2) {
+    PsxHwList *l = g_rec;
+    if (x1 < 0) x1 = 0;
+    if (y1 < 0) y1 = 0;
+    if (x2 > 1023) x2 = 1023;
+    if (y2 > 511) y2 = 511;
+    if (x2 < x1 || y2 < y1) return;
+    if (!l->dirty) { l->dx1 = x1; l->dy1 = y1; l->dx2 = x2; l->dy2 = y2; l->dirty = 1; return; }
+    if (x1 < l->dx1) l->dx1 = x1;
+    if (y1 < l->dy1) l->dy1 = y1;
+    if (x2 > l->dx2) l->dx2 = x2;
+    if (y2 > l->dy2) l->dy2 = y2;
+}
+static PsxHwPrim *rec_raw(void) {
+    if (!g_rec || g_rec->n >= g_rec->max) return NULL;
+    return &g_rec->p[g_rec->n++];
+}
+/* la zona sucia pasa a una UPLOAD con el contenido actual de la VRAM del software */
+static void rec_flush_dirty(PsxGpu *g) {
+    PsxHwList *l = g_rec;
+    if (!l->dirty) return;
+    int w = l->dx2 - l->dx1 + 1, h = l->dy2 - l->dy1 + 1;
+    l->dirty = 0;
+    if (l->ndata + w * h > l->maxdata) return;
+    PsxHwPrim *p = rec_raw();
+    if (!p) return;
+    memset(p, 0, sizeof *p);
+    p->kind = PSX_HW_UPLOAD;
+    p->x[0] = (int16_t)l->dx1; p->y[0] = (int16_t)l->dy1; p->x[1] = (int16_t)w; p->y[1] = (int16_t)h;
+    p->data_off = (uint32_t)l->ndata;
+    for (int j = 0; j < h; j++) memcpy(l->data + l->ndata + j * w, &g->vram[(l->dy1 + j) * PSX_VRAM_W + l->dx1], (size_t)w * 2);
+    l->ndata += w * h;
+    if (l->blit) {   /* carga en la imagen: ademas se dibuja desde la textura, ya actualizada */
+        l->blit = 0;
+        PsxHwPrim *q = rec_raw();
+        if (!q) return;
+        *q = *p;
+        q->kind = PSX_HW_VRAM;
+        q->clut_x = (uint16_t)p->x[0]; q->clut_y = (uint16_t)p->y[0];
+        q->ax1 = 0; q->ay1 = 0; q->ax2 = -1; q->ay2 = -1;
+    }
+}
+void psx_gpu_record_flush(PsxGpu *g) { if (g_rec) rec_flush_dirty(g); }
+static PsxHwPrim *rec_new(PsxGpu *g, int kind, int flags) {
+    if (!g_rec || g_rec->n >= g_rec->max) return NULL;
+    rec_flush_dirty(g);
+    PsxHwPrim *p = rec_raw();
+    if (!p) return NULL;
+    memset(p, 0, sizeof *p);
+    p->kind = (uint8_t)kind;
+    p->flags = (uint8_t)(flags | (g->mask_set ? PSX_HWF_MASKSET : 0) | (g->mask_check ? PSX_HWF_MASKCHK : 0));
+    p->abr = (uint8_t)g->abr;
+    p->depth = (uint8_t)g->tp_depth;
+    p->tp_x = (uint16_t)(g->tp_x * 64); p->tp_y = (uint16_t)(g->tp_y * 256);
+    p->tw_mx = (uint8_t)g->tw_mask_x; p->tw_my = (uint8_t)g->tw_mask_y;
+    p->tw_ox = (uint8_t)g->tw_off_x; p->tw_oy = (uint8_t)g->tw_off_y;
+    p->ax1 = (int16_t)g->area_x1; p->ay1 = (int16_t)g->area_y1; p->ax2 = (int16_t)g->area_x2; p->ay2 = (int16_t)g->area_y2;
+    return p;
+}
+
 static int in_area(PsxGpu *g, int x, int y) {
     return x >= g->area_x1 && x <= g->area_x2 && y >= g->area_y1 && y <= g->area_y2 && x >= 0 && y >= 0 &&
            x < PSX_VRAM_W && y < PSX_VRAM_H;
@@ -231,6 +304,25 @@ static void triangle(PsxGpu *g, Vert v0, Vert v1, Vert v2, int gouraud, int text
         if (vs[i]->y > maxy) maxy = vs[i]->y;
     }
     if (maxx - minx >= 1024 || maxy - miny >= 512) return;   /* el hardware descarta estos */
+    if (g_rec && rec_off(g->area_x1, g->area_y1, g->area_x2, g->area_y2)) {
+        /* fuera de la imagen (paletas y texturas que dibuja la lista): se dibuja en la VRAM del
+         * software y se sube a la textura antes de la siguiente primitiva de la imagen */
+        rec_dirty(minx > g->area_x1 ? minx : g->area_x1, miny > g->area_y1 ? miny : g->area_y1,
+                  maxx < g->area_x2 ? maxx : g->area_x2, maxy < g->area_y2 ? maxy : g->area_y2);
+    } else if (g_rec) {
+        PsxHwPrim *p = rec_new(g, PSX_HW_TRI, (textured ? PSX_HWF_TEX : 0) | (raw ? PSX_HWF_RAW : 0) | (semi ? PSX_HWF_SEMI : 0) |
+                                                  (gouraud ? PSX_HWF_GOURAUD : 0) | (g->dither && (gouraud || (textured && !raw)) ? PSX_HWF_DITHER : 0));
+        if (p) {
+            const Vert *w[3] = {&v0, &v1, &v2};
+            for (int i = 0; i < 3; i++) {
+                p->x[i] = (int16_t)w[i]->x; p->y[i] = (int16_t)w[i]->y;
+                p->r[i] = (uint8_t)w[i]->r; p->g[i] = (uint8_t)w[i]->g; p->b[i] = (uint8_t)w[i]->b;
+                p->u[i] = (uint8_t)w[i]->u; p->v[i] = (uint8_t)w[i]->v;
+            }
+            p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
+        }
+        if (g_rec_only) return;
+    }
     if (minx < g->area_x1) minx = g->area_x1;
     if (miny < g->area_y1) miny = g->area_y1;
     if (maxx > g->area_x2) maxx = g->area_x2;
@@ -386,6 +478,17 @@ static void line(PsxGpu *g, Vert a, Vert b, int gour, int semi) {
     int dx = b.x - a.x, dy = b.y - a.y;
     int adx = dx < 0 ? -dx : dx, ady = dy < 0 ? -dy : dy;
     if (adx >= 1024 || ady >= 512) return;
+    if (g_rec && rec_off(g->area_x1, g->area_y1, g->area_x2, g->area_y2)) {
+        rec_dirty(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+    } else if (g_rec) {
+        PsxHwPrim *p = rec_new(g, PSX_HW_LINE, (semi ? PSX_HWF_SEMI : 0) | (gour ? PSX_HWF_GOURAUD : 0) | (g->dither && gour ? PSX_HWF_DITHER : 0));
+        if (p) {
+            p->x[0] = (int16_t)a.x; p->y[0] = (int16_t)a.y; p->x[1] = (int16_t)b.x; p->y[1] = (int16_t)b.y;
+            p->r[0] = (uint8_t)a.r; p->g[0] = (uint8_t)a.g; p->b[0] = (uint8_t)a.b;
+            p->r[1] = (uint8_t)b.r; p->g[1] = (uint8_t)b.g; p->b[1] = (uint8_t)b.b;
+        }
+        if (g_rec_only) return;
+    }
     int steps = adx > ady ? adx : ady;
     for (int i = 0; i <= steps; i++) {
         int x = steps ? a.x + (dx * i + (dx >= 0 ? steps / 2 : -steps / 2)) / steps : a.x;
@@ -424,6 +527,18 @@ static void do_rect(PsxGpu *g, const uint32_t *c) {
     else if (size == 2) w = h = 8;
     else w = h = 16;
     int r = col & 255, gg = (col >> 8) & 255, b = (col >> 16) & 255;
+    if (g_rec && (rec_off(g->area_x1, g->area_y1, g->area_x2, g->area_y2) || rec_off(x, y, x + w - 1, y + h - 1))) {
+        rec_dirty(x, y, x + w - 1, y + h - 1);
+    } else if (g_rec) {
+        PsxHwPrim *p = rec_new(g, PSX_HW_RECT, (tex ? PSX_HWF_TEX : 0) | (raw ? PSX_HWF_RAW : 0) | (semi ? PSX_HWF_SEMI : 0));
+        if (p) {
+            p->x[0] = (int16_t)x; p->y[0] = (int16_t)y; p->x[1] = (int16_t)w; p->y[1] = (int16_t)h;
+            p->r[0] = (uint8_t)r; p->g[0] = (uint8_t)gg; p->b[0] = (uint8_t)b;
+            p->u[0] = (uint8_t)u0; p->v[0] = (uint8_t)v0;
+            p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
+        }
+        if (g_rec_only) return;
+    }
     for (int j = 0; j < h; j++)
         for (int i = 0; i < w; i++)
             shade_plot(g, x + i, y + j, r, gg, b, tex, raw, u0 + i, v0 + j, cx, cy, semi, 0);
@@ -446,6 +561,16 @@ static void execute(PsxGpu *g, const uint32_t *c) {
         uint32_t col = c[0] & 0xFFFFFF;
         int x = c[1] & 0x3F0, y = (c[1] >> 16) & 0x1FF;
         int w = ((c[2] & 0x3FF) + 15) & ~15, h = (c[2] >> 16) & 0x1FF;
+        if (g_rec && rec_off(x, y, x + w - 1, y + h - 1)) {
+            rec_dirty(x, y, x + w - 1, y + h - 1);
+        } else if (g_rec) {
+            PsxHwPrim *p = rec_new(g, PSX_HW_FILL, 0);
+            if (p) {
+                p->x[0] = (int16_t)x; p->y[0] = (int16_t)y; p->x[1] = (int16_t)w; p->y[1] = (int16_t)h;
+                p->r[0] = (uint8_t)(col & 255); p->g[0] = (uint8_t)((col >> 8) & 255); p->b[0] = (uint8_t)((col >> 16) & 255);
+            }
+            if (g_rec_only) break;
+        }
         psx_gpu_fill(g, x, y, w, h, col & 255, (col >> 8) & 255, (col >> 16) & 255);
         break;
     }
@@ -467,6 +592,14 @@ static void execute(PsxGpu *g, const uint32_t *c) {
         if (op >= 0x80 && op < 0xA0) {   /* VRAM -> VRAM */
             int sx = c[1] & 1023, sy = (c[1] >> 16) & 511, dx = c[2] & 1023, dy = (c[2] >> 16) & 511;
             int w = ((c[3] - 1) & 1023) + 1, h = (((c[3] >> 16) - 1) & 511) + 1;
+            if (g_rec && rec_off(dx, dy, dx + w - 1, dy + h - 1)) {
+                rec_dirty(dx, dy, dx + w - 1, dy + h - 1);   /* p. ej. las paletas de la bruma */
+            } else if (g_rec) {   /* copia a la imagen: se dibuja desde el origen (u, v) */
+                PsxHwPrim *p = rec_new(g, PSX_HW_VRAM, 0);
+                if (p) { p->x[0] = (int16_t)dx; p->y[0] = (int16_t)dy; p->x[1] = (int16_t)w; p->y[1] = (int16_t)h;
+                         p->clut_x = (uint16_t)sx; p->clut_y = (uint16_t)sy; }
+                if (g_rec_only) break;
+            }
             for (int j = 0; j < h; j++)
                 for (int i = 0; i < w; i++)
                     g->vram[((dy + j) & 511) * PSX_VRAM_W + ((dx + i) & 1023)] =
@@ -474,6 +607,10 @@ static void execute(PsxGpu *g, const uint32_t *c) {
         } else if (op >= 0xA0 && op < 0xC0) {   /* CPU -> VRAM: siguen los datos */
             g->xfer_x = c[1] & 1023; g->xfer_y = (c[1] >> 16) & 511;
             g->xfer_w = ((c[2] - 1) & 1023) + 1; g->xfer_h = (((c[2] >> 16) - 1) & 511) + 1;
+            if (g_rec) {   /* carga de la CPU a la VRAM: zona sucia (sube con la siguiente primitiva) */
+                rec_dirty(g->xfer_x, g->xfer_y, g->xfer_x + g->xfer_w - 1, g->xfer_y + g->xfer_h - 1);
+                if (!rec_off(g->xfer_x, g->xfer_y, g->xfer_x + g->xfer_w - 1, g->xfer_y + g->xfer_h - 1)) g_rec->blit = 1;
+            }
             g->xfer_pos = 0;
             g->xfer_active = 1;
         }

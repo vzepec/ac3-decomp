@@ -124,6 +124,9 @@ uint32_t *ClearOTag(uint32_t *ot, int n) {
 }
 
 int VSync(int);
+/* pruebas (etapa 6, paso 17): si esta puesto, dibuja la lista en lugar de psx_gpu_draw_list
+ * (psx/gl/psx_hwcmp.c: comparador del dibujo por GLES) */
+void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
 void DrawOTag(uint32_t *ot) {
     if (getenv("PSX_FPSDBG")) {   /* depuracion: imagenes dibujadas por segundo de VBlank */
         static int n, v0 = -1;
@@ -133,6 +136,7 @@ void DrawOTag(uint32_t *ot) {
         if (v - v0 >= 100) { fprintf(stderr, "fps: VBlank %d: %d DrawOTag en %d VBlank\n", v, n, v - v0); n = 0; v0 = v; }
     }
     if (psx_interp_on && psx_interp_draw(&g_gpu, psx_addr(ot))) return;   /* con imagenes intermedias */
+    if (psx_draw_list_hook) { psx_draw_list_hook(&g_gpu, psx_addr(ot)); return; }
     psx_gpu_draw_list(&g_gpu, psx_addr(ot));
 }
 

@@ -184,6 +184,15 @@ psx-display: $(GLINC)/GLES3/gl3.h
 	@psx/build/test_display
 	@$(PY) tools/psxcheck_display.py "$(EU)" 4
 
+# etapa 6, paso 7: dibujo por GLES frente a la GPU por software en un fotograma real
+# (data/bench/mision.gpu, de PSX_GPU_DUMP); salida en psx/build/hw_{sw,x1,x4}.ppm
+psx-hw: $(GLINC)/GLES3/gl3.h
+	@mkdir -p psx/build
+	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include -I$(GLINC) psx/test/test_hw.c psx/gl/psx_hw.c psx/src/gpu.c psx/src/mem.c $(GLLIBS) -lm -o psx/build/test_hw
+	@psx/build/test_hw data/bench/mision.gpu psx/build/hw
+	@cc -O2 -Wall -Wextra -Wno-unused-parameter -Ipsx/include -I$(GLINC) psx/test/test_hwlines.c psx/gl/psx_hw.c psx/src/gpu.c psx/src/mem.c $(GLLIBS) -lm -o psx/build/test_hwlines
+	@psx/build/test_hwlines
+
 psx-android:
 	@rm -rf psx/build/android && mkdir -p psx/build/android
 	@for f in psx/src/*.c psx/gl/psx_present.c; do $(NDK)/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang -O2 -fPIC -Wall -Wextra -Wno-unused-parameter -Ipsx/include -c $$f -o psx/build/android/$$(basename $$f .c).o || exit 1; done
@@ -211,15 +220,35 @@ LIBRE_GUION ?= $(GUION)
 libre: libre-build
 	@psx/build/ac3_libre "$(DISCO)" - 3600 psx/build/libre 100 "$(LIBRE_GUION)"
 
-libre-build:
+# etapa 8: la segunda copia del interprete (simbolos rrw_*) para redibujar en un hilo de dibujo
+RR_CLONE = psx/recomp/mipsi.c psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/ac3_rerender.c psx/recomp/hle_eu.c \
+	psx/recomp/hle_us.c psx/src/mem.c psx/src/gte.c psx/src/libgte.c psx/src/libgpu.c
+libre-build: $(GLINC)/GLES3/gl3.h
 	@mkdir -p psx/build/libre
-	@cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp psx/recomp/native_main.c psx/recomp/mipsi.c \
-		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/hle_eu.c psx/recomp/hle_us.c psx/src/*.c -lm -lpthread \
-		-o psx/build/ac3_libre
+	@sh tools/rr_clone.sh "cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp" nm objcopy psx/build/rrw $(RR_CLONE)
+	@cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp -I$(GLINC) psx/recomp/native_main.c psx/recomp/mipsi.c \
+		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/ac3_rerender.c psx/recomp/ac3_rr_async.c psx/recomp/hle_eu.c psx/recomp/hle_us.c \
+		psx/src/*.c psx/gl/psx_hw.c psx/gl/psx_hwcmp.c psx/build/rrw/*.o $(GLLIBS) -lm -lpthread -o psx/build/ac3_libre
 
 # etapa 6, paso 5: carga una a una las 41 misiones (por defecto en la americana) con el binario
 # libre y anota fallos y capturas (tools/misiones.py). MISIONES=0-40, DISCO=$(US)
 MISIONES ?= 0-40
+# etapa 6, paso 17: dibujo por GLES frente a la GPU por software, lista a lista, en las 41
+# misiones (tools/hwcmp.py); HWCMP_INTERP=1 compara tambien las imagenes intermedias
+HWCMP_ENV = $(if $(HWCMP_INTERP),AC3_INTERP=3 AC3_INTERP_THREADS=3,)
+hwcmp: libre-build
+	@$(HWCMP_ENV) $(PY) tools/hwcmp.py "$(US)" psx/build/hwcmp $(MISIONES) 4
+
+# etapa 6, paso 18: cada orden de la GTE comparada con la de Mednafen (Beetle PSX, GPL: se descarga
+# a data/ref, fuera de git) en las misiones MISIONES (psx/test/gteref.c, tools/gteref.sh)
+gteref:
+	@sh tools/gteref.sh
+	@for m in $$($(PY) -c "import sys; sys.path.insert(0,'tools'); import misiones; print(' '.join(map(str, misiones.parse('$(or $(MISIONES),0-40)'))))"); do \
+		mkdir -p psx/build/gteref/$$m; \
+		AC3_GTEREF=1 AC3_PAD_ID=73 AC3_MISSION=$$m psx/build/ac3_gteref "$(US)" - 4000 psx/build/gteref/$$m 0 \
+			"$$($(PY) -c "import sys; sys.path.insert(0,'tools'); import misiones; print(misiones.GUION)")" | grep "^gteref: [0-9]" | sed "s/^/mision $$m: /"; \
+	done
+
 misiones: libre-build
 	@$(PY) tools/misiones.py "$(US)" psx/build/misiones $(MISIONES) 2
 

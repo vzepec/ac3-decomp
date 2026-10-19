@@ -5,6 +5,192 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Release v1.9-alfa: interpolación nueva
+
+- **Probado en la Retroid (1.9.6):** "funciona mucho mejor", más estable;
+  aún con bajones de fps mirando ciudades muy pobladas.
+- **Modos:** se quitan los de la interpolación anterior. Quedan 16:9 y 4:3
+  con la nueva, y el original.
+- **Europea, corrección del cielo** (`AC3_SKYCHECK=1`, `AC3_WIDE_NOSKY=1`):
+  - de 31 imágenes con cuña a 2 en la misión 3 (en la 2, 2 de 744);
+  - esas 2 no dependen de la corrección y en 4:3 no aparecen: `SIN RESOLVER`.
+- **Publicado como release `v1.9-alfa`**, con la auditoría a 0. Las pruebas
+  internas se llamaron 1.9.4 a 1.9.6.
+
+## 2026-10-19 — Etapa 8: pausa, cuña del cielo en 16:9 y redibujo en un hilo de dibujo (1.9.6-alfa)
+
+**Informe del dueño con la 1.9.5:** "más estable", pero de 20 a 30 fps en
+ciudades. Además, el velocímetro queda encima del menú de pausa, y de antes,
+en 16:9, aparece a veces una franja deformada en los bordes al girar.
+
+- **Pausa:**
+  - el dibujo estático no corre en la pausa, y el código de la pausa
+    reserva primitivas sin mover `g_render[5]`;
+  - **arreglo:** rango solo si su inicio es del mismo paso; lo nuevo, detrás
+    del final real de la cadena; en cada cajón, lo nuevo donde estaba lo
+    estático (tras su ancla), sin reordenar lo demás;
+  - con t = 1 la pausa sale exacta (antes, 614 píxeles distintos).
+- **Autoprueba en las 41 misiones** (`AC3_RR_SELFTEST_EVERY=10`): 150 de
+  5.592 imágenes distintas. La causa es una lectura de la pila sin iniciar
+  (misión 22), que depende de dónde cae la interrupción de VBlank en el
+  original. Es un comportamiento del juego, no del redibujo.
+- **Cuña del cielo en 16:9:**
+  - las líneas del horizonte del cielo (US `FUN_80093324`, EU
+    `FUN_80092f90`) se proyectan con la GTE desde extremos pensados para 4:3;
+  - comprimidos, pueden quedar dentro de la pantalla;
+  - **arreglo:** se alargan por 1 / `psx_gte_wide`;
+  - `AC3_SKYCHECK=1` en 8 misiones: 7 imágenes con cuña sin el arreglo, 0
+    con él, 0 en 4:3.
+- **Rendimiento:**
+  - el redibujo era el 19,5 % de las instrucciones de la partida, en el
+    hilo del juego;
+  - ahora va en el hilo de dibujo 0, con una segunda copia del intérprete
+    (símbolos `rrw_*`, `tools/rr_clone.sh`) que tiene su RAM y su GTE;
+  - 324 de 326 intermedias idénticas al camino anterior.
+
+**Reproducir:**
+- `AC3_RR=1|2` (1 = hilo de dibujo, 2 = hilo del juego);
+- `AC3_PACE=60`;
+- `AC3_SKYCHECK=1` y `AC3_WIDE_NOSKY=1`;
+- `AC3_UNCOVERED=dir`;
+- `AC3_RR_SELFTEST_EVERY`;
+- `AC3_WATCHWRITE=dir`.
+
+Detalle en `docs/14-etapa8.md`.
+
+## 2026-10-19 — Etapa 8: intermedias redibujando el mundo con el código del juego
+
+**Prueba de concepto:** en `DrawOTag` se quita de la cadena lo que dibujó el
+mundo estático (entre `FUN_8003308c` y `FUN_80039d84`, EU), se gira la
+cámara y se vuelven a llamar esas funciones del juego. Terreno y cielo salen
+girados, y el HUD intacto.
+
+**Redibujo exacto con t = 1** (0 píxeles distintos, EU y US). Hizo falta:
+- partir del estado al empezar el dibujo estático (el dibujo no es puro);
+- poner las primitivas nuevas detrás de todo;
+- no tocar los enlaces de la tabla maestra;
+- recolocar lo redibujado en cada cajón (el E5 del cielo).
+
+**Entradas que cambian entre pasos:** medidas con el registro de lecturas
+del intérprete. Son la cámara y el arreglo de objetos móviles del mundo
+(`g_render+0x474`).
+
+**Resultados:**
+- integrado en la interpolación (`psx_interp_rebuild`);
+- 41 misiones US sin fallos, unos 5 ms por paso;
+- APK 1.9.5-alfa con L3+R3: nueva / anterior / 4:3 / original.
+
+**Reproducir:** `AC3_RR_SELFTEST=vblank`, `AC3_RR_SURVEY=1`, `AC3_RR=1` con
+`AC3_INTERP=1` (binario libre).
+
+## 2026-10-19 — Investigación: cómo hacen 60 fps otros ports (docs/13-60fps.md)
+
+**Familias de técnicas:**
+- lógica a 60 Hz: Crash1/2 recompilados, parches de DuckStation, CTR;
+- interpolación de matrices con identidad etiquetada a mano: Zelda64Recomp +
+  RT64, TRX;
+- interpolación en pantalla (la nuestra);
+- flujo óptico (nadie lo usa).
+
+**Medido:** la comparación EU/US de las funciones del ejecutable no muestra
+ninguna constante de tiempo ajustada para PAL; solo posiciones del HUD. AC3
+cuenta en ticks fijos y no tiene escala de tiempo que reaprovechar.
+DuckStation tampoco tiene parche de 60 fps para AC3.
+
+**Veredicto:** no a la lógica a 60 Hz. Sí, como etapa propia, a volver a
+dibujar las intermedias con el código de dibujo del juego y una cámara
+interpolada. El método actual queda de respaldo.
+
+## 2026-10-19 — El cielo no se interpolaba (temblaba al cabecear)
+
+**Causa:** el cielo se dibuja antes de la primera orden E3 de la lista, y
+el recorrido de la interpolación empezaba con área 0. El cielo quedaba en
+otro "espacio" que la escena 3D y saltaba un paso entero (medido:
+intermedia = real).
+
+**Corrección:** `walk()` parte del área y el desplazamiento reales de la
+GPU.
+
+**Resultado:** el cielo de la intermedia queda a mitad de camino.
+
+**Reproducir:** misión 2 con `2800:larr:40,2880:laba:40...`,
+`AC3_INTERP=1 AC3_INTERP_NAMEVB=1`; medir el horizonte y la franja del
+cielo en la columna central.
+
+## 2026-10-19 — Interpolación: emparejamientos falsos entre piezas iguales (APK 1.9.3-alfa)
+
+**Diagnóstico:** confirmado que los estiramientos solo salen con
+intermedias. La medida nueva (`PSX_INTERP_STRETCH=1`) muestra grupos de
+vértices de un objeto emparejados con otra pieza igual: el mismo salto para
+todos, y el resto del objeto quieto.
+
+**Corrección:**
+- voto por objeto (la matriz de la GTE de cada vértice);
+- descarte por mayoría de vecinos;
+- los polígonos que aun así no cuadran se mueven enteros;
+- los cortes de cámara van sin intermedias.
+
+**Resultado** (misión 0): de 9.178 a 2.078 polígonos incoherentes antes del
+remate. Huecos iguales y comparador GLES sin fallos.
+
+## 2026-10-19 — La GTE comparada con la de Mednafen: error en IR0 corregido; 133 M de órdenes iguales
+
+**Oráculo:** `psx/test/gteref.c` + `tools/gteref.sh` (Beetle PSX en
+`data/ref/`, fuera de git) repiten en la GTE de Mednafen cada orden COP2 del
+juego, con el mismo estado, y comparan resultado y FLAG.
+
+**Hallazgo:** IR0 tras RTPS/RTPT se saturaba desde MAC0 truncado. Con
+vértices muy cercanos daba 0x1000 (niebla total) en vez de 0, y los
+polígonos más cercanos se veían de golpe del color de la niebla.
+
+**Resultado:**
+- misión 0: ~120.000 diferencias antes de corregir, 0 después;
+- 41 misiones: 133.445.920 órdenes, 0 diferencias.
+
+**Reproducir:** `make gteref` (`MISIONES=0-40`).
+
+## 2026-10-19 — Rendimiento del dibujo por GLES: de ~1.400 llamadas por imagen a ~100 (APK 1.9.1-alfa)
+
+**Problema:** en la Retroid, `GLX4` iba a 10-20 fps.
+
+**Causa, medida en el PC** (`test_hw`): 1.141-1.433 llamadas de dibujo por
+imagen, cada una con su subida de vértices. Venía de la semitransparencia en
+dos pasadas y del stencil en dos pasadas en todas las texturas de misión (el
+radar comprueba la máscara).
+
+**Corrección:**
+- mezcla única con color premultiplicado (la resta, aparte);
+- stencil exacto solo en la zona que se comprueba;
+- lotes por tramo;
+- VRAM en 3 texturas en turno, con subidas por franjas.
+
+**Resultado:** 104 llamadas en el fotograma de prueba, con el mismo
+resultado (dB, comparador, líneas).
+
+## 2026-10-19 — Alta resolución por GLES con comparador (paso 17, APK 1.9-alfa sin publicar)
+
+**Comparador** (`psx/gl/psx_hwcmp.c`, `tools/hwcmp.py`, `make hwcmp`): cada
+lista de dibujo de la partida, por software y por GLES a escala 1, comparadas
+por bloques 8×8.
+- Validado con el caso positivo conocido: sin bit de máscara
+  (`PSX_HW_NOMASK=1`), 570 listas malas en la misión 0; con él, 0.
+
+**Fallos encontrados y corregidos:**
+- el bit de máscara: el radar desbordado de la Retroid; ahora con stencil;
+- el muestreo en el centro del píxel en vez de en la esquina;
+- la pendiente y el redondeo de las líneas: 5043/5043 idénticas
+  (`test_hwlines`);
+- el fondo leído un píxel al lado.
+
+**Resultados:**
+- 41 misiones US: 1 lista de 127.072 con bloques malos (una línea movida un
+  píxel).
+- Intermedias (misión 2): 1.077, sin bloques malos.
+- Fotograma de prueba: de 37,2 a 50,5 dB.
+
+**Reproducir:** `make hwcmp` (`HWCMP_INTERP=1` para las intermedias),
+`make psx-hw`.
+
 ## 2026-10-19 — Release v1.8-alfa: pantalla ancha
 
 - **Probado en la Retroid:** la pantalla ancha sola funciona y va estable.

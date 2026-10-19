@@ -102,10 +102,10 @@ una copia propia del juego. Ver [`docs/06-legal.md`](docs/06-legal.md).
 | Las 41 misiones | ✅ cargan y se juegan sin fallos (`docs/pruebas/`) |
 | Secuencias de final y créditos | ✅ se reproducen enteras |
 | Guardar y cargar en la tarjeta de memoria | ✅ partida válida, se carga |
-| 60 fps en vuelo (imágenes intermedias) | ✅ estable en la americana |
+| 60 fps en vuelo (imágenes intermedias) | ✅ el mundo se redibuja con el código del juego (etapa 8, release `v1.9-alfa`) |
 | Comparación 1:1 con DuckStation | ⏳ pendiente (al final) |
 | Pantalla ancha (16:9) | ✅ release `v1.8-alfa` |
 | Alta resolución (GPU por GLES) | ⏳ en curso (paso 7) |
 | **Android** (etapa 7) | |
-| APK publicable sin nada de Namco (`AC3Recomp-<versión>.apk`) | ✅ release `v1.8-alfa`; lee el juego del disco del usuario |
+| APK publicable sin nada de Namco (`AC3Recomp-<versión>.apk`) | ✅ release `v1.9-alfa`; lee el juego del disco del usuario |
 | Probado en una Retroid Pocket Flip 2 | ✅ velocidad completa (`VEL` 100 %) |

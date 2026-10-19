@@ -16,6 +16,7 @@
  * Presupuesto del reloj (RC_BUDGET) en los mismos sitios que el codigo traducido: al entrar en
  * una funcion (jal/jalr) y en los saltos hacia atras. Modo mixto: si hay una funcion traducida
  * registrada para el destino de un jal/jalr, se llama a ella (rc_find). */
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -96,12 +97,36 @@ static inline uint32_t fetch(uint32_t pc) {
 }
 
 /* instruccion que no es salto (la del hueco de retardo incluida) */
+/* medicion (etapa 8): si esta puesto, un bit por palabra de la RAM que lee el codigo (cargas y
+ * LWC2); asi se sabe que datos usa una funcion */
+uint8_t *mipsi_rtrace, *mipsi_wtrace;   /* con mipsi_wtrace: solo lo leido antes de escribirlo */
+uint32_t mipsi_watch_write;              /* depuracion: imprime desde donde se escribe esta direccion */
+uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
+
 static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     uint32_t *r = c->r;
     uint32_t op = w >> 26, rs = (w >> 21) & 31, rt = (w >> 16) & 31, rd = (w >> 11) & 31;
     uint32_t sh = (w >> 6) & 31, fn = w & 63, imm = w & 0xFFFF;
     uint32_t simm = (uint32_t)(int32_t)(int16_t)imm;
     if (w == 0) return;
+    if (mipsi_watch_read && ((op >= 0x20 && op <= 0x26) || op == 0x32) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_read & 0x1FFFFFFCu)) {
+        static int nw;
+        if (nw++ < 12) fprintf(stderr, "vigia: lectura de %08x desde %08x (ra %08x)\n", mipsi_watch_read, pc, r[31]);
+    }
+    if (mipsi_watch_write && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_write & 0x1FFFFFFCu)) {
+        static int nw;
+        int VSync(int);
+        if (nw++ < 64) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
+    }
+    if (mipsi_rtrace || mipsi_wtrace) {
+        uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;
+        if (a < 0x200000) {
+            uint8_t bit = (uint8_t)(1u << ((a >> 2) & 7));
+            if ((op >= 0x20 && op <= 0x26) || op == 0x32) {
+                if (mipsi_rtrace && (!mipsi_wtrace || !(mipsi_wtrace[a >> 5] & bit))) mipsi_rtrace[a >> 5] |= bit;
+            } else if (mipsi_wtrace && ((op >= 0x28 && op <= 0x2E) || op == 0x3A)) mipsi_wtrace[a >> 5] |= bit;
+        }
+    }
     switch (op) {
     case 0x00:
         switch (fn) {

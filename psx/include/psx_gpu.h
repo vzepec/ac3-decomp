@@ -42,6 +42,40 @@ void psx_gpu_draw_list(PsxGpu *g, uint32_t addr);
 void psx_gpu_draw_list_mem(PsxGpu *g, uint32_t addr, const uint8_t *ram, const uint8_t *scratch);
 /* Acceso directo a la VRAM (LoadImage/StoreImage/ClearImage de libgpu). */
 void psx_gpu_load_image(PsxGpu *g, int x, int y, int w, int h, const uint16_t *src);
+
+/* ---- registro de primitivas (etapa 6, paso 7: dibujo por GLES a alta resolucion) ----
+ * Con un registro activo en el hilo (psx_gpu_record), cada primitiva que la GPU dibuja se anota
+ * ya interpretada (coordenadas con el desplazamiento aplicado, color, texturas, estado), despues
+ * del descarte del hardware. Con only = 1 se interpreta sin dibujar pixeles. */
+/* VRAM: copia o carga cuyo destino esta en el area principal (se dibuja desde la VRAM: origen en
+ * u/v o, para una carga, los datos de una UPLOAD anterior en el mismo sitio); UPLOAD: el contenido
+ * de la VRAM del software en ese momento, en un rectangulo fuera del area principal (paletas y
+ * texturas que la lista cambia o dibuja): datos en list->data[data_off] */
+enum { PSX_HW_TRI = 0, PSX_HW_LINE = 1, PSX_HW_RECT = 2, PSX_HW_FILL = 3, PSX_HW_VRAM = 4, PSX_HW_UPLOAD = 5 };
+enum { PSX_HWF_TEX = 1, PSX_HWF_RAW = 2, PSX_HWF_SEMI = 4, PSX_HWF_GOURAUD = 8, PSX_HWF_DITHER = 16,
+       PSX_HWF_MASKSET = 32, PSX_HWF_MASKCHK = 64, PSX_HWF_OFFSCREEN = 128 /* fuera del area principal: no se dibuja */ };
+typedef struct {
+    uint8_t kind, flags, abr, depth;           /* depth: 0 = 4 bits, 1 = 8 bits, 2 = 15 bits */
+    int16_t x[3], y[3];                        /* RECT/FILL/VRAM: x[0],y[0] origen, x[1],y[1] ancho y alto */
+    uint8_t r[3], g[3], b[3];
+    uint8_t u[3], v[3];
+    uint16_t tp_x, tp_y, clut_x, clut_y;       /* pagina en pixeles de la VRAM (x * 64, y * 256) */
+    uint8_t tw_mx, tw_my, tw_ox, tw_oy;        /* ventana de textura (unidades de 8 texeles) */
+    int16_t ax1, ay1, ax2, ay2;                /* area de dibujo (inclusiva) */
+    uint32_t data_off;                         /* UPLOAD: desplazamiento en list->data */
+} PsxHwPrim;
+/* main_*: area principal (la de la imagen, inclusiva), la fija quien llama antes de dibujar */
+typedef struct {
+    PsxHwPrim *p;
+    int n, max;
+    uint16_t *data;
+    int ndata, maxdata;
+    int main_x1, main_y1, main_x2, main_y2;
+    int dirty, dx1, dy1, dx2, dy2;             /* zona sucia (interno) */
+    int blit;                                  /* la zona sucia toca el area principal: tras subirla se dibuja */
+} PsxHwList;
+void psx_gpu_record(PsxHwList *list, int only);   /* NULL: sin registro (por hilo) */
+void psx_gpu_record_flush(PsxGpu *g);              /* al terminar la lista: lo pendiente */
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b);
 

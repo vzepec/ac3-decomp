@@ -23,7 +23,7 @@ ancha (16:9).
 | Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). No hay controles táctiles |
 | Juego | Tu propia imagen del disco de **Ace Combat 3: Electrosphere**:<br>• europea, `SCES-02066` (inglés, francés, alemán, español, italiano)<br>• americana, `SLUS-00972` |
 | Formato del disco | **`.bin` en bruto (2.352 bytes por sector)**, el que generan los volcados habituales (`.bin` + `.cue`; se elige el `.bin`). También sirve `.iso` de 2.048 bytes por sector, pero sin música ni vídeos (no lleva el audio XA) |
-| Espacio | 150 KB la app, más tu imagen del disco (~600 MB) |
+| Espacio | 200 KB la app, más tu imagen del disco (~600 MB) |
 
 La versión japonesa (*Ace Combat 3: Electrosphere*, `SLPS-02020/02021`) **no**
 está soportada.
@@ -76,7 +76,7 @@ Arriba a la izquierda se muestra:
 |---|---|
 | `FPS` | Imágenes distintas mostradas por segundo |
 | `VEL` | Velocidad del juego frente a la consola original; **100 %** es la correcta (50 Hz la europea, 60 Hz la americana) |
-| `INT` | Imágenes intermedias por paso del juego (1-3; `-` si están desactivadas) |
+| `INT` | Imágenes intermedias por paso del juego (1 con 60 fps; `-` en el original) |
 | `CPU` | Uso del hilo del juego |
 | `16:9` / `4:3` / `ORIG` | Modo de imagen (se cambia con L3+R3) |
 
@@ -84,12 +84,18 @@ Arriba a la izquierda se muestra:
 
 - **Vuelo a 60 fps.** La misión es fluida gracias a las imágenes intermedias.
   El juego calcula 25 pasos por segundo (30 en la americana), como el
-  original, y la app interpola las imágenes entre paso y paso.
-  - En giros muy bruscos de avión o de cámara puede haber pequeños tirones o
-    artefactos del terreno.
+  original, y la app añade una imagen entre paso y paso.
+  - En esa imagen, el mundo (terreno, cielo, ciudades) **lo vuelve a dibujar
+    el propio código del juego**, con la cámara a medio camino. Por eso no
+    hay vértices estirados ni cielo que tiembla.
+  - Lo que se mueve por su cuenta (aviones, misiles, efectos) todavía se
+    interpola en pantalla, como antes.
+  - Mirando **ciudades muy pobladas** puede bajar la fluidez: algunos pasos
+    salen sin imagen intermedia. El juego no se frena (`VEL` 100 %).
+  - En los cortes de cámara, ese paso va sin imagen intermedia.
   - L3+R3 permite volver a las imágenes originales.
-- La versión **americana** se ve más estable que la europea con las
-  intermedias.
+- La versión **americana** es la de referencia y la más probada; la europea
+  también funciona.
 - Explosiones, humo y llamas de los motores van al ritmo original.
 - **Pantalla ancha (16:9)**, activada por defecto:
   - **En la misión** se ve más escenario por los lados, sin deformar la
