@@ -118,6 +118,8 @@ static void wide_update(void) {
 
 /* AC3_PACE=hz: a ritmo real (un VBlank cada 1/hz s, como en el aparato), para medir lo que hacen
  * los hilos de dibujo con el tiempo que tendrian */
+static double g_pace_sleep, g_pace_t0, g_pace_t1;   /* medicion: tiempo dormido y periodo medido */
+static int g_pace_v0 = -1, g_pace_v1;
 static void pace(void) {
     static double hz = -1, t0;
     if (hz < 0) hz = getenv("AC3_PACE") ? atof(getenv("AC3_PACE")) : 0;
@@ -127,6 +129,12 @@ static void pace(void) {
     double t = ts.tv_sec + ts.tv_nsec * 1e-9;
     if (t0 == 0) t0 = t - last_vcount / hz;
     double due = t0 + last_vcount / hz;
+    /* desde el VBlank 2700 (en vuelo): cuanto duerme el hilo del juego */
+    if (last_vcount >= 2700) {
+        if (g_pace_v0 < 0) { g_pace_v0 = last_vcount; g_pace_t0 = t; }
+        g_pace_v1 = last_vcount; g_pace_t1 = t;
+        if (due > t) g_pace_sleep += due - t;
+    }
     if (due > t) { ts.tv_sec = (time_t)(due - t); ts.tv_nsec = (long)((due - t - (double)ts.tv_sec) * 1e9); nanosleep(&ts, NULL); }
 }
 static void frame_check(void) {
@@ -486,6 +494,11 @@ static void rr_stats(void) {
            psx_interp_rebuild_n ? 1000.0 * psx_interp_rebuild_s / psx_interp_rebuild_n : 0.0);
     PsxInterpPerf pf;
     psx_interp_perf(&pf, 0);
+    if (g_pace_v1 > g_pace_v0 && g_pace_v0 >= 0) {
+        double span = g_pace_t1 - g_pace_t0, nst = (g_pace_v1 - g_pace_v0) / 2.0;
+        printf("rr: hilo del juego (en vuelo, a ritmo real): ocupado %.1f ms por paso de %.1f; de ellos, emparejamiento %.2f, copias %.2f, "
+               "imagen real (GPU por software) %.2f\n", 1000 * (span - g_pace_sleep) / nst, 1000 * span / nst, pf.pair_ms, pf.snap_ms, pf.real_ms);
+    }
     printf("rr: pasos %d, con intermedias %d, saltados (hilos ocupados) %d; hilo de dibujo %.2f ms de media, %.2f el peor\n", pf.steps, pf.jobs,
            pf.skipped, pf.worker_ms, pf.worker_max_ms);
     extern double ac3_rr_t[6];

@@ -296,3 +296,20 @@ VBlank, con el guion de `tools/misiones.py` más dos pausas.
 
 **Siguiente:** el rendimiento (análisis de llevar el dibujo a la GPU, en
 `STATUS.md`).
+
+## Rendimiento: en qué se va el tiempo (después de la v1.9-alfa)
+
+**Medida en el PC** (misión 0 US, ciudad, 16:9, `AC3_PACE=60 AC3_RR=1`,
+desde el VBlank 2700; `rr:` al salir del binario libre):
+
+| Hilo | Ocupado por paso (33,3 ms) | Reparto |
+|---|---|---|
+| Juego | 18,8 ms | intérprete y capa ~10,2; **dibujo de la imagen real por software 6,7**; emparejamiento 1,3; copias 0,6 |
+| Dibujo 0 | ~16 ms | **redibujo (intérprete) 8,4**; **dibujo de la intermedia por software ~7,6** |
+| Dibujo 1 y 2 | ~0 | parados: con la interpolación nueva solo trabaja el 0 |
+
+- Cerca de la mitad del trabajo es rasterizar por software (la GPU de la
+  PS1 emulada en la CPU). La otra mitad es interpretar MIPS: la lógica del
+  juego y el redibujo.
+- En el aparato faltan las cifras por hilo: el contador solo da `CPU` del
+  hilo del juego. `SIN RESOLVER` hasta medir en la Retroid.
