@@ -86,16 +86,19 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.9.3-alfa** (`data/android/AC3Recomp-1.9.3-alfa.apk`,
-rama `etapa-6-paso-19` ← `etapa-6-paso-18` ← `etapa-6-paso-17`; ninguna
-fusionada ni subida).
-- Lleva la GTE corregida (paso 18) y la interpolación sin emparejamientos
-  falsos entre piezas iguales (paso 19).
-- **Qué mirar:** ciudades con puentes y autopistas, que no se estiren
-  vértices.
+**Probar en la Retroid el APK 1.9.4-alfa** (`data/android/AC3Recomp-1.9.4-alfa.apk`,
+rama `etapa-6-paso-20`; nada fusionado ni subido).
+- Software, panorámico e interpolación, como la 1.8 publicada.
+- Con las correcciones de los pasos 18-19: la GTE como la de Mednafen, sin
+  emparejamientos falsos en las ciudades y el cielo interpolado.
+- **Qué mirar:**
+  - que el cielo ya no tiemble al cabecear;
+  - que no vuelvan los estiramientos en ciudades.
+- Si va bien: fusionar `etapa-6-paso-20` en `develop` / `main` y publicarla
+  (será la 1.9-alfa).
 
-Si quedan estiramientos: grabar la partida en la Retroid (mando por VBlank y
-modo) y reproducirla igual en el PC para medirlos en el mismo sitio.
+**El modo de alta resolución** (GLES) queda en la rama
+`gles-alta-resolucion` para una integración futura.
 
 La comparación con DuckStation queda para el final.
 

@@ -1303,3 +1303,24 @@ verticales"):
   102 → 106; 116 → 124 → 129).
 - **Sin romper nada:** huecos 9,2 px por imagen (antes 9,9), comparador GLES
   sin fallos, `psx-check` bien.
+
+### Paso 20: la línea principal sin el modo GLES (APK 1.9.4-alfa, sin publicar)
+
+**Decisión del dueño, tras probar la 1.9.3:**
+- "me gusta como se ve en panorámico con interpolación (a resolución
+  original); la versión con resolución aumentada no se ve muy bonita";
+- el modo de alta resolución queda en una rama aparte para una integración
+  futura.
+
+**Ramas:**
+- **`gles-alta-resolucion`**: todo lo de los pasos 15-19 con el modo GLES
+  integrado en la app (L3+R3: `GLX4 16:9` / `SW 16:9` / `SW 4:3` / `ORIG`).
+- **`etapa-6-paso-20`** (sale de la 19): `android_game/src/game_main.c` y
+  `build.sh` vuelven a los de la 1.8 publicada (L3+R3: `16:9` / `4:3` /
+  `ORIG`, todo por software). Se quedan las correcciones de la capa:
+  - la GTE igual que la de Mednafen (paso 18);
+  - la interpolación sin emparejamientos falsos (paso 19);
+  - el cielo interpolado (paso 19).
+- **El código de GLES y los comparadores siguen en el repositorio**
+  (`psx/gl/psx_hw.c`, `psx_hwcmp.c`, `make hwcmp`, `make psx-hw`): son
+  herramientas probadas. El APK no los lleva (152 KB).
