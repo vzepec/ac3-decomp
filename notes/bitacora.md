@@ -5,6 +5,22 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — La GTE comparada con la de Mednafen: error en IR0 corregido; 133 M de órdenes iguales
+
+**Oráculo:** `psx/test/gteref.c` + `tools/gteref.sh` (Beetle PSX en
+`data/ref/`, fuera de git) repiten en la GTE de Mednafen cada orden COP2 del
+juego, con el mismo estado, y comparan resultado y FLAG.
+
+**Hallazgo:** IR0 tras RTPS/RTPT se saturaba desde MAC0 truncado. Con
+vértices muy cercanos daba 0x1000 (niebla total) en vez de 0, y los
+polígonos más cercanos se veían de golpe del color de la niebla.
+
+**Resultado:**
+- misión 0: ~120.000 diferencias antes de corregir, 0 después;
+- 41 misiones: 133.445.920 órdenes, 0 diferencias.
+
+**Reproducir:** `make gteref` (`MISIONES=0-40`).
+
 ## 2026-10-19 — Rendimiento del dibujo por GLES: de ~1.400 llamadas por imagen a ~100 (APK 1.9.1-alfa)
 
 **Problema:** en la Retroid, `GLX4` iba a 10-20 fps.

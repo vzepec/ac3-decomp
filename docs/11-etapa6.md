@@ -1179,3 +1179,53 @@ segundo. Venía de:
 imagen en el dibujo (CPU) y en `eglSwapBuffers`. También va a logcat, con
 llamadas y subidas por imagen. Sirve para ver si sigue limitando la CPU del
 hilo de pantalla o la GPU (`SIN RESOLVER` hasta probarlo).
+
+### Paso 18: fidelidad a la PS1 — la GTE contra una de referencia (APK 1.9.2-alfa, sin publicar)
+
+**Problema.** Con la 1.9.1 (rendimiento bien), el dueño sigue viendo
+titileos, parpadeos y vértices que se estiran, sobre todo en ciudades
+(vídeo e imágenes en `imagenes bugs/`).
+
+**Análisis del vídeo** (detector de "cambia y vuelve" por bloques entre
+fotogramas consecutivos):
+- los peores eventos son tramos de puente y autopista que se estiran
+  durante 1-3 fotogramas y vuelven (t = 24,97 s, 25,67 s, 27,30 s);
+- también hay parpadeos de piezas cercanas.
+
+**Estrategia de raíz: comparar cada capa con una referencia contrastada
+con hardware, en partida real.** La GPU ya tiene su comparador (paso 17).
+La **GTE** solo se había validado con la especificación y pruebas propias
+(etapa 5, "sin verificar contra hardware").
+
+**Oráculo de la GTE** (`psx/test/gteref.c`, `tools/gteref.sh`,
+`make gteref`):
+- cada orden COP2 del juego se repite en la GTE de Mednafen (Beetle PSX,
+  commit fijo), con los 64 registros de entrada;
+- se comparan los 32 de datos y FLAG.
+- La de Mednafen es GPL: se descarga a `data/ref/` (fuera de git) y solo la
+  enlaza el binario de pruebas `psx/build/ac3_gteref`. Nunca entra en el
+  repositorio ni en el APK.
+
+**Hallazgo: IR0 de RTPS/RTPT** (el factor de niebla de cada vértice):
+- con el vértice muy cerca de la cámara, `DQA * (H/SZ)` desborda MAC0;
+- el hardware satura IR0 desde el valor completo y da **0** (sin niebla);
+- la nuestra lo hacía desde MAC0 truncado y daba **0x1000** (niebla total).
+- El terreno y los objetos guardan IR0 por vértice (`terrain_draw`:
+  `stIR0` tras cada RTPT): los polígonos más cercanos pasaban de golpe al
+  color de la niebla.
+- Antes de corregirlo, el comparador dio ~120.000 diferencias en IR0 en la
+  misión 0 (caso positivo); después, 0.
+
+**Resultado:** las 41 misiones US, **133.445.920 órdenes de la GTE, 0
+diferencias** con Mednafen (RTPS, RTPT, NCLIP, MVMVA, DPCS, DPCT, INTPL,
+SQR, AVSZ3/4, GPF, GPL, NCS, NCT).
+
+**Siguiente sospechosa: la interpolación** (`SIN RESOLVER`):
+- una clave de modelo "única" en los dos pasos se empareja sin contrastarla
+  con el movimiento de la cámara (salvo saltos de más de 48 px);
+- en ciudades de piezas repetidas, el tramo A de un paso y el B del
+  siguiente (idénticos) pueden emparejarse;
+- en las intermedias, esos vértices viajarían de una pieza a otra:
+  estiramiento de 1-3 fotogramas, como en el vídeo.
+- Hay que confirmar si los estiramientos salen también en `ORIG` (sin
+  intermedias) y reproducir la partida en el PC.

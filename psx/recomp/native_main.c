@@ -427,6 +427,13 @@ int main(int argc, char **argv) {
         g_force_seq = atoi(getenv("AC3_SEQ"));
         mipsi_set_hook(V->seq_start, force_seq);
     }
+#ifdef AC3_GTEREF
+    if (getenv("AC3_GTEREF")) {   /* paso 18: cada orden de la GTE, tambien en la de referencia */
+        void psx_gteref_start(void);
+        psx_gteref_start();
+        puts("GTE de referencia: activa");
+    }
+#endif
     if (getenv("AC3_HWCMP")) {   /* paso 17: comparar el dibujo por GLES con el software, lista a lista */
         int psx_hwcmp_start(const char *dir);
         void psx_hwcmp_interp(void);

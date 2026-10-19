@@ -86,25 +86,21 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.9.1-alfa** (`data/android/AC3Recomp-1.9.1-alfa.apk`,
-rama `etapa-6-paso-17`, sin fusionar ni subir).
-- La 1.9-alfa se veía bien, pero iba a 10-20 fps en `GLX4`.
-- La 1.9.1 baja las llamadas de dibujo de ~1.400 a ~100 por imagen.
-- El contador muestra `GL` / `SWAP` en ms.
-- Es la alta resolución por GLES, sin antitemblores, comprobada antes con el
-  comparador (`docs/11-etapa6.md`, paso 17).
-- **L3+R3** recorre `GLX4 16:9` → `SW 16:9` → `SW 4:3` → `ORIG`.
-- **Qué mirar:**
-  - `VEL` y `FPS` en `GLX4`;
-  - cualquier fallo que salga en `GLX4` y no en `SW 16:9`.
-- **Pendiente de la 1.8** (parpadeo de lados y vértices en edificios): ver
-  en qué modo aparece (`SW 16:9`, `SW 4:3` u `ORIG`).
+**Fidelidad a la PS1** (rama `etapa-6-paso-18`, sobre la 17; ninguna
+fusionada ni subida):
+- La GTE ya coincide con la de Mednafen en las 41 misiones (`make gteref`).
+  Se corrigió IR0 de RTPS/RTPT. APK de prueba:
+  `data/android/AC3Recomp-1.9.2-alfa.apk`.
+- **Siguiente: la interpolación.** Emparejamientos entre piezas repetidas de
+  las ciudades, que se estiran 1-3 fotogramas.
+  1. Confirmar con el dueño si los estiramientos salen en `ORIG`.
+  2. Grabar la partida en la Retroid (mando por VBlank y modo) y
+     reproducirla igual en el PC.
+  3. Medir y corregir el emparejamiento.
+- Después, si hace falta, el mismo método con la GPU (Mednafen) y la CPU.
 
-Después:
-- antitemblores, solo si hace falta;
-- sprites de la CPU a 60 fps.
-
-La comparación con DuckStation queda para el final.
+La alta resolución por GLES (paso 17) queda validada en rendimiento por el
+dueño (1.9.1). Falta fusionarla.
 
 ## Pendiente
 

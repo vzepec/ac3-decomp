@@ -204,9 +204,13 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     push_sxy(g, sx, sy);
     if (psx_gte_vertex_hook) psx_gte_vertex_hook(x, y, z, sx, sy);   /* interpolacion de imagenes */
     if (last) {
+        /* IR0 se satura desde el valor completo, no desde MAC0 truncado a 32 bits: con el vertice
+         * muy cerca (q grande) DQA * q desborda MAC0 y, truncado, IR0 saldria 0x1000 (niebla
+         * total) en vez de 0 (comparado con la GTE de Mednafen, psx/test/gteref.c) */
         int16_t dqa = lo16(g->c[27]);
-        g->d[24] = F(g, (int64_t)g->c[28] + (int64_t)dqa * q);
-        set_ir(g, 0, lm_h(g, g->d[24] >> 12));
+        int64_t dq = (int64_t)g->c[28] + (int64_t)dqa * q;
+        g->d[24] = F(g, dq);
+        set_ir(g, 0, lm_h(g, (int32_t)(dq >> 12)));
     }
 }
 
@@ -280,7 +284,16 @@ static void mvmva(PsxGte *g, uint32_t cmd, int shift, int lm) {
     }
 }
 
+void (*psx_gte_cmd_hook)(PsxGte *g, uint32_t cmd, int after);
+static void command(PsxGte *g, uint32_t cmd);
 void psx_gte_command(PsxGte *g, uint32_t cmd) {
+    if (psx_gte_cmd_hook) {
+        psx_gte_cmd_hook(g, cmd, 0);
+        command(g, cmd);
+        psx_gte_cmd_hook(g, cmd, 1);
+    } else command(g, cmd);
+}
+static void command(PsxGte *g, uint32_t cmd) {
     if (!unr_ready) unr_init();
     int shift = (cmd & GTE_SF) ? 12 : 0;
     int lm = (cmd & GTE_LM) ? 1 : 0;

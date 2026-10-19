@@ -235,6 +235,16 @@ HWCMP_ENV = $(if $(HWCMP_INTERP),AC3_INTERP=3 AC3_INTERP_THREADS=3,)
 hwcmp: libre-build
 	@$(HWCMP_ENV) $(PY) tools/hwcmp.py "$(US)" psx/build/hwcmp $(MISIONES) 4
 
+# etapa 6, paso 18: cada orden de la GTE comparada con la de Mednafen (Beetle PSX, GPL: se descarga
+# a data/ref, fuera de git) en las misiones MISIONES (psx/test/gteref.c, tools/gteref.sh)
+gteref:
+	@sh tools/gteref.sh
+	@for m in $$($(PY) -c "import sys; sys.path.insert(0,'tools'); import misiones; print(' '.join(map(str, misiones.parse('$(or $(MISIONES),0-40)'))))"); do \
+		mkdir -p psx/build/gteref/$$m; \
+		AC3_GTEREF=1 AC3_PAD_ID=73 AC3_MISSION=$$m psx/build/ac3_gteref "$(US)" - 4000 psx/build/gteref/$$m 0 \
+			"$$($(PY) -c "import sys; sys.path.insert(0,'tools'); import misiones; print(misiones.GUION)")" | grep "^gteref: [0-9]" | sed "s/^/mision $$m: /"; \
+	done
+
 misiones: libre-build
 	@$(PY) tools/misiones.py "$(US)" psx/build/misiones $(MISIONES) 2
 
