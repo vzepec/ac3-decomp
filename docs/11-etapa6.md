@@ -68,7 +68,7 @@ distribuido (`docs/06-legal.md`).
 | 4 | Arranque nativo en el PC: ejecutable de arranque → `ACE.BIN` → bucle principal; meta: **pantalla de título** | ✅ llega a la primera misión en vuelo, en las dos versiones |
 | 5 | Recorrido 1:1 en el orden del juego: título, menú, briefing, misión 1… hasta los finales; comparación con DuckStation | 🔄 **funciona entero en las dos versiones:** las 41 misiones, las secuencias de final con los créditos y guardar/cargar, sin fallos (`docs/pruebas/`). Falta la comparación con DuckStation, que el dueño deja para el final |
 | 6 | Android: el usuario genera su APK desde su disco; controles de la Retroid; rendimiento | ✅ superado por la etapa 7: APK libre publicado (v1.7-alfa), `VEL` 100 % en la Retroid |
-| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** ✅ en la Retroid (1.10-alfa; menús a 16:9 en la 1.11-alfa, rama `etapa-6-paso-16`); alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
+| 7 | Mejoras sobre la base 1:1: render GL a resolución nativa con la precisión de nuestra GTE (como PGXP), panorámico, **60 fps por interpolación** | 🔄 60 fps por interpolación ✅; **pantalla ancha** ✅ publicada en la release `v1.8-alfa`; alta resolución, antitemblores y sprites de la CPU ⏳ (un primer intento con GLES, en la rama `etapa-6-paso-15`, dio fallos en la Retroid) |
 | 8 | Opcional: pasar a C legible las partes que se quieran modificar | — |
 
 **Criterio de salida:** el juego completo, jugable de principio a fin en la
@@ -988,7 +988,12 @@ recorrido sin avance, a pesar de las 41 misiones. ¿Se puede avanzar?
 - **Recorrido:** funciona 46/46 (arranque, menús, 41 misiones y final).
   Falta compararlo con DuckStation.
 
-### Paso 16: pantalla ancha (APK 1.10-alfa, sin publicar)
+### Paso 16: pantalla ancha (release v1.8-alfa)
+
+**Nombres:** las versiones de prueba se llamaron 1.10-alfa y 1.11-alfa. Lo
+publicado es la release **`v1.8-alfa`** (la 1.11, con `versionCode` 13).
+No tiene que ver con los APK de prueba "1.8/1.9-alfa" del primer intento,
+que nunca se publicaron.
 
 **Primer intento descartado (rama `etapa-6-paso-15`, APK 1.8/1.9-alfa).**
 Juntaba tres cosas: dibujo por GLES a alta resolución, vértices sin temblor
@@ -1051,3 +1056,10 @@ el primer intento.
   - Comprimir allí podría descuadrar lo que el juego coloca a mano sobre lo
     que proyecta la GTE (`SIN RESOLVER`: no se ha probado).
   - En la misión la GTE sigue comprimiendo como en la 1.10.
+
+**Publicada como `v1.8-alfa`** (2026-10-19), a petición del dueño:
+- la rama `etapa-6-paso-16` se integra en `develop` y en `main`;
+- la release adjunta el APK con la auditoría a 0 y su SHA-256.
+
+Siguiente: la alta resolución por partes, con un comparador automático
+software/GLES por misiones enteras antes de ir a la Retroid (`STATUS.md`).

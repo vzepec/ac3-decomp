@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-19 — Release v1.8-alfa: pantalla ancha
+
+- **Probado en la Retroid:** la pantalla ancha sola funciona y va estable.
+- **Menús a 16:9**, a petición del dueño. Los vídeos siguen a 4:3: el juego
+  los muestra en color de 24 bits y los menús en 15.
+  - Comprobado con `AC3_GEOM_DBG=1` en el binario libre: introducción
+    320×240 a 24 bits; título y menús 320×480 a 15 bits.
+- **Publicado como release `v1.8-alfa`**, con la auditoría a 0. Las pruebas
+  internas se llamaron 1.10 y 1.11.
+
 ## 2026-10-19 — Pantalla ancha sola (APK 1.10-alfa); el primer intento con GLES se aparca
 
 **Primer intento (rama `etapa-6-paso-15`, 1.8/1.9-alfa) descartado.**

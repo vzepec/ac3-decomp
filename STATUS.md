@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.7-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.8-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 
@@ -69,7 +69,7 @@ rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
 - ✅ **Etapa 2: `ACE.BIN` descomprimido** (EU 700.416 B, US 704.512 B),
   validado con la suma de control de la cabecera — `make acebin`
 
-## Etapa 7: APK libre — PUBLICADO (v1.7-alfa)
+## Etapa 7: APK libre — PUBLICADO (v1.7-alfa; v1.8-alfa con pantalla ancha)
 
 `docs/12-etapa7.md`. **El único APK que se genera:** `sh android_game/build.sh`
 → `data/android/AC3Recomp-<versión>.apk`.
@@ -86,17 +86,19 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.11-alfa** (`data/android/AC3Recomp-1.11-alfa.apk`,
-rama `etapa-6-paso-16`, sin fusionar ni subir).
-- La pantalla ancha (1.10) ya funciona en la Retroid.
-- La 1.11 pone también los menús a 16:9; los vídeos siguen a 4:3.
-- L3+R3 recorre 60 fps + 16:9 → 60 fps + 4:3 → original.
+**La pantalla ancha está publicada** (release `v1.8-alfa`, paso 16).
 
-El paso 7 se rehace por partes, probando cada una en la Retroid:
-1. pantalla ancha (funciona; menús a 16:9 en prueba);
-2. alta resolución: rehacer el dibujo por GLES de la rama `etapa-6-paso-15`
-   y buscar los fallos que dio. Pista: bit de máscara en el radar;
-3. antitemblores, si hace falta.
+Siguiente: **alta resolución, por partes** (`docs/11-etapa6.md`, paso 16), en
+la rama `etapa-6-paso-17`:
+1. **Comparador automático:** misiones enteras en el PC, cada imagen por
+   software y por GLES a escala 1, avisando de zonas que difieran mucho.
+   Primero las 41 misiones, luego la Retroid.
+2. Recuperar de la rama `etapa-6-paso-15` solo el dibujo por GLES, sin
+   antitemblores, y corregir lo que encuentre el comparador. Pista: el bit
+   de máscara del radar.
+3. Subir de ×1 a ×2 y ×4; primero las imágenes reales y después las
+   intermedias. Como modo aparte de L3+R3, para comparar en el aparato.
+4. Antitemblores al final, aparte, solo si hace falta.
 
 La comparación con DuckStation queda para el final.
 

@@ -61,7 +61,7 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
 | 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
 | 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
-| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha) |
 
 ## Resultados
 
@@ -128,3 +128,17 @@ Probado por el dueño en la Retroid: `VEL` 100 %, todo correcto. Desde ahora
 `etapa-7` se integra en `develop` y en `main`. La release `v1.7-alfa` adjunta
 el APK, con la auditoría a 0 y su SHA-256, y usa `INSTALAR.md` como texto.
 
+## Segunda release (1.8-alfa)
+
+**Novedad: pantalla ancha (16:9)**, del paso 16 de la etapa 6
+(`docs/11-etapa6.md`):
+- la misión se ve en 16:9 de verdad, con el cono de visión del terreno
+  ensanchado;
+- menús y briefing se estiran a 16:9;
+- los vídeos siguen a 4:3;
+- L3+R3 recorre 60 fps + 16:9 → 60 fps + 4:3 → original.
+
+Probada por el dueño en la Retroid. Mismo procedimiento que la 1.7:
+- APK con la auditoría a 0;
+- SHA-256 en la descripción;
+- `INSTALAR.md` al día como texto.
