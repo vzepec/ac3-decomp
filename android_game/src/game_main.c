@@ -25,8 +25,8 @@
  *  - dibujo por la GPU (etapa 8, paso 1; psx/gl/psx_hw.c): las imagenes de la mision (real e
  *    intermedias) llegan como la lista de primitivas anotada (psx_interp_hw) y se dibujan con GLES,
  *    por ahora a escala 1 y con el tramado de la PS1 (la misma imagen que por software). Las
- *    intermedias ya no se rasterizan en la CPU. L3+R3 recorre: GPU + 16:9 -> software + 16:9 (para
- *    comparar, temporal) -> GPU + 4:3 -> el original (software, 4:3, sin intermedias);
+ *    intermedias ya no se rasterizan en la CPU; en la mision, la real tampoco (paso 2: la GPU
+ *    conserva la imagen). L3+R3 recorre: 16:9 -> 4:3 -> el original (software, 4:3, sin intermedias);
  *  - el juego y los hilos de dibujo van fijados a los nucleos rapidos (los de mayor frecuencia);
  *  - contador (arriba a la izquierda): imagenes distintas mostradas por segundo, velocidad del
  *    juego frente a la consola (100% = 50 VBlank por segundo), intermedias por paso y uso del
@@ -118,7 +118,7 @@ static struct {
     uint32_t seq;
     double interp_last;              /* ultima imagen entregada por la interpolacion */
     volatile int interp_enabled;
-    /* L3+R3: 0 = GPU + 16:9, 1 = software + 16:9, 2 = GPU + 4:3 (los tres con interpolacion),
+    /* L3+R3 (v1.10-alfa): 0 -> 2 -> 3. 0 = GPU + 16:9, 1 = software + 16:9 (fuera del ciclo), 2 = GPU + 4:3,
      * 3 = original (software, 4:3, sin intermedias) */
     volatile int gfx_mode;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
@@ -518,7 +518,8 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
-                static const int next[7] = {1, 2, 3, 0, 1, 1, 1};   /* (4-6: modos de medida de las 1.10.10 y 1.10.12) */
+                /* 16:9 -> 4:3 -> original (1, software a 16:9, y 4-6, de medida: ya no estan en el ciclo) */
+                static const int next[7] = {2, 2, 3, 0, 0, 0, 0};
                 G.gfx_mode = next[G.gfx_mode];
                 LOG("modo de imagen: %s", G.gfx_mode == 0 ? "GPU, 60 fps, 16:9" : G.gfx_mode == 1 ? "software, 60 fps, 16:9"
                                           : G.gfx_mode == 2 ? "GPU, 60 fps, 4:3" : G.gfx_mode == 3 ? "original"
@@ -787,7 +788,7 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            static const char *mds[7] = {"GPU 16:9", "SW 16:9", "GPU 4:3", "ORIG", "GPU 1P", "GPU ADEL", "GPU SM"};
+            static const char *mds[7] = {"16:9", "SW 16:9", "4:3", "ORIG", "GPU 1P", "GPU ADEL", "GPU SM"};
             const char *md = mds[G.gfx_mode];
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
@@ -841,7 +842,7 @@ void android_main(struct android_app *app) {
                 memset(ov, 0, sizeof ov);
                 draw_text(ov, 128, 29, 1, 1, line1);
                 draw_text(ov, 128, 29, 1, 10, line2);
-                if (line3[0]) draw_text(ov, 128, 29, 1, 19, line3);
+                /* (la tercera linea, GL y SWAP, solo va al registro) */
                 psx_present_overlay(ov, 128, 29, hw_w, hw_h);
             }
         } else if (sw && sh) {

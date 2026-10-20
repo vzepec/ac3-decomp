@@ -5,6 +5,14 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Release v1.10-alfa: dibujo por la GPU
+
+- Pasos 1 a 3 de la etapa 8, integrados.
+- Comparador final en las 41 misiones (intermedias, interpolación nueva,
+  `GUION_FUEGO`): ver `docs/14-etapa8.md`.
+- **Publicado como `v1.10-alfa`**, con la auditoría a 0. Las pruebas
+  internas se llamaron 1.10.1 a 1.10.13.
+
 ## 2026-10-20 — Rendimiento en la Retroid: 60 fps estables en ciudad (1.10.13-alfa)
 
 - **Medido en el aparato** con `adb logcat`, en varias rondas:

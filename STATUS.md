@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-19 (release `v1.9-alfa`: interpolación nueva; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.10-alfa`: dibujo por la GPU; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.9-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.10-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -89,14 +89,15 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**APK 1.10.13-alfa** (ramas `etapa-8-paso-2` y `etapa-8-paso-3`, sin publicar):
-- 60 fps estables en modo GPU en ciudad (medido en la Retroid);
-- la llama de los motores y la repetición, corregidas.
+**Alta resolución** (petición del dueño tras la `v1.10-alfa`):
+- el dibujo por la GPU (`psx/gl/psx_hw.c`) ya admite escala;
+- probar escala 2-4 en la Retroid, con el comparador para lo que no escala
+  (radar, textos);
+- después, la precisión de los vértices de la GTE (como PGXP).
 
-**Decidir con el dueño:**
-- integrar los pasos 2 y 3 en `etapa-8` y publicar como `v1.10-alfa`
-  (quitando el modo `SW 16:9` de comparación);
-- después, la alta resolución (escala de la GPU).
+**Pendiente de etapa 8:**
+- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
+- los puntos sueltos en menús del comparador (`SIN RESOLVER`).
 
 ## Pendiente
 
