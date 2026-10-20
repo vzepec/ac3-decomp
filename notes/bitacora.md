@@ -5,6 +5,22 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Rendimiento en la Retroid: 60 fps estables en ciudad (1.10.13-alfa)
+
+- **Medido en el aparato** con `adb logcat`, en varias rondas:
+  - la CPU va sobrada; el cuello era la GPU y el ritmo de presentación;
+  - cada imagen real se dibujaba dos veces;
+  - las subidas a mitad de imagen cortaban el dibujo de la GPU (por
+    baldosas): de 17,8 a 12,7 ms por imagen sin ellas.
+- **Arreglos:**
+  - atlas de subidas (sin subidas a mitad de imagen, la imagen igual: 0
+    listas malas);
+  - la presentación enseña la imagen pendiente más antigua en vez de la
+    vencida más reciente;
+  - doble pasada limitada a lo que tapa una comprobación de máscara.
+- **Resultado:** 259 s sobre la ciudad en `GPU 16:9`, 60,0 fps de media,
+  mínimo 59.
+
 ## 2026-10-20 — Etapa 8, paso 3b: estela doble, lo móvil y las llamas sobre el HUD
 
 - **Estela doble del misil:** la introdujo el paso 3a. `g_render+0x3C4`

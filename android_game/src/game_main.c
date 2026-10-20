@@ -161,7 +161,7 @@ static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, 
  * pasada de mascara; las tres a 16:9. L3+R3: 0 -> 4 -> 5 -> 6 -> 1 -> 2 -> 3 */
 #define MODE_WIDE(m) ((m) <= 1 || (m) >= 4)
 #define MODE_HW(m) ((m) == 0 || (m) == 2 || (m) >= 4)
-extern int psx_hw_hoist_all, psx_hw_no_maskpass;
+extern int psx_hw_hoist_all, psx_hw_no_maskpass, psx_hw_onepass, psx_hw_stat_cut[4];
 
 static int g_nfrac = 3;   /* intermedias por paso (adaptativo) */
 static int g_late_real, g_late_inter, g_drop_inter;   /* medicion: llegan tarde a su hora; intermedias tiradas sin dibujar */
@@ -259,9 +259,8 @@ static void frame_wait(void) {
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
     /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
      * solo interpreta la lista): menos trabajo en el hilo del juego */
-    psx_interp_hw_main(MODE_HW(G.gfx_mode) && G.gfx_mode != 4 && terrain_idle < 15);
-    psx_hw_hoist_all = G.gfx_mode == 5;
-    psx_hw_no_maskpass = G.gfx_mode == 6;
+    psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15);
+    psx_hw_onepass = G.gfx_mode == 4;
 #endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
@@ -519,11 +518,11 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
-                static const int next[7] = {1, 2, 3, 0, 1, 1, 1};   /* (4-6: modos de medida de la 1.10.10, ya no se usan) */
+                static const int next[7] = {1, 2, 3, 0, 1, 1, 1};   /* (4-6: modos de medida de las 1.10.10 y 1.10.12) */
                 G.gfx_mode = next[G.gfx_mode];
                 LOG("modo de imagen: %s", G.gfx_mode == 0 ? "GPU, 60 fps, 16:9" : G.gfx_mode == 1 ? "software, 60 fps, 16:9"
                                           : G.gfx_mode == 2 ? "GPU, 60 fps, 4:3" : G.gfx_mode == 3 ? "original"
-                                          : G.gfx_mode == 4 ? "GPU sin el paso 2" : G.gfx_mode == 5 ? "GPU, subidas adelantadas" : "GPU sin mascara");
+                                          : G.gfx_mode == 4 ? "GPU 1P (medida: sustractivas en una pasada)" : "GPU, medida");
             }
         }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;
@@ -700,8 +699,22 @@ void android_main(struct android_app *app) {
         static double rdue[8];
         int nr = 0;
         if (G.interp_enabled && t - G.interp_last < 0.15) {
+            /* ritmo (paso 3b): la pendiente mas antigua (ya vencida y aun no mostrada); con 3 o mas
+             * atrasadas, de las dos mas nuevas. Antes era la mas reciente y se tiraban las demas: con la
+             * vuelta despertada por la GPU (no por el refresco), una intermedia y su real vencian a
+             * veces en la misma vuelta y la intermedia se perdia aunque llegara a tiempo */
+            static double last_due = -1;
+            int pend[8], npend = 0;
             for (int i = 0; i < 8; i++)
-                if (G.q[i].full && G.q[i].due <= t && (best < 0 || G.q[i].due > G.q[best].due)) best = i;
+                if (G.q[i].full && G.q[i].due <= t && G.q[i].due > last_due) pend[npend++] = i;
+            for (int a = 0; a < npend; a++)   /* por hora */
+                for (int b = a + 1; b < npend; b++)
+                    if (G.q[pend[b]].due < G.q[pend[a]].due) { int x = pend[a]; pend[a] = pend[b]; pend[b] = x; }
+            if (npend) best = pend[npend >= 3 ? npend - 2 : 0];
+            else   /* nada nuevo: la que ya se muestra */
+                for (int i = 0; i < 8; i++)
+                    if (G.q[i].full && G.q[i].due == last_due) best = i;
+            if (best >= 0) last_due = G.q[best].due;
             if (best >= 0)
                 for (int i = 0; i < 8; i++)
                     if (G.q[i].full && G.q[i].due < G.q[best].due) {
@@ -774,7 +787,7 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            static const char *mds[7] = {"GPU 16:9", "SW 16:9", "GPU 4:3", "ORIG", "GPU P1", "GPU ADEL", "GPU SM"};
+            static const char *mds[7] = {"GPU 16:9", "SW 16:9", "GPU 4:3", "ORIG", "GPU 1P", "GPU ADEL", "GPU SM"};
             const char *md = mds[G.gfx_mode];
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
@@ -785,8 +798,11 @@ void android_main(struct android_app *app) {
             extern int psx_hw_stat_draws, psx_hw_stat_uploads;
             if (c_hw_n) {
                 snprintf(line3, sizeof line3, "GL %.1f  SWAP %.1f", c_hw_ms / c_hw_n, c_swap_ms / c_hw_n);
-                LOG("GPU: %d imagenes, %.1f ms de dibujo y %.1f de eglSwapBuffers por imagen; %d llamadas y %d subidas por imagen",
-                    c_hw_n, c_hw_ms / c_hw_n, c_swap_ms / c_hw_n, psx_hw_stat_draws / c_hw_n, psx_hw_stat_uploads / c_hw_n);
+                LOG("GPU: %d imagenes, %.1f ms de dibujo y %.1f de eglSwapBuffers por imagen; %d llamadas y %d subidas por imagen; "
+                    "cortes por imagen: recorte %d, mezcla %d, pasada %d, mascara %d",
+                    c_hw_n, c_hw_ms / c_hw_n, c_swap_ms / c_hw_n, psx_hw_stat_draws / c_hw_n, psx_hw_stat_uploads / c_hw_n,
+                    psx_hw_stat_cut[0] / c_hw_n, psx_hw_stat_cut[1] / c_hw_n, psx_hw_stat_cut[2] / c_hw_n, psx_hw_stat_cut[3] / c_hw_n);
+                memset(psx_hw_stat_cut, 0, sizeof psx_hw_stat_cut);
             } else line3[0] = 0;
             c_hw_ms = c_swap_ms = 0; c_hw_n = 0;
             psx_hw_stat_draws = psx_hw_stat_uploads = 0;

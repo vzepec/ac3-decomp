@@ -101,6 +101,7 @@ static void save(int vb, int num, int den, int w, int h, const uint8_t *badmap, 
 static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv, int x0, int y0, int w, int h, int num, int den);
 int psx_hwcmp_only;          /* lo pone native_main (AC3_HWCMP_ONLY) mientras hay mision */
 static int g_cmp_persist;    /* compare: la GPU conserva la imagen (real) */
+static int g_maxdraws, g_maxdraws_vb, g_maxdraws_n;
 
 static void hook(PsxGpu *g, uint32_t ot) {
     int x0 = g->area_x1, y0 = g->area_y1, w = g->area_x2 - g->area_x1 + 1, h = g->area_y2 - g->area_y1 + 1;
@@ -195,6 +196,8 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
      * VRAM del software (que aqui si se dibuja entera, de referencia) */
     static int persist = -1;
     if (persist < 0) persist = getenv("AC3_HWCMP_PERSIST") != NULL;
+    extern int psx_hw_stat_draws;
+    int d0 = psx_hw_stat_draws;
     if (g_cmp_persist) psx_hw_frame_ex(lp, bg, x0, y0, w, h, 1, 1);
     else if (persist) {
         PsxHwList l2 = *lp;
@@ -202,6 +205,7 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
         psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
+    if (psx_hw_stat_draws - d0 > g_maxdraws) { g_maxdraws = psx_hw_stat_draws - d0; g_maxdraws_vb = VSync(-1); g_maxdraws_n = lp->n; }
     if (g_cmp_persist && getenv("AC3_HWCMP_MASKCMP")) {   /* el bit 15 de la GPU frente al del software */
         static uint8_t mk[1024 * 512];
         if (!psx_hw_read_mask(mk)) {
@@ -268,6 +272,11 @@ static void summary(void) {
     printf("hwcmp: de ellas, %ld imagenes intermedias\n", g_inter);
     extern int psx_hw_stat_hoisted, psx_hw_stat_inframe, psx_hw_stat_atlas;
     printf("hwcmp: subidas al atlas %d, adelantadas %d, a mitad de imagen %d\n", psx_hw_stat_atlas, psx_hw_stat_hoisted, psx_hw_stat_inframe);
+    extern int psx_hw_stat_draws;
+    extern int psx_hw_stat_cut[4];
+    printf("hwcmp: llamadas de dibujo %d (%.0f por lista; la que mas, %d en el VBlank %d con %d primitivas); cortes: recorte %d, mezcla %d, pasada %d, mascara %d\n",
+           psx_hw_stat_draws, g_lists ? (double)psx_hw_stat_draws / g_lists : 0.0, g_maxdraws, g_maxdraws_vb, g_maxdraws_n, psx_hw_stat_cut[0],
+           psx_hw_stat_cut[1], psx_hw_stat_cut[2], psx_hw_stat_cut[3]);
     printf("hwcmp: %ld listas por debajo del 99 %% de casi iguales; la peor, %.2f %% (VBlank %d)\n", g_low, g_lists ? g_worst : 100.0,
            g_worst_vb);
 }

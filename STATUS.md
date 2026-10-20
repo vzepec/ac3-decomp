@@ -89,14 +89,14 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.10.4-alfa** (`data/android/AC3Recomp-1.10.4-alfa.apk`,
-rama `etapa-8-paso-3`, sobre `etapa-8-paso-2`; sin publicar).
-- **Llamas de los motores:** ya no deforman la línea del HUD.
-- **Repetición del final de misión:** sin el avión doble.
-- **Misiles:** sin la estela doble.
+**APK 1.10.13-alfa** (ramas `etapa-8-paso-2` y `etapa-8-paso-3`, sin publicar):
+- 60 fps estables en modo GPU en ciudad (medido en la Retroid);
+- la llama de los motores y la repetición, corregidas.
 
-Después: decidir con el dueño si se integran los pasos 2 y 3 en `etapa-8`, y
-seguir con el rendimiento (`adb logcat -s AC3Game` en ciudades).
+**Decidir con el dueño:**
+- integrar los pasos 2 y 3 en `etapa-8` y publicar como `v1.10-alfa`
+  (quitando el modo `SW 16:9` de comparación);
+- después, la alta resolución (escala de la GPU).
 
 ## Pendiente
 

@@ -529,3 +529,44 @@ estiraba la estela del misil (la intermedia la dibujaba doble).
 - **Resultado:** 0 listas malas (de 2.794) y 0 copias de imágenes viejas.
 - **Las 41 misiones con `GUION_FUEGO`** (comparador, modo del paso 2): 127.072
   listas, 5 con un bloque malo cada una; sin fallos.
+
+## Rendimiento en la Retroid: medido con el registro (1.10.4 a 1.10.12)
+
+La Retroid conectada por USB (`adb logcat -s AC3Game`), con el dueño volando
+bajo sobre una ciudad. Cada versión añadía una medida.
+
+1. **La CPU va sobrada.**
+   - Hilo del juego al 23-46 %, hilo de dibujo a 4-8 ms por paso, ningún paso
+     saltado.
+   - Los bajones solo ocurrían en modo GPU, en el hilo que presenta.
+2. **Cada imagen real se dibujaba dos veces en la GPU** (1.10.5): la ya
+   mostrada seguía en la cola y se tomaba por "saltada". Corregido.
+3. **Subidas a mitad de imagen** (1.10.8 y 1.10.10, modos de medida en
+   L3+R3):
+   - adelantarlas todas llevó la GPU de 17,8 a 12,7 ms por imagen, y de 54,6 a
+     59,6 fps;
+   - sin la mejora del paso 2: 39 fps; sin la pasada de máscara: igual.
+   - En la GPU por baldosas de la Retroid, cada subida a mitad corta el
+     dibujo.
+   - **Atlas de subidas** (`psx/gl/psx_hw.c`): todas las de la lista van al
+     principio a un atlas. Cada primitiva lleva en el vértice cuántas había
+     antes de ella, y el shader lee la más reciente que cubre el texel (o la
+     VRAM de partida). Comparador: 0 listas malas, 0 subidas a mitad.
+4. **Ritmo de presentación** (1.10.12): quedaban bajones sin vueltas lentas
+   ni retrasos, con intermedias tiradas.
+   - Cada vuelta enseñaba la imagen vencida más reciente y tiraba las demás.
+     Como la GPU despierta la vuelta (no el refresco), una intermedia y su
+     real vencían a veces juntas.
+   - **Ahora** se enseña la pendiente más antigua; solo con 3 o más
+     atrasadas, se salta a las dos más nuevas.
+   - **Resultado: 259 s en `GPU 16:9` sobre la ciudad, 60,0 fps de media, ni
+     un segundo por debajo de 55 (mínimo 59).**
+5. **Doble pasada**, limitada a lo que tapa una primitiva posterior que
+   comprueba la máscara (`plan_exact`). Las sustractivas en una sola pasada
+   (medida `GPU 1P`) no cambiaban nada: no hace falta.
+
+El registro sigue dando por segundo:
+- vueltas de presentación y tiempo de GPU de una imagen (`glFinish`);
+- imágenes que llegan tarde y tiradas;
+- el peor tiempo del hilo de dibujo;
+- llamadas, subidas y motivos de corte de lote.

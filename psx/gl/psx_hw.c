@@ -224,7 +224,8 @@ void psx_hw_shutdown(void) {
     g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_stencil = 0; g_ow = g_oh = 0;
 }
 
-int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;   /* medicion: llamadas por imagen */
+int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
+int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */   /* medicion: llamadas por imagen */
 
 /* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
  * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
@@ -296,6 +297,11 @@ static void state(int ax1, int ay1, int ax2, int ay2, int cls, int pass, int st)
         Cmd *c = &g_cmd[g_ncmd - 1];
         if (!memcmp(sc, c->sc, sizeof sc) && cls == c->cls && pass == c->pass && st == c->st) return;
         if (c->first == g_n) { memcpy(c->sc, sc, sizeof sc); c->cls = cls; c->pass = pass; c->st = st; return; }
+        /* medida: por que se corta el lote */
+        if (memcmp(sc, c->sc, sizeof sc)) psx_hw_stat_cut[0]++;
+        if (cls != c->cls) psx_hw_stat_cut[1]++;
+        if (pass != c->pass) psx_hw_stat_cut[2]++;
+        if (st != c->st) psx_hw_stat_cut[3]++;
     }
     if (g_ncmd == g_capcmd) {
         g_capcmd = g_capcmd * 2 + 256;
@@ -403,7 +409,7 @@ static void bbox(const PsxHwPrim *p, int *x1, int *y1, int *x2, int *y2) {
  * GPU por baldosas de la Retroid, guarda y vuelve a cargar la imagen entera: unos 20 ms por imagen
  * con 16-60 subidas). La que nada de lo anterior de la lista lee (textura, paleta u origen de una
  * copia) se sube al principio */
-int psx_hw_hoist_all, psx_hw_no_maskpass;   /* medidas (app, modos de prueba) */
+int psx_hw_hoist_all, psx_hw_no_maskpass, psx_hw_onepass;   /* medidas (app, modos de prueba) */
 static uint8_t *g_hoist;
 static int g_hoist_cap;
 int psx_hw_stat_hoisted, psx_hw_stat_inframe;
@@ -462,6 +468,35 @@ static void plan_hoist(const PsxHwList *l) {
     }
 }
 
+/* por primitiva: alguna posterior que comprueba la mascara la toca (recorrido hacia atras con sus
+ * cajas; mas de 256, en una sola caja que las cubre) */
+static uint8_t *g_exact;
+static int g_exact_cap;
+static void plan_exact(const PsxHwList *l) {
+    if (g_exact_cap < l->n) { free(g_exact); g_exact_cap = l->n + 4096; g_exact = malloc((size_t)g_exact_cap); }
+    if (!g_exact) return;
+    enum { NR = 256 };
+    static int r[NR + 1][4];
+    int nr = 0;
+    for (int i = l->n - 1; i >= 0; i--) {
+        const PsxHwPrim *p = &l->p[i];
+        int x1, y1, x2, y2, hit = 0;
+        if (p->kind == PSX_HW_UPLOAD) { g_exact[i] = 0; continue; }
+        bbox(p, &x1, &y1, &x2, &y2);
+        for (int k = 0; k < nr && !hit; k++) hit = x2 >= r[k][0] && x1 <= r[k][2] && y2 >= r[k][1] && y1 <= r[k][3];
+        g_exact[i] = (uint8_t)hit;
+        if (p->flags & PSX_HWF_MASKCHK) {   /* las anteriores a esta tienen que dejar el bit 15 exacto donde ella mira */
+            if (nr < NR) { r[nr][0] = x1; r[nr][1] = y1; r[nr][2] = x2; r[nr][3] = y2; nr++; }
+            else {
+                if (x1 < r[NR - 1][0]) r[NR - 1][0] = x1;
+                if (y1 < r[NR - 1][1]) r[NR - 1][1] = y1;
+                if (x2 > r[NR - 1][2]) r[NR - 1][2] = x2;
+                if (y2 > r[NR - 1][3]) r[NR - 1][3] = y2;
+            }
+        }
+    }
+}
+
 static void apply_upload(const PsxHwPrim *p);
 static void draw_prim_2(const PsxHwPrim *p, int index);
 static void draw_prim(const PsxHwPrim *p, int index) {
@@ -502,14 +537,20 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
      * la mascara y si toca su zona */
     int exact = 0;
     if (g_track && index <= g_clast && (tex || vram)) {
-        int x1, y1, x2, y2;
-        bbox(p, &x1, &y1, &x2, &y2);
-        exact = x2 >= g_cx1 && x1 <= g_cx2 && y2 >= g_cy1 && y1 <= g_cy2;
+        /* (paso 3b) solo si alguna primitiva posterior que comprueba la mascara la toca: con la
+         * caja de todas juntas (radar arriba, linea del HUD abajo) casi todo iba en dos pasadas y
+         * miles de llamadas por imagen en la Retroid */
+        if (g_exact) exact = g_exact[index];
+        else {
+            int x1, y1, x2, y2;
+            bbox(p, &x1, &y1, &x2, &y2);
+            exact = x2 >= g_cx1 && x1 <= g_cx2 && y2 >= g_cy1 && y1 <= g_cy2;
+        }
     }
     /* la semitransparencia va en el shader (una pasada), salvo la resta (abr 2) con textura: sus
      * texeles opacos con la mezcla comun y los semitransparentes con la resta */
     int sub = semi && p->abr == 2;
-    if ((sub && tex) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
+    if ((sub && tex && !psx_hw_onepass) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
     for (int k = 0; k < np; k++) {
         int pass = passes[k], cls = sub && (!tex || pass == 2) ? 1 : 0;
@@ -846,6 +887,10 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
             g_clast = i;
             g_track = 1;
         }
+    static int oldexact = -1;   /* prueba: PSX_HW_OLDEXACT=1, la caja de todas (antes del paso 3b) */
+    if (oldexact < 0) oldexact = getenv("PSX_HW_OLDEXACT") != NULL;
+    if (!oldexact) plan_exact(l);
+    else { free(g_exact); g_exact = NULL; g_exact_cap = 0; }
     static int nomask = -1;   /* prueba del comparador (caso positivo conocido): sin bit de mascara */
     if (nomask < 0) nomask = getenv("PSX_HW_NOMASK") != NULL;
     if (nomask) g_track = 0;
