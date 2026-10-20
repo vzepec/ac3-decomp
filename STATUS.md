@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-19 (release `v1.9-alfa`: interpolación nueva; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.10-alfa`: dibujo por la GPU; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.9-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.10-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -89,20 +89,15 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Rendimiento** (petición del dueño tras la `v1.9-alfa`): bajones de fps
-mirando ciudades muy pobladas.
-- **Primero, análisis:** ¿conviene llevar el dibujo a la GPU (GLES) en lugar
-  de la GPU por software? Base: el comparador `psx_hwcmp` y el dibujo por
-  GLES ya validado en la rama `gles-alta-resolucion` (pasos 17-20 de la
-  etapa 6).
-- **Medir antes de decidir:** en qué se va el tiempo de cada hilo en la
-  Retroid (juego, redibujo, dibujo por software).
+**Alta resolución** (petición del dueño tras la `v1.10-alfa`):
+- el dibujo por la GPU (`psx/gl/psx_hw.c`) ya admite escala;
+- probar escala 2-4 en la Retroid, con el comparador para lo que no escala
+  (radar, textos);
+- después, la precisión de los vértices de la GTE (como PGXP).
 
-**Después:**
-- objetos móviles por su identidad (aviones, misiles);
-- orientación de los objetos del arreglo;
-- la europea (las 2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
-- la comparación con DuckStation, al final.
+**Pendiente de etapa 8:**
+- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
+- los puntos sueltos en menús del comparador (`SIN RESOLVER`).
 
 ## Pendiente
 

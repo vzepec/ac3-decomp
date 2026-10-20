@@ -43,6 +43,8 @@ void psx_interp_threads(int n, void (*on_start)(void));
 typedef struct {
     int steps, jobs, skipped, unpaired, nfrac, threads;   /* unpaired: pasos sin bastantes parejas */
     double pair_ms, snap_ms, real_ms, worker_ms, worker_max_ms;
+    double worker0_ms;   /* el hilo de dibujo 0, por trabajo (con el redibujo asincrono es el unico que trabaja) */
+    double rebuild_ms;   /* de ello, el redibujo (psx_interp_rebuild_async), por fase redibujada */
 } PsxInterpPerf;
 void psx_interp_perf(PsxInterpPerf *p, int reset);
 
@@ -56,7 +58,11 @@ void psx_interp_perf(PsxInterpPerf *p, int reset);
 #include "psx_gpu.h"
 typedef void (*PsxInterpHwSink)(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h,
                                 int phase_num, int phase_den, int vblanks, double t_step);
-void psx_interp_hw(PsxInterpHwSink sink, int full);   /* NULL: imagenes por software, como hasta ahora */
+void psx_interp_hw(PsxInterpHwSink sink, int full);
+/* etapa 8, paso 2: con un sumidero (y sin full), la imagen real solo se dibuja en la GPU: el software
+ * solo interpreta la lista y dibuja lo de fuera de la imagen (texturas, paletas). La lista lleva
+ * main_stale cuando la GPU debe partir de su propia copia de la imagen (psx/gl/psx_hw.c) */
+void psx_interp_hw_main(int on);   /* NULL: imagenes por software, como hasta ahora */
 
 /* etapa 8: redibujo del mundo estatico. fn(ot, t) construye en psx_ram la lista de la intermedia de
  * fase t (0 = paso anterior, 1 = este) con el codigo de dibujo del juego (psx/recomp/ac3_rerender.c)
@@ -82,6 +88,7 @@ extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase
  * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1
  * con el paso real del medio (S impar; S = 3 simula movimientos el doble de rapidos) */
-extern int psx_interp_skip_test;   /* atajo para la GTE */
+extern int psx_interp_skip_test;
+int psx_interp_next_is_ref(void);   /* con la prueba, si el paso que viene es de referencia */   /* atajo para la GTE */
 
 #endif

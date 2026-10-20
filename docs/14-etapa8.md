@@ -296,3 +296,277 @@ VBlank, con el guion de `tools/misiones.py` más dos pausas.
 
 **Siguiente:** el rendimiento (análisis de llevar el dibujo a la GPU, en
 `STATUS.md`).
+
+## Rendimiento: en qué se va el tiempo (después de la v1.9-alfa)
+
+**Medida en el PC** (misión 0 US, ciudad, 16:9, `AC3_PACE=60 AC3_RR=1`,
+desde el VBlank 2700; `rr:` al salir del binario libre):
+
+| Hilo | Ocupado por paso (33,3 ms) | Reparto |
+|---|---|---|
+| Juego | 18,8 ms | intérprete y capa ~10,2; **dibujo de la imagen real por software 6,7**; emparejamiento 1,3; copias 0,6 |
+| Dibujo 0 | ~16 ms | **redibujo (intérprete) 8,4**; **dibujo de la intermedia por software ~7,6** |
+| Dibujo 1 y 2 | ~0 | parados: con la interpolación nueva solo trabaja el 0 |
+
+- Cerca de la mitad del trabajo es rasterizar por software (la GPU de la
+  PS1 emulada en la CPU). La otra mitad es interpretar MIPS: la lógica del
+  juego y el redibujo.
+- En el aparato faltan las cifras por hilo: el contador solo da `CPU` del
+  hilo del juego. `SIN RESOLVER` hasta medir en la Retroid.
+
+## Paso 1: dibujo por la GPU a resolución original (rama `etapa-8-paso-1`)
+
+**Decisión del dueño:** ir a la GPU, no repartir el software entre hilos,
+porque después viene la alta resolución.
+
+**Qué se integra:**
+- el dibujo por GLES de la etapa 6 (pasos 17-19, `psx/gl/psx_hw.c`, validado
+  con el comparador), que estaba en la app hasta el paso 19 (commit
+  `fb7fd72`; la rama `gles-alta-resolucion` se borró: su contenido está en
+  `develop`);
+- a escala 1 y con el tramado de la PS1: la misma imagen que por software;
+- con la interpolación nueva, el hilo de dibujo solo **anota** la intermedia
+  (`psx_gpu_record` con `only`): no la rasteriza. La GPU la dibuja en el hilo
+  de presentación;
+- la imagen real sigue dibujándose también por software en el hilo del
+  juego, porque la memoria de vídeo del juego es la del software.
+
+**Modos de la app (temporal, para comparar):** L3+R3 recorre `GPU 16:9` →
+`SW 16:9` → `GPU 4:3` → `ORIG`.
+- El registro (`adb logcat -s AC3Game`) da cada segundo el hilo de dibujo 0,
+  con el redibujo aparte.
+- También da los ms de GLES por imagen.
+
+**Comparador** (`AC3_RR=1 AC3_WIDE=1 AC3_INTERP=1`, `tools/hwcmp.py`, 41
+misiones): 140.538 listas (intermedias incluidas), 4 con bloques malos (7
+bloques).
+- **Misión 7, VBlank 2763** (se reproduce): una estela de triángulos muy
+  finos que GLES rasteriza un píxel al lado. Es el mismo tipo de caso límite
+  que la línea del túnel de la etapa 6.
+- **3 en menús** (misiones 5, 6 y 8): puntos sueltos que no se reproducen al
+  repetir la misión. `SIN RESOLVER`.
+- **Misión 37:** 86 % de píxeles idénticos y 201 listas por debajo del 99 %
+  de casi iguales. Sin interpolación ya da 89,8 % y 131: es el túnel. Las
+  intermedias solo añaden listas del mismo tipo.
+- Todas las misiones terminan sin fallos.
+
+**Medida en el PC** (misión 0, ciudad, `AC3_PACE=60`; `AC3_HW_NULL=1` anota
+las listas y las tira, sin GLES):
+
+| | Software | GPU |
+|---|---|---|
+| Hilo de dibujo 0 | ~17 ms (redibujo 8,7 + rasterizado 7,6) | ~9,5 ms (redibujo 8,9 + anotar 0,6) |
+| Hilo del juego | ~19 ms (rasterizado de la imagen real 6,5-6,8) | igual |
+
+- El rasterizado se mide aparte (`rr: rasterizado por software`).
+- **Cuidado:** `AC3_HW_NULL=` vacío también lo activa (`getenv`): una primera
+  medida salió mal por eso.
+
+**APK 1.10.1-alfa** (prueba, sin publicar).
+
+**Siguiente:**
+- según lo que dé la Retroid, la imagen real solo en la GPU (quitaría el
+  rasterizado del hilo del juego, unos 7 ms en el PC). Exige seguir qué
+  partes de la memoria de vídeo lee el juego;
+- después, la escala (alta resolución).
+
+## Paso 2: la imagen real solo en la GPU (rama `etapa-8-paso-2`)
+
+**Objetivo:** quitar del hilo del juego el rasterizado por software de la
+imagen real (~6,5 ms por paso en la ciudad de la misión 0, en el PC).
+
+**Cómo** (el diseño de los renderizadores por hardware de los emuladores):
+- **Software** (`psx_gpu_record` con `only`): en la misión, la lista solo se
+  interpreta. Lo de fuera de la imagen (texturas, paletas) se sigue dibujando
+  y sube a la GPU como hasta ahora.
+- **GPU** (`psx/gl/psx_hw.c`, `psx_hw_frame_ex`):
+  - conserva cada imagen de la VRAM (el doble búfer): color, un segundo
+    búfer con el bit 15 de cada píxel y el stencil para la máscara;
+  - la real se dibuja sobre la suya; la intermedia, sobre una copia.
+  - Si el software no tiene la imagen al día (`main_stale`), parte de la
+    suya y no de la VRAM del software.
+- **Seguimiento** (`psx/src/gpu.c`):
+  - las zonas que solo tiene la GPU, por hilo (el del juego);
+  - cuenta lo que las lee o escribe por otro camino (`psx_gpu_stale_ev`);
+  - **escrituras fuera de las listas** (LoadImage, ClearImage, MoveImage): se
+    pasan a la GPU con la siguiente lista (subida y copia a la imagen);
+  - **lecturas como textura:** la lista apunta las zonas (`read`), y la GPU
+    copia antes su imagen a su textura de la VRAM, convertida a 15 bits con
+    el bit 15 de su segundo búfer (`read_zones`).
+- **App:** solo en la misión con la GPU (`psx_interp_hw_main`). La
+  presentación dibuja también las imágenes reales que se salta, para que la
+  imagen conservada no se atrase.
+
+**Lo que salió en las 41 misiones** (`AC3_HW_NULL=1 AC3_HW_MAIN=1`, binario
+libre):
+- sin fallos;
+- lecturas de la imagen como textura en 7 misiones (232 u 80):
+  - es el efecto de "MISSION FAILED", que refleja la imagen anterior (misión
+    10, VBlank 3455: cuadriláteros de 160×120 con la página del otro búfer, a
+    15 bits);
+  - sin el bit 15 en la copia salía casi negro, porque el reflejo es
+    semitransparente por texel;
+- una escritura fuera de las listas (misión 16).
+
+**Comparador** (`AC3_HWCMP_ONLY=1`): una copia de la GPU por software dibuja
+la lista entera como referencia, mientras la GPU parte de lo que conserva.
+- Misión 10, reflejo incluido: **0 listas malas** de 3.131.
+- **Las 41 misiones: 127.072 listas, 3 con bloques malos (6 bloques).**
+  - Misión 7, VBlank 2763: la estela de triángulos finos (la misma que con
+    el dibujo GPU normal).
+  - Misiones 2 y 40, en el choque del guion: un matiz de sombreado de pocos
+    píxeles encima del radar. Puede ser un hueco sin cubrir que hereda una
+    diferencia de una imagen anterior. `SIN RESOLVER`, menor.
+- `AC3_HWCMP_PERSIST=1`: solo prueba partir de la imagen conservada (con el
+  software completo).
+
+**Medida en el PC** (misión 0, `AC3_PACE=60`): el rasterizado de la imagen
+real pasa de 6,45 ms a **0,45 ms**. El total del hilo del juego, a ritmo real,
+lo enmascara el escalado de frecuencia de la CPU (18,8 → 16,9 ms).
+
+## Paso 3: lo que se mueve, en la interpolación nueva (rama `etapa-8-paso-3`)
+
+**Petición del dueño:** llevar a la interpolación nueva lo que falta (el avión,
+los proyectiles…). También vio un fallo: en la repetición del final de misión,
+el avión enfocado sale doble y parpadeando.
+
+### 3a: la repetición y la orientación de los objetos
+
+- **Reproducido** con la demostración del título (US, sin guion, VBlank
+  ~5700-6950: la misma cámara de repetición).
+  - Con `AC3_RR_NODRAW=1` (se quita lo estático sin redibujarlo) el avión
+    sale bien: forma parte del dibujo estático.
+  - **Encuesta** (`AC3_RR_SURVEY=1`) en la demostración: `g_render+0x3C4`,
+    con la forma de una entrada del arreglo de objetos (posición +0/+4/+8,
+    ángulos en shorts +0x10/+0x12/+0x14), cambia en casi cada paso. Es el
+    avión que sigue la cámara, y no se interpolaba: la cámara iba a medio
+    camino y el avión no.
+  - También cambia la orientación de las entradas del arreglo (+0x10/+0x14).
+- **Corrección** (`fields_init`): 33 objetos (el de `+0x3C4` y los 32 del
+  arreglo), con posición y tres ángulos.
+  - Los ángulos (`F_A16`) van por el camino corto: en 16 bits si la
+    diferencia es pequeña; si no, en una vuelta de 4096.
+  - Un objeto que salta de sitio se queda como en el paso actual.
+- **Medida** (`tools/entre_medias.py`): cada intermedia debe quedar entre sus
+  dos reales (d(I,A) y d(I,B) menores que d(A,B)).
+  - Antes: 0 de 6 (d(I,·) ~16 con d(A,B) ~5).
+  - Después: **504 de 504** en VBlank 5700-6950, y 2 pasos sin intermedia
+    (cortes de cámara).
+- **Sin romper nada:** autoprueba con t = 1 en las misiones 0, 10 y 24, 0
+  imágenes distintas.
+
+### 3b: aviones, misiles y efectos de la misión
+
+**Lo que se averiguó:**
+- En la misión, la lógica y el dibujo de los objetos móviles van mezclados.
+  - Los subsistemas que llama la lógica del vuelo (US `0x80032e6c`; en la
+    tabla de subpasos, `+0x9f230` de ACE.BIN) actualizan y dibujan en el
+    mismo bucle. Por ejemplo, `FUN_8006b48c` mueve cada partícula y la
+    dibuja.
+  - Volver a dibujarlos con el código del juego exigiría separar el dibujo
+    de la lógica de cada subsistema: **no es viable por ahora**.
+  - Lo móvil sigue con la interpolación en pantalla (emparejamiento por
+    vértices), dentro de la interpolación nueva.
+- **Prueba de verdad conocida con hilos** (`AC3_INTERP_TEST`, arreglada):
+  - con hilos de dibujo, la intermedia llega después de la real siguiente, y
+    el comparador emparejaba cada intermedia con el caso anterior; ahora la
+    real espera a su intermedia;
+  - con la interpolación nueva, interpola entre los dos pasos de referencia
+    (`psx_interp_next_is_ref`);
+  - `AC3_INTERP_TEST_FROM` y `AC3_INTERP_TEST_DUMP=v1,v2`.
+- **Misión 0, todo el vuelo, a ritmo real:**
+
+| | Intermedia | Vecinos reales |
+|---|---|---|
+| Interpolación antigua | 26,8 dB | 25,3 dB |
+| Nueva | 29,2 dB | 25,3 dB |
+| Nueva, con la corrección de abajo | 29,3 dB (peor caso −4,1 en vez de −8,0) | 25,3 dB |
+
+**Fallo del paso 3a, corregido:** interpolar `g_render+0x3C4` en el vuelo
+estiraba la estela del misil (la intermedia la dibujaba doble).
+- En el vuelo, el dibujo estático usa esa entrada como origen de las
+  estelas. Con `AC3_RR_NODRAW` la estela desaparecía, y sin interpolar esa
+  entrada también.
+- **Ahora** se interpola solo en los subpasos sin juego. Los marcan dos
+  enganches: US `0x80032fac` y `0x80032ffc` (demostración y repetición; la
+  demostración usa el segundo, comprobado con `AC3_TRACE`); EU `0x80032de4`
+  y `0x80032e34`.
+- Demostración: **570 de 570** intermedias entre medias.
+- Máximo de enganches del intérprete: de 8 a 12.
+
+**Probado y descartado: piezas enteras** (`PSX_INTERP_RIGID=1`).
+- Cada pieza (matriz de la GTE) emparejada se interpolaba entera: rotación
+  y traslación a medio camino, y sus vértices otra vez por la GTE.
+  - La reconstrucción es exacta: con la matriz del propio paso sale lo
+    registrado. Hizo falta pasar el contexto de la GTE que proyecta
+    (`psx_gte_hook_ctx`): el de la librería tenía otro centro.
+  - 62 piezas por paso en la misión 0.
+- **Medida:** el PSNR no cambia, y los polígonos estirados aumentan
+  (demostración, de 3.188 a 3.471; misión 2, de 1.831 a 2.773), con más pasos
+  tomados por cortes. Una pieza que se mueve entera junto a vecinas que se
+  mueven vértice a vértice abre costuras.
+- Queda en el código, desactivada.
+
+### Las llamas de los motores sobre el HUD (paso 2)
+
+- **Informe del dueño:** al acelerar, las llamas deforman la línea verde
+  del HUD y salen rectángulos verdes.
+- **Reproducido** con `tools/misiones.py` `GUION_FUEGO` (vista exterior con
+  SELECT y postquemador con R1), y con el comparador en el modo del paso 2:
+  166 listas malas en la misión 0.
+- **Causa:** el efecto de calor de los motores copia (VRAM → VRAM, 16×1) un
+  trozo de la imagen que se está dibujando y lo vuelve a dibujar. Con la
+  imagen solo en la GPU, el software copiaba una imagen vieja: 2.760 copias
+  contadas.
+  - Medido antes de concluir: el bit 15 de la GPU coincide con el del
+    software (1-20 píxeles distintos por imagen), así que no era la máscara.
+  - Además, al partir de una imagen conservada, el stencil se rehace desde el
+    bit 15 exacto de su segundo búfer (`stencil_from_mask`).
+- **Corrección:** antes de dibujar, se mira la lista
+  (`psx_gpu_list_copies_from`). Si copia desde su imagen, la dibuja entera
+  el software, y la copia lee lo recién dibujado. Ninguna imagen mal; solo
+  se pierde el ahorro mientras dura el efecto.
+- **Resultado:** 0 listas malas (de 2.794) y 0 copias de imágenes viejas.
+- **Las 41 misiones con `GUION_FUEGO`** (comparador, modo del paso 2): 127.072
+  listas, 5 con un bloque malo cada una; sin fallos.
+
+## Rendimiento en la Retroid: medido con el registro (1.10.4 a 1.10.12)
+
+La Retroid conectada por USB (`adb logcat -s AC3Game`), con el dueño volando
+bajo sobre una ciudad. Cada versión añadía una medida.
+
+1. **La CPU va sobrada.**
+   - Hilo del juego al 23-46 %, hilo de dibujo a 4-8 ms por paso, ningún paso
+     saltado.
+   - Los bajones solo ocurrían en modo GPU, en el hilo que presenta.
+2. **Cada imagen real se dibujaba dos veces en la GPU** (1.10.5): la ya
+   mostrada seguía en la cola y se tomaba por "saltada". Corregido.
+3. **Subidas a mitad de imagen** (1.10.8 y 1.10.10, modos de medida en
+   L3+R3):
+   - adelantarlas todas llevó la GPU de 17,8 a 12,7 ms por imagen, y de 54,6 a
+     59,6 fps;
+   - sin la mejora del paso 2: 39 fps; sin la pasada de máscara: igual.
+   - En la GPU por baldosas de la Retroid, cada subida a mitad corta el
+     dibujo.
+   - **Atlas de subidas** (`psx/gl/psx_hw.c`): todas las de la lista van al
+     principio a un atlas. Cada primitiva lleva en el vértice cuántas había
+     antes de ella, y el shader lee la más reciente que cubre el texel (o la
+     VRAM de partida). Comparador: 0 listas malas, 0 subidas a mitad.
+4. **Ritmo de presentación** (1.10.12): quedaban bajones sin vueltas lentas
+   ni retrasos, con intermedias tiradas.
+   - Cada vuelta enseñaba la imagen vencida más reciente y tiraba las demás.
+     Como la GPU despierta la vuelta (no el refresco), una intermedia y su
+     real vencían a veces juntas.
+   - **Ahora** se enseña la pendiente más antigua; solo con 3 o más
+     atrasadas, se salta a las dos más nuevas.
+   - **Resultado: 259 s en `GPU 16:9` sobre la ciudad, 60,0 fps de media, ni
+     un segundo por debajo de 55 (mínimo 59).**
+5. **Doble pasada**, limitada a lo que tapa una primitiva posterior que
+   comprueba la máscara (`plan_exact`). Las sustractivas en una sola pasada
+   (medida `GPU 1P`) no cambiaban nada: no hace falta.
+
+El registro sigue dando por segundo:
+- vueltas de presentación y tiempo de GPU de una imagen (`glFinish`);
+- imágenes que llegan tarde y tiradas;
+- el peor tiempo del hilo de dibujo;
+- llamadas, subidas y motivos de corte de lote.

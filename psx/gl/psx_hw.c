@@ -39,32 +39,44 @@ static const char *FS =
     "#version 300 es\n"
     "precision highp float; precision highp int; precision highp usampler2D;\n"
     "uniform usampler2D u_vram; uniform int u_pass; uniform int u_dither; uniform float u_delta;\n"
+    "/* subidas de la lista (etapa 8, paso 3b): sus datos, en el atlas desde el principio; u_up[i] = (x | y << 16,\n"
+    " * w | h << 16, x en el atlas | y << 16). La primitiva ve las primeras v_tex.w >> 20 */\n"
+    "uniform usampler2D u_atlas; uniform ivec4 u_up[128];\n"
     "in vec2 v_uv; in vec3 v_col; in vec2 v_pos; flat in ivec4 v_tex; flat in vec4 v_uvr;\n"
     "const float DITHER[16] = float[16](-4.0, 0.0, -3.0, 1.0, 2.0, -2.0, 3.0, -1.0, -3.0, 1.0, -4.0, 0.0, 3.0, -1.0, 2.0, -2.0);\n"
     "float dith(int flags) { if (u_dither == 0 || (flags & 16) == 0) return 0.0;\n"
     "  ivec2 p = ivec2(floor(v_pos - u_delta * (dFdx(v_pos) + dFdy(v_pos)) + 0.001)); return DITHER[(p.y & 3) * 4 + (p.x & 3)]; }\n"
-    "out vec4 o;\n"
+    "layout(location = 0) out vec4 o;\n"
+    "layout(location = 1) out vec4 m;   /* bit 15 que deja el pixel (alfa), para las imagenes conservadas */\n"
     "/* salida con la semitransparencia de la primitiva (abr) resuelta por el alfa: la mezcla es\n"
     " * siempre ONE, ONE_MINUS_SRC_ALPHA (opaco: alfa 1; abr 0: F/2 + B/2; 1: F + B; 3: F/4 + B);\n"
     " * abr 2 (B - F) va con su propia mezcla (resta) */\n"
     "void put(vec3 c, bool semi, int abr) {\n"
     "  if (!semi || abr == 2) o = vec4(c, 1.0); else if (abr == 0) o = vec4(c * 0.5, 0.5);\n"
     "  else if (abr == 1) o = vec4(c, 0.0); else o = vec4(c * 0.25, 0.0); }\n"
-    "uint fetch(int x, int y) { return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r; }\n"
+    "uint fetch(int x, int y) {\n"
+    "  x &= 1023; y &= 511;\n"
+    "  for (int i = (v_tex.w >> 20) - 1; i >= 0; i--) {   /* la subida mas reciente que la cubre */\n"
+    "    ivec4 r = u_up[i]; int rx = r.x & 0xFFFF, ry = r.x >> 16;\n"
+    "    if (x >= rx && y >= ry && x < rx + (r.y & 0xFFFF) && y < ry + (r.y >> 16))\n"
+    "      return texelFetch(u_atlas, ivec2((r.z & 0xFFFF) + x - rx, (r.z >> 16) + y - ry), 0).r;\n"
+    "  }\n"
+    "  return texelFetch(u_vram, ivec2(x, y), 0).r; }\n"
     "vec3 x5(uint c) { vec3 v = vec3(float(c & 31u), float((c >> 5) & 31u), float((c >> 10) & 31u));\n"
     "  return (v * 8.0 + floor(v / 4.0)) / 255.0; }\n"
     "void main() {\n"
     "  int flags = (v_tex.z >> 4) & 255, depth = v_tex.z & 15, abr = (v_tex.z >> 12) & 3; bool semi = (flags & 4) != 0;\n"
+    "  bool mset = (flags & 32) != 0; m = vec4(0.0, 0.0, 0.0, mset ? 1.0 : 0.0);\n"
     "  vec2 uv = v_uv - u_delta * (dFdx(v_uv) + dFdy(v_uv));\n"
     "  if ((flags & 128) == 0) uv = clamp(uv, v_uvr.xy, v_uvr.zw);   /* sin salirse de la textura del poligono */\n"
     "  vec3 col = v_col - u_delta * (dFdx(v_col) + dFdy(v_col));\n"
     "  if ((flags & 128) != 0) { uint d = fetch(int(floor(uv.x + 0.001)), int(floor(uv.y + 0.001))); bool s = (d & 0x8000u) != 0u;\n"
-    "    if ((u_pass == 1 && s) || (u_pass == 2 && !s)) discard; o = vec4(x5(d), 1.0); return; }\n"
+    "    if ((u_pass == 1 && s) || (u_pass == 2 && !s)) discard; o = vec4(x5(d), 1.0); m.a = s || mset ? 1.0 : 0.0; return; }\n"
     "  if ((flags & 1) == 0) {\n"
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
     "  int u = int(floor(uv.x + 0.001)) & 255, v = int(floor(uv.y + 0.001)) & 255;\n"
-    "  int tw = v_tex.w, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
+    "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
     "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
     "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
     "  uint t;\n"
@@ -73,6 +85,7 @@ static const char *FS =
     "  else t = fetch(tpx + u, tpy + v);\n"
     "  if (t == 0u) discard;\n"
     "  bool stp = (t & 0x8000u) != 0u;\n"
+    "  m.a = stp || mset ? 1.0 : 0.0;\n"
     "  if (u_pass == 1 && stp) discard;\n"
     "  if (u_pass == 2 && !stp) discard;\n"
     "  if ((flags & 2) != 0) { put(x5(t), semi && stp, abr); return; }\n"
@@ -82,6 +95,26 @@ static const char *FS =
     "}\n";
 
 static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
+/* atlas de las subidas (paso 3b): sin subidas a mitad de imagen, que en la GPU por baldosas cortan el
+ * dibujo (medido en la Retroid: de 54,6 a 59,6 fps al quitarlas) */
+#define NATLAS 128
+static GLuint g_atlas[3];
+static GLint u_atlas, u_up;
+static int g_epoch;                 /* subidas de la lista ya vistas (en el atlas) */
+static int32_t g_up[NATLAS][4];
+static uint16_t *g_upslot;          /* por primitiva: 1 + su sitio en el atlas (UPLOAD) */
+static int g_upcap;
+int psx_hw_stat_atlas;
+/* etapa 8, paso 2: cada imagen de la VRAM (doble bufer) se conserva en la GPU, color y bit de
+ * mascara (stencil), como en una GPU de verdad: las reales se dibujan encima de la suya y las
+ * intermedias parten de una copia */
+#define NTARGET 4
+typedef struct { int x0, y0, w, h, scale, valid; unsigned use; GLuint tex, mask, stencil, fbo; } Target;
+static Target g_tg[NTARGET];
+static GLuint g_cprog, g_cvao, g_cvbo, g_vfbo;   /* copia de una imagen conservada a la textura de la VRAM */
+static GLuint g_sprog;                           /* stencil (bit 15) desde el segundo bufer de una imagen conservada */
+static unsigned g_tg_use;
+static GLuint g_last_tex, g_read_fbo;   /* lo que devuelven psx_hw_texture y psx_hw_read */
 /* la VRAM como textura: tres que se turnan (la que se rellena no la esta leyendo la GPU para una
  * imagen anterior) y, de cada una, una copia de lo que tiene, para subir solo las franjas de 16
  * filas que cambian */
@@ -156,6 +189,15 @@ int psx_hw_init(void) {
         g_shadow[i] = NULL;   /* sin copia: la primera vez se sube entera */
     }
     g_vram = g_vtex[0];
+    glGenTextures(3, g_atlas);
+    for (int i = 0; i < 3; i++) {
+        glBindTexture(GL_TEXTURE_2D, g_atlas[i]);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R16UI, 1024, 1024);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+    u_atlas = glGetUniformLocation(g_prog, "u_atlas");
+    u_up = glGetUniformLocation(g_prog, "u_up");
     glGenFramebuffers(1, &g_fbo);
     return 0;
 }
@@ -165,15 +207,25 @@ void psx_hw_shutdown(void) {
     glDeleteVertexArrays(1, &g_vao);
     glDeleteBuffers(1, &g_vbo);
     glDeleteTextures(NVTEX, g_vtex);
+    glDeleteTextures(3, g_atlas);
     for (int i = 0; i < NVTEX; i++) { free(g_shadow[i]); g_shadow[i] = NULL; }
     if (g_out) glDeleteTextures(1, &g_out);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
     glDeleteFramebuffers(1, &g_fbo);
+    for (int i = 0; i < NTARGET; i++)
+        if (g_tg[i].fbo) {
+            glDeleteFramebuffers(1, &g_tg[i].fbo); glDeleteTextures(1, &g_tg[i].tex); glDeleteTextures(1, &g_tg[i].mask);
+            glDeleteRenderbuffers(1, &g_tg[i].stencil);
+        }
+    memset(g_tg, 0, sizeof g_tg);
+    if (g_cprog) { glDeleteProgram(g_cprog); glDeleteVertexArrays(1, &g_cvao); glDeleteBuffers(1, &g_cvbo); glDeleteFramebuffers(1, &g_vfbo); }
+    g_cprog = 0;
     free(g_buf);
     g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_stencil = 0; g_ow = g_oh = 0;
 }
 
-int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;   /* medicion: llamadas por imagen */
+int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
+int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */   /* medicion: llamadas por imagen */
 
 /* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
  * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
@@ -200,8 +252,9 @@ static void apply(const Cmd *c) {
     }
     if (memcmp(c->sc, g_asc, sizeof g_asc)) { glScissor(c->sc[0], c->sc[1], c->sc[2], c->sc[3]); memcpy(g_asc, c->sc, sizeof g_asc); }
     if (c->cls != g_acls) {
-        if (c->cls == 1) { glBlendEquation(GL_FUNC_REVERSE_SUBTRACT); glBlendFunc(GL_ONE, GL_ONE); }
-        else { glBlendEquation(GL_FUNC_ADD); glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); }
+        /* el alfa se reemplaza siempre: en las imagenes conservadas, el del segundo bufer es el bit 15 */
+        if (c->cls == 1) { glBlendEquationSeparate(GL_FUNC_REVERSE_SUBTRACT, GL_FUNC_ADD); glBlendFuncSeparate(GL_ONE, GL_ONE, GL_ONE, GL_ZERO); }
+        else { glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD); glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO); }
         g_acls = c->cls;
     }
     if (c->pass != g_apass) { glUniform1i(u_pass, c->pass); g_apass = c->pass; }
@@ -244,6 +297,11 @@ static void state(int ax1, int ay1, int ax2, int ay2, int cls, int pass, int st)
         Cmd *c = &g_cmd[g_ncmd - 1];
         if (!memcmp(sc, c->sc, sizeof sc) && cls == c->cls && pass == c->pass && st == c->st) return;
         if (c->first == g_n) { memcpy(c->sc, sc, sizeof sc); c->cls = cls; c->pass = pass; c->st = st; return; }
+        /* medida: por que se corta el lote */
+        if (memcmp(sc, c->sc, sizeof sc)) psx_hw_stat_cut[0]++;
+        if (cls != c->cls) psx_hw_stat_cut[1]++;
+        if (pass != c->pass) psx_hw_stat_cut[2]++;
+        if (st != c->st) psx_hw_stat_cut[3]++;
     }
     if (g_ncmd == g_capcmd) {
         g_capcmd = g_capcmd * 2 + 256;
@@ -268,8 +326,9 @@ static HwVert *push(int k) {
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
     t[0] = p->tp_x | p->tp_y << 16;
     t[1] = p->clut_x | p->clut_y << 16;
+    if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | g_epoch << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {
@@ -346,9 +405,113 @@ static void bbox(const PsxHwPrim *p, int *x1, int *y1, int *x2, int *y2) {
     } else { *x1 = p->x[0]; *y1 = p->y[0]; *x2 = p->x[0] + p->x[1]; *y2 = p->y[0] + p->y[1]; }
 }
 
+/* etapa 8, paso 3b: subidas adelantadas. Cada UPLOAD a mitad de la imagen corta el dibujo (en la
+ * GPU por baldosas de la Retroid, guarda y vuelve a cargar la imagen entera: unos 20 ms por imagen
+ * con 16-60 subidas). La que nada de lo anterior de la lista lee (textura, paleta u origen de una
+ * copia) se sube al principio */
+int psx_hw_hoist_all, psx_hw_no_maskpass, psx_hw_onepass;   /* medidas (app, modos de prueba) */
+static uint8_t *g_hoist;
+static int g_hoist_cap;
+int psx_hw_stat_hoisted, psx_hw_stat_inframe;
+static int read_rect(const PsxHwPrim *p, int r[4]) {   /* lo que lee de la VRAM (inclusivo); 0 si nada */
+    if (p->kind == PSX_HW_VRAM) { r[0] = p->clut_x; r[1] = p->clut_y; r[2] = p->clut_x + p->x[1] - 1; r[3] = p->clut_y + p->y[1] - 1; return 1; }
+    if (!(p->flags & PSX_HWF_TEX) || (p->kind != PSX_HW_TRI && p->kind != PSX_HW_RECT)) return 0;
+    if (p->tw_mx || p->tw_my) { r[0] = p->tp_x; r[1] = p->tp_y; r[2] = p->tp_x + 255; r[3] = p->tp_y + 255; return 1; }   /* ventana: la pagina */
+    int u1 = 255, u2 = 0, v1 = 255, v2 = 0;
+    if (p->kind == PSX_HW_RECT) {
+        u1 = p->u[0]; v1 = p->v[0]; u2 = u1 + p->x[1] - 1; v2 = v1 + p->y[1] - 1;
+        if (u2 > 255) u1 = 0, u2 = 255;
+        if (v2 > 255) v1 = 0, v2 = 255;
+    } else
+        for (int i = 0; i < 3; i++) {
+            if (p->u[i] < u1) u1 = p->u[i];
+            if (p->u[i] > u2) u2 = p->u[i];
+            if (p->v[i] < v1) v1 = p->v[i];
+            if (p->v[i] > v2) v2 = p->v[i];
+        }
+    int sh = p->depth == 0 ? 2 : p->depth == 1 ? 1 : 0;
+    r[0] = p->tp_x + (u1 >> sh); r[1] = p->tp_y + v1; r[2] = p->tp_x + (u2 >> sh); r[3] = p->tp_y + v2;
+    return 1;
+}
+static int clut_rect(const PsxHwPrim *p, int r[4]) {
+    if (!(p->flags & PSX_HWF_TEX) || p->depth >= 2 || (p->kind != PSX_HW_TRI && p->kind != PSX_HW_RECT)) return 0;
+    r[0] = p->clut_x; r[1] = p->clut_y; r[2] = p->clut_x + (p->depth ? 255 : 15); r[3] = p->clut_y;
+    return 1;
+}
+static int overlap(const int a[4], int x1, int y1, int x2, int y2) { return a[2] >= x1 && a[0] <= x2 && a[3] >= y1 && a[1] <= y2; }
+static void plan_hoist(const PsxHwList *l) {
+    if (g_hoist_cap < l->n) { free(g_hoist); g_hoist_cap = l->n + 4096; g_hoist = malloc((size_t)g_hoist_cap); }
+    if (!g_hoist) return;
+    memset(g_hoist, 0, (size_t)l->n);
+    static int (*rr)[4];
+    static int rcap;
+    if (rcap < l->n * 2) { free(rr); rcap = l->n * 2 + 4096; rr = malloc((size_t)rcap * sizeof *rr); }
+    if (!rr) return;
+    int nr = 0, any_kept = 0;
+    for (int i = 0; i < l->n; i++) {
+        const PsxHwPrim *p = &l->p[i];
+        if (p->kind == PSX_HW_UPLOAD) {
+            int x1 = p->x[0], y1 = p->y[0], x2 = p->x[0] + p->x[1] - 1, y2 = p->y[0] + p->y[1] - 1, ok = 1;
+            for (int k = 0; k < nr && ok; k++) if (overlap(rr[k], x1, y1, x2, y2)) ok = 0;
+            /* tras una que se queda en su sitio, las que se le solapan tampoco se adelantan (orden) */
+            if (ok && any_kept)
+                for (int j = 0; j < i && ok; j++)
+                    if (l->p[j].kind == PSX_HW_UPLOAD && !g_hoist[j] &&
+                        overlap((int[4]){l->p[j].x[0], l->p[j].y[0], l->p[j].x[0] + l->p[j].x[1] - 1, l->p[j].y[0] + l->p[j].y[1] - 1}, x1, y1, x2, y2)) ok = 0;
+            if (psx_hw_hoist_all) ok = 1;   /* medida (no para jugar): todas adelantadas */
+            g_hoist[i] = (uint8_t)ok;
+            if (!ok) any_kept = 1;
+            continue;
+        }
+        if (read_rect(p, rr[nr])) nr++;
+        if (clut_rect(p, rr[nr])) nr++;
+    }
+}
+
+/* por primitiva: alguna posterior que comprueba la mascara la toca (recorrido hacia atras con sus
+ * cajas; mas de 256, en una sola caja que las cubre) */
+static uint8_t *g_exact;
+static int g_exact_cap;
+static void plan_exact(const PsxHwList *l) {
+    if (g_exact_cap < l->n) { free(g_exact); g_exact_cap = l->n + 4096; g_exact = malloc((size_t)g_exact_cap); }
+    if (!g_exact) return;
+    enum { NR = 256 };
+    static int r[NR + 1][4];
+    int nr = 0;
+    for (int i = l->n - 1; i >= 0; i--) {
+        const PsxHwPrim *p = &l->p[i];
+        int x1, y1, x2, y2, hit = 0;
+        if (p->kind == PSX_HW_UPLOAD) { g_exact[i] = 0; continue; }
+        bbox(p, &x1, &y1, &x2, &y2);
+        for (int k = 0; k < nr && !hit; k++) hit = x2 >= r[k][0] && x1 <= r[k][2] && y2 >= r[k][1] && y1 <= r[k][3];
+        g_exact[i] = (uint8_t)hit;
+        if (p->flags & PSX_HWF_MASKCHK) {   /* las anteriores a esta tienen que dejar el bit 15 exacto donde ella mira */
+            if (nr < NR) { r[nr][0] = x1; r[nr][1] = y1; r[nr][2] = x2; r[nr][3] = y2; nr++; }
+            else {
+                if (x1 < r[NR - 1][0]) r[NR - 1][0] = x1;
+                if (y1 < r[NR - 1][1]) r[NR - 1][1] = y1;
+                if (x2 > r[NR - 1][2]) r[NR - 1][2] = x2;
+                if (y2 > r[NR - 1][3]) r[NR - 1][3] = y2;
+            }
+        }
+    }
+}
+
+static void apply_upload(const PsxHwPrim *p);
+static void draw_prim_2(const PsxHwPrim *p, int index);
 static void draw_prim(const PsxHwPrim *p, int index) {
+    if (p->kind == PSX_HW_UPLOAD && g_upslot && g_upslot[index]) { g_epoch = g_upslot[index]; return; }   /* en el atlas */
+    if (p->kind == PSX_HW_UPLOAD && g_hoist && g_hoist[index]) return;   /* ya subida al principio */
     if (p->kind == PSX_HW_UPLOAD) {   /* la VRAM del software cambio fuera de la imagen: a la textura */
+        psx_hw_stat_inframe++;
         flush();
+        apply_upload(p);
+        return;
+    }
+    draw_prim_2(p, index);
+}
+static void apply_upload(const PsxHwPrim *p) {
+    {
         glBindTexture(GL_TEXTURE_2D, g_vram);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
         glTexSubImage2D(GL_TEXTURE_2D, 0, p->x[0], p->y[0], p->x[1], p->y[1], GL_RED_INTEGER, GL_UNSIGNED_SHORT,
@@ -358,8 +521,10 @@ static void draw_prim(const PsxHwPrim *p, int index) {
         if (sh && p->x[0] >= 0 && p->y[0] >= 0 && p->x[0] + p->x[1] <= 1024 && p->y[0] + p->y[1] <= 512)
             for (int y = 0; y < p->y[1]; y++)
                 memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
-        return;
     }
+}
+static void draw_prim_2(const PsxHwPrim *p, int index) {
+    (void)index;
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
     int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
     int32_t t[4];
@@ -372,14 +537,20 @@ static void draw_prim(const PsxHwPrim *p, int index) {
      * la mascara y si toca su zona */
     int exact = 0;
     if (g_track && index <= g_clast && (tex || vram)) {
-        int x1, y1, x2, y2;
-        bbox(p, &x1, &y1, &x2, &y2);
-        exact = x2 >= g_cx1 && x1 <= g_cx2 && y2 >= g_cy1 && y1 <= g_cy2;
+        /* (paso 3b) solo si alguna primitiva posterior que comprueba la mascara la toca: con la
+         * caja de todas juntas (radar arriba, linea del HUD abajo) casi todo iba en dos pasadas y
+         * miles de llamadas por imagen en la Retroid */
+        if (g_exact) exact = g_exact[index];
+        else {
+            int x1, y1, x2, y2;
+            bbox(p, &x1, &y1, &x2, &y2);
+            exact = x2 >= g_cx1 && x1 <= g_cx2 && y2 >= g_cy1 && y1 <= g_cy2;
+        }
     }
     /* la semitransparencia va en el shader (una pasada), salvo la resta (abr 2) con textura: sus
      * texeles opacos con la mezcla comun y los semitransparentes con la resta */
     int sub = semi && p->abr == 2;
-    if ((sub && tex) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
+    if ((sub && tex && !psx_hw_onepass) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
     for (int k = 0; k < np; k++) {
         int pass = passes[k], cls = sub && (!tex || pass == 2) ? 1 : 0;
@@ -469,7 +640,186 @@ static void draw_prim(const PsxHwPrim *p, int index) {
     }
 }
 
+static Target *target(int x0, int y0, int w, int h, int scale) {
+    Target *t = NULL;
+    for (int i = 0; i < NTARGET; i++)
+        if (g_tg[i].fbo && g_tg[i].x0 == x0 && g_tg[i].y0 == y0 && g_tg[i].w == w && g_tg[i].h == h && g_tg[i].scale == scale) t = &g_tg[i];
+    if (!t) {   /* uno nuevo, o el menos usado */
+        t = &g_tg[0];
+        for (int i = 1; i < NTARGET; i++) if (g_tg[i].use < t->use) t = &g_tg[i];
+        if (!t->fbo) { glGenFramebuffers(1, &t->fbo); glGenTextures(1, &t->tex); glGenTextures(1, &t->mask); glGenRenderbuffers(1, &t->stencil); }
+        else { glDeleteTextures(1, &t->tex); glGenTextures(1, &t->tex); glDeleteTextures(1, &t->mask); glGenTextures(1, &t->mask); }
+        glBindTexture(GL_TEXTURE_2D, t->mask);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w * scale, h * scale);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, t->tex);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, w * scale, h * scale);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glBindRenderbuffer(GL_RENDERBUFFER, t->stencil);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, w * scale, h * scale);
+        glBindFramebuffer(GL_FRAMEBUFFER, t->fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, t->tex, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, t->mask, 0);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, t->stencil);
+        static const GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glDrawBuffers(2, bufs);
+        t->x0 = x0; t->y0 = y0; t->w = w; t->h = h; t->scale = scale; t->valid = 0;
+    }
+    t->use = ++g_tg_use;
+    return t;
+}
+
+/* etapa 8, paso 2: una imagen conservada, a la textura de la VRAM (15 bits, bit de mascara a 0),
+ * para las listas que la leen como textura (efectos con la imagen anterior). Solo en la GPU */
+static const char *CVS =
+    "#version 300 es\n"
+    "layout(location = 0) in vec2 a_pos;\n"
+    "void main() { gl_Position = vec4(a_pos.x / 512.0 - 1.0, a_pos.y / 256.0 - 1.0, 0.0, 1.0); }\n";
+static const char *CFS =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "uniform sampler2D u_src, u_msk;\n"
+    "uniform ivec2 u_org;\n"
+    "uniform int u_scale;\n"
+    "out uvec4 o;\n"
+    "void main() {\n"
+    "  ivec2 p = (ivec2(gl_FragCoord.xy) - u_org) * u_scale;\n"
+    "  uvec3 c = uvec3(texelFetch(u_src, p, 0).rgb * 255.0 + 0.5) >> 3u;\n"
+    "  uint s = texelFetch(u_msk, p, 0).a > 0.5 ? 0x8000u : 0u;\n"
+    "  o = uvec4(c.r | (c.g << 5u) | (c.b << 10u) | s, 0u, 0u, 0u);\n"
+    "}\n";
+static GLint u_csrc, u_cmsk, u_corg, u_cscale;
+static GLuint shader(GLenum type, const char *src);
+static void copy_init(void) {
+    g_cprog = glCreateProgram();
+    glAttachShader(g_cprog, shader(GL_VERTEX_SHADER, CVS));
+    glAttachShader(g_cprog, shader(GL_FRAGMENT_SHADER, CFS));
+    glLinkProgram(g_cprog);
+    u_csrc = glGetUniformLocation(g_cprog, "u_src");
+    u_cmsk = glGetUniformLocation(g_cprog, "u_msk");
+    u_corg = glGetUniformLocation(g_cprog, "u_org");
+    u_cscale = glGetUniformLocation(g_cprog, "u_scale");
+    glGenVertexArrays(1, &g_cvao);
+    glGenBuffers(1, &g_cvbo);
+    glBindVertexArray(g_cvao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_cvbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, 0);
+    glBindVertexArray(0);
+    glGenFramebuffers(1, &g_vfbo);
+}
+/* el stencil de la imagen que se dibuja, desde el bit 15 exacto del segundo bufer de la conservada
+ * (el stencil que hereda solo es aproximado fuera de la zona que comprueba la mascara: sin el bit
+ * de los texeles; las llamas de los motores dejaban pasar la linea del HUD encima) */
+static const char *SVS =
+    "#version 300 es\n"
+    "layout(location = 0) in vec2 a_pos;\n"
+    "void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+static const char *SFS =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "uniform sampler2D u_msk;\n"
+    "out vec4 o;\n"
+    "void main() { if (texelFetch(u_msk, ivec2(gl_FragCoord.xy), 0).a < 0.5) discard; o = vec4(0.0); }\n";
+static void stencil_from_mask(GLuint mask, int ow, int oh) {
+    if (!g_cprog) copy_init();
+    if (!g_sprog) {
+        g_sprog = glCreateProgram();
+        glAttachShader(g_sprog, shader(GL_VERTEX_SHADER, SVS));
+        glAttachShader(g_sprog, shader(GL_FRAGMENT_SHADER, SFS));
+        glLinkProgram(g_sprog);
+    }
+    glViewport(0, 0, ow, oh);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glClearStencil(0);
+    glClear(GL_STENCIL_BUFFER_BIT);
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glStencilMask(0xFF);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glUseProgram(g_sprog);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, mask);
+    glUniform1i(glGetUniformLocation(g_sprog, "u_msk"), 2);
+    static const float q[12] = {-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1};
+    glBindVertexArray(g_cvao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_cvbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof q, q, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDisable(GL_STENCIL_TEST);
+    glActiveTexture(GL_TEXTURE0);
+}
+
+static void read_zones(const PsxHwList *l, int scale) {
+    for (int k = 0; k < l->nread; k++) {
+        int x1 = l->read[k][0], y1 = l->read[k][1], x2 = l->read[k][2], y2 = l->read[k][3];
+        Target *t = NULL;
+        for (int i = 0; i < NTARGET; i++)
+            if (g_tg[i].fbo && g_tg[i].valid && g_tg[i].scale == scale && g_tg[i].x0 == x1 && g_tg[i].y0 == y1 &&
+                g_tg[i].w == x2 - x1 + 1 && g_tg[i].h == y2 - y1 + 1) t = &g_tg[i];
+        if (!t) continue;
+        if (!g_cprog) copy_init();
+        glBindFramebuffer(GL_FRAMEBUFFER, g_vfbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_vram, 0);
+        glViewport(0, 0, 1024, 512);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_SCISSOR_TEST);
+        glDisable(GL_BLEND);
+        glDisable(GL_STENCIL_TEST);
+        glUseProgram(g_cprog);
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, t->tex);
+        glUniform1i(u_csrc, 1);
+        glActiveTexture(GL_TEXTURE2);
+        glBindTexture(GL_TEXTURE_2D, t->mask);
+        glUniform1i(u_cmsk, 2);
+        glUniform2i(u_corg, t->x0, t->y0);
+        glUniform1i(u_cscale, scale);
+        float X1 = (float)x1, Y1 = (float)y1, X2 = (float)(x2 + 1), Y2 = (float)(y2 + 1);
+        float q[12] = {X1, Y1, X2, Y1, X1, Y2, X2, Y1, X2, Y2, X1, Y2};
+        glBindVertexArray(g_cvao);
+        glBindBuffer(GL_ARRAY_BUFFER, g_cvbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof q, q, GL_STREAM_DRAW);
+        if (getenv("PSX_HW_COPYDBG")) fprintf(stderr, "psx_hw: antes de dibujar, error GL %#x\n", glGetError());
+        glDrawArrays(GL_TRIANGLES, 0, 6);
+        if (getenv("PSX_HW_COPYDBG")) {
+            fprintf(stderr, "psx_hw: tras dibujar, error GL %#x\n", glGetError());
+            GLuint px[4] = {0};
+            glReadPixels(x1 + 100, y1 + 100, 1, 1, GL_RGBA_INTEGER, GL_UNSIGNED_INT, px);
+            uint8_t c[4] = {0};
+            glBindFramebuffer(GL_READ_FRAMEBUFFER, t->fbo);
+            glReadPixels(100 * scale, 100 * scale, 1, 1, GL_RGBA, GL_UNSIGNED_BYTE, c);
+            fprintf(stderr, "psx_hw: copia (%d,%d): vram %04x, imagen %d,%d,%d; error GL %#x, fbo %#x\n", x1, y1, px[0], c[0], c[1], c[2], glGetError(),
+                    glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER));
+        }
+        glBindVertexArray(0);
+        glActiveTexture(GL_TEXTURE0);
+        /* la copia de lo que tiene la textura ya no vale ahi: que se vuelva a subir la proxima vez */
+        uint16_t *sh = g_shadow[g_ring];
+        if (sh)
+            for (int y = y1; y <= y2 && y < 512; y++)
+                for (int x = x1; x <= x2 && x < 1024; x++) sh[y * 1024 + x] = (uint16_t)~sh[y * 1024 + x];
+        psx_hw_stat_uploads++;
+    }
+}
+
+static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale, int real, int stale);
 void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale) {
+    frame(l, bg, x0, y0, w, h, scale, 0, 0);
+}
+void psx_hw_frame_ex(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale, int real) {
+    frame(l, bg, x0, y0, w, h, scale, real, l->main_stale);
+}
+
+static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w, int h, int scale, int real, int stale) {
     g_list = l;
     int ow = w * scale, oh = h * scale;
     if (ow != g_ow || oh != g_oh) {
@@ -490,7 +840,19 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
         g_ow = ow; g_oh = oh;
     }
     g_scale = scale; g_x0 = x0; g_y0 = y0;
-    glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
+    /* destino: la imagen conservada (real) o g_out (intermedia, o sin conservar). Base: la VRAM del
+     * software, o la imagen conservada si el software no la tiene al dia */
+    Target *tg = real || stale ? target(x0, y0, w, h, scale) : NULL;
+    int keep = tg && stale && tg->valid;   /* se parte de la imagen conservada */
+    GLuint dst = real ? tg->fbo : g_fbo;
+    if (keep && !real) {
+        glBindFramebuffer(GL_READ_FRAMEBUFFER, tg->fbo);
+        glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_fbo);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+    }
+    g_last_tex = real ? tg->tex : g_out;
+    glBindFramebuffer(GL_FRAMEBUFFER, dst);
+    if (keep && !psx_hw_no_maskpass) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
     glUseProgram(g_prog);
     glUniform2f(u_origin, (float)x0, (float)y0);
@@ -506,8 +868,8 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
     glEnable(GL_SCISSOR_TEST);
     glEnable(GL_BLEND);
-    glBlendEquation(GL_FUNC_ADD);
-    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glBlendEquationSeparate(GL_FUNC_ADD, GL_FUNC_ADD);
+    glBlendFuncSeparate(GL_ONE, GL_ONE_MINUS_SRC_ALPHA, GL_ONE, GL_ZERO);
     glDisable(GL_STENCIL_TEST);
     g_asc[0] = g_asc[1] = g_asc[2] = g_asc[3] = -1;
     g_acls = 0; g_apass = -1; g_ast = -1;
@@ -525,18 +887,72 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
             g_clast = i;
             g_track = 1;
         }
+    static int oldexact = -1;   /* prueba: PSX_HW_OLDEXACT=1, la caja de todas (antes del paso 3b) */
+    if (oldexact < 0) oldexact = getenv("PSX_HW_OLDEXACT") != NULL;
+    if (!oldexact) plan_exact(l);
+    else { free(g_exact); g_exact = NULL; g_exact_cap = 0; }
     static int nomask = -1;   /* prueba del comparador (caso positivo conocido): sin bit de mascara */
     if (nomask < 0) nomask = getenv("PSX_HW_NOMASK") != NULL;
     if (nomask) g_track = 0;
     /* fondo y texturas de partida: la VRAM de antes de la lista (con su bit 15 en el stencil) */
     upload(bg);
+    static int nohoist = -1;   /* prueba: PSX_HW_NOHOIST=1, sin adelantar subidas */
+    if (nohoist < 0) nohoist = getenv("PSX_HW_NOHOIST") != NULL;
+    /* las subidas de la lista, al atlas (en orden; las que no caben, a mitad de imagen como antes) */
+    static int noatlas = -1;   /* prueba: PSX_HW_NOATLAS=1 */
+    if (noatlas < 0) noatlas = getenv("PSX_HW_NOATLAS") != NULL;
+    if (g_upcap < l->n) { free(g_upslot); g_upcap = l->n + 4096; g_upslot = malloc((size_t)g_upcap * 2); }
+    if (g_upslot) memset(g_upslot, 0, (size_t)l->n * 2);
+    int nup = 0;
+    if (g_upslot && !noatlas) {
+        int ax = 0, ay = 0, rowh = 0;
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, g_atlas[g_ring % 3]);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+        for (int i = 0; i < l->n && nup < NATLAS; i++) {
+            const PsxHwPrim *p = &l->p[i];
+            if (p->kind != PSX_HW_UPLOAD) continue;
+            int w = p->x[1], h = p->y[1];
+            if (w <= 0 || h <= 0 || w > 1024 || h > 1024) continue;
+            if (ax + w > 1024) { ax = 0; ay += rowh; rowh = 0; }
+            if (ay + h > 1024) break;   /* lleno: el resto, a mitad de imagen */
+            glTexSubImage2D(GL_TEXTURE_2D, 0, ax, ay, w, h, GL_RED_INTEGER, GL_UNSIGNED_SHORT, l->data + p->data_off);
+            g_up[nup][0] = (p->x[0] & 0xFFFF) | (p->y[0] << 16); g_up[nup][1] = w | (h << 16); g_up[nup][2] = ax | (ay << 16); g_up[nup][3] = 0;
+            g_upslot[i] = (uint16_t)(++nup);
+            ax += w;
+            if (h > rowh) rowh = h;
+            psx_hw_stat_atlas++;
+        }
+        glActiveTexture(GL_TEXTURE0);
+    }
+    g_epoch = 0;
+    if (!nohoist && !nup) plan_hoist(l);
+    else if (g_hoist) memset(g_hoist, 0, (size_t)(l->n < g_hoist_cap ? l->n : g_hoist_cap));
+    if (g_hoist && !nohoist)
+        for (int i = 0; i < l->n; i++)
+            if (g_hoist[i]) { apply_upload(&l->p[i]); psx_hw_stat_hoisted++; }
+    if (l->nread) {   /* lo que solo tiene la GPU y la lista lee, a la textura; despues, el estado de antes */
+        read_zones(l, scale);
+        glBindFramebuffer(GL_FRAMEBUFFER, dst);
+        glViewport(0, 0, ow, oh);
+        glUseProgram(g_prog);
+        glBindVertexArray(g_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+        glEnable(GL_SCISSOR_TEST);
+        glEnable(GL_BLEND);
+        glBindTexture(GL_TEXTURE_2D, g_vram);
+    }
     int32_t t[4] = {0, 0, F_DIRECT << 4, 0};
-    for (int pass = g_track ? 1 : 0; pass <= (g_track ? 2 : 0); pass++) {
+    if (tg) g_track = 1;   /* imagen conservada: su stencil debe seguir al bit 15 para la imagen siguiente */
+    for (int pass = g_track ? 1 : 0; !keep && pass <= (g_track ? 2 : 0); pass++) {
         state(0, 0, -1, -1, 0, pass, g_track ? pass == 2 : -1);
         quad((float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), (float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), 0, 0, 0, t);
     }
     flush();
-    /* primitivas; las UPLOAD actualizan la textura en su sitio */
+    glUseProgram(g_prog);
+    glUniform1i(u_atlas, 3);
+    if (nup) glUniform4iv(u_up, nup, &g_up[0][0]);
+    /* primitivas; las UPLOAD actualizan la textura en su sitio (las adelantadas ya estan) */
     for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
     flush();
     glDisable(GL_SCISSOR_TEST);
@@ -544,16 +960,34 @@ void psx_hw_frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glDisable(GL_STENCIL_TEST);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    if (real) tg->valid = 1;
+    g_read_fbo = real ? tg->fbo : g_fbo;
 }
 
 unsigned psx_hw_texture(int *w, int *h) {
     if (w) *w = g_ow;
     if (h) *h = g_oh;
-    return g_out;
+    return g_last_tex;
+}
+
+/* pruebas: el bit 15 que guarda la imagen conservada de la ultima lista dibujada (1 byte por pixel) */
+int psx_hw_read_mask(uint8_t *out) {
+    Target *t = NULL;
+    for (int i = 0; i < NTARGET; i++) if (g_tg[i].fbo == g_read_fbo) t = &g_tg[i];
+    if (!t) return -1;
+    static uint32_t *tmp;
+    if (!tmp) tmp = malloc(1024 * 512 * 4);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, t->fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+    glReadPixels(0, 0, g_ow, g_oh, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    for (int i = 0; i < g_ow * g_oh; i++) out[i] = (tmp[i] >> 24) > 127;
+    return 0;
 }
 
 void psx_hw_read(uint32_t *out) {
-    glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_read_fbo);
     glReadPixels(0, 0, g_ow, g_oh, GL_RGBA, GL_UNSIGNED_BYTE, out);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

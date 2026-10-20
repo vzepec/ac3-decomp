@@ -10,6 +10,7 @@ algunas capturas software | GLES | mapa (c<VBlank>.ppm) en <salida>/<N>/.
 
 Uso:
     python3 tools/hwcmp.py <imagen_del_disco> <salida> [misiones] [procesos] [--eu]
+HWCMP_GUION=... cambia el guion (formato de tools/misiones.py).
 Devuelve 0 si ninguna lista tiene bloques malos.
 """
 import os
@@ -36,6 +37,7 @@ def main():
     ms = misiones.parse(args[2]) if len(args) > 2 else list(range(41))
     nproc = int(args[3]) if len(args) > 3 else 2
     guion, frames = (misiones.GUION_EU, misiones.FRAMES_EU) if eu else (misiones.GUION, misiones.FRAMES)
+    guion = os.environ.get('HWCMP_GUION', guion)   # otro guion (p. ej. con la vista exterior y el postquemador)
     exe = os.path.join(ROOT, 'psx', 'build', 'ac3_libre')
     os.makedirs(out, exist_ok=True)
     pending, running, results = list(ms), {}, {}

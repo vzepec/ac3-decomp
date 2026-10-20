@@ -48,7 +48,7 @@ done
 [ "${REGIONS#*us}" = "$REGIONS" ] || [ -f "$ROOT/data/recomp_us/ac3_region.h" ] || { echo "falta data/recomp_us/ac3_region.h: make us-prep"; exit 1; }
 
 rm -rf "$B" && mkdir -p "$B/apk/lib/arm64-v8a" "$B/obj"
-CF="-fPIC -w -I$ROOT/psx/include -I$ROOT/psx/recomp"
+CF="-fPIC -w -I$ROOT/psx/include -I$ROOT/psx/recomp $EXTRA_CF"
 # ACE.BIN incrustado: ace_image (EU) y ace_image_us
 : > "$B/ace_image.S"
 for r in $REGIONS; do
@@ -81,7 +81,7 @@ for r in $REGIONS; do
         $CC -O2 $CF -c src/regions.c -o "$B/obj/regions_eu.o"
     fi
 done
-for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_present.c"; do
+for f in "$ROOT"/psx/src/*.c "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/gl/psx_present.c" "$ROOT/psx/gl/psx_hw.c"; do
     $CC -O2 $CF -c "$f" -o "$B/obj/$(basename "$f" .c).o"
 done
 if [ "$REGION" = libre ]; then

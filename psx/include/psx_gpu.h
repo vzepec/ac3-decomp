@@ -73,9 +73,23 @@ typedef struct {
     int main_x1, main_y1, main_x2, main_y2;
     int dirty, dx1, dy1, dx2, dy2;             /* zona sucia (interno) */
     int blit;                                  /* la zona sucia toca el area principal: tras subirla se dibuja */
+    int main_stale;                            /* la imagen del software no esta al dia: la GPU parte de su copia */
+    int nread;                                 /* zonas que solo tiene la GPU y que la lista lee como textura */
+    int16_t read[4][4];                        /* (x1, y1, x2, y2): la GPU las copia a su textura de la VRAM antes */
 } PsxHwList;
 void psx_gpu_record(PsxHwList *list, int only);   /* NULL: sin registro (por hilo) */
 void psx_gpu_record_flush(PsxGpu *g);              /* al terminar la lista: lo pendiente */
+/* etapa 8, paso 2. Con only, la imagen (el area de dibujo al empezar la lista) no se dibuja en la
+ * VRAM del software: queda solo en la GPU (psx/gl/psx_hw.c la conserva). psx_gpu_draw_list lo
+ * anota por hilo (el del juego); psx_gpu_main_stale dice si una zona esta asi. Lo que lee o
+ * escribe esas zonas por otro camino se cuenta en psx_gpu_stale_ev: [0] texturas o paletas,
+ * [1] origen de copias, [2] StoreImage, [3] escrituras fuera de las listas (estas se pasan a la
+ * GPU con la siguiente lista anotada) */
+int psx_gpu_main_stale(int x1, int y1, int x2, int y2);
+void psx_gpu_main_mark(int x1, int y1, int x2, int y2, int stale);
+extern long psx_gpu_stale_ev[4];
+/* la lista copia (VRAM -> VRAM) desde ese rectangulo (inclusivo); no dibuja nada */
+int psx_gpu_list_copies_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int x1, int y1, int x2, int y2);
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b);
 
