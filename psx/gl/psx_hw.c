@@ -39,6 +39,9 @@ static const char *FS =
     "#version 300 es\n"
     "precision highp float; precision highp int; precision highp usampler2D;\n"
     "uniform usampler2D u_vram; uniform int u_pass; uniform int u_dither; uniform float u_delta;\n"
+    "/* subidas de la lista (etapa 8, paso 3b): sus datos, en el atlas desde el principio; u_up[i] = (x | y << 16,\n"
+    " * w | h << 16, x en el atlas | y << 16). La primitiva ve las primeras v_tex.w >> 20 */\n"
+    "uniform usampler2D u_atlas; uniform ivec4 u_up[128];\n"
     "in vec2 v_uv; in vec3 v_col; in vec2 v_pos; flat in ivec4 v_tex; flat in vec4 v_uvr;\n"
     "const float DITHER[16] = float[16](-4.0, 0.0, -3.0, 1.0, 2.0, -2.0, 3.0, -1.0, -3.0, 1.0, -4.0, 0.0, 3.0, -1.0, 2.0, -2.0);\n"
     "float dith(int flags) { if (u_dither == 0 || (flags & 16) == 0) return 0.0;\n"
@@ -51,7 +54,14 @@ static const char *FS =
     "void put(vec3 c, bool semi, int abr) {\n"
     "  if (!semi || abr == 2) o = vec4(c, 1.0); else if (abr == 0) o = vec4(c * 0.5, 0.5);\n"
     "  else if (abr == 1) o = vec4(c, 0.0); else o = vec4(c * 0.25, 0.0); }\n"
-    "uint fetch(int x, int y) { return texelFetch(u_vram, ivec2(x & 1023, y & 511), 0).r; }\n"
+    "uint fetch(int x, int y) {\n"
+    "  x &= 1023; y &= 511;\n"
+    "  for (int i = (v_tex.w >> 20) - 1; i >= 0; i--) {   /* la subida mas reciente que la cubre */\n"
+    "    ivec4 r = u_up[i]; int rx = r.x & 0xFFFF, ry = r.x >> 16;\n"
+    "    if (x >= rx && y >= ry && x < rx + (r.y & 0xFFFF) && y < ry + (r.y >> 16))\n"
+    "      return texelFetch(u_atlas, ivec2((r.z & 0xFFFF) + x - rx, (r.z >> 16) + y - ry), 0).r;\n"
+    "  }\n"
+    "  return texelFetch(u_vram, ivec2(x, y), 0).r; }\n"
     "vec3 x5(uint c) { vec3 v = vec3(float(c & 31u), float((c >> 5) & 31u), float((c >> 10) & 31u));\n"
     "  return (v * 8.0 + floor(v / 4.0)) / 255.0; }\n"
     "void main() {\n"
@@ -66,7 +76,7 @@ static const char *FS =
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
     "  int u = int(floor(uv.x + 0.001)) & 255, v = int(floor(uv.y + 0.001)) & 255;\n"
-    "  int tw = v_tex.w, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
+    "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
     "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
     "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
     "  uint t;\n"
@@ -85,6 +95,16 @@ static const char *FS =
     "}\n";
 
 static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
+/* atlas de las subidas (paso 3b): sin subidas a mitad de imagen, que en la GPU por baldosas cortan el
+ * dibujo (medido en la Retroid: de 54,6 a 59,6 fps al quitarlas) */
+#define NATLAS 128
+static GLuint g_atlas[3];
+static GLint u_atlas, u_up;
+static int g_epoch;                 /* subidas de la lista ya vistas (en el atlas) */
+static int32_t g_up[NATLAS][4];
+static uint16_t *g_upslot;          /* por primitiva: 1 + su sitio en el atlas (UPLOAD) */
+static int g_upcap;
+int psx_hw_stat_atlas;
 /* etapa 8, paso 2: cada imagen de la VRAM (doble bufer) se conserva en la GPU, color y bit de
  * mascara (stencil), como en una GPU de verdad: las reales se dibujan encima de la suya y las
  * intermedias parten de una copia */
@@ -169,6 +189,15 @@ int psx_hw_init(void) {
         g_shadow[i] = NULL;   /* sin copia: la primera vez se sube entera */
     }
     g_vram = g_vtex[0];
+    glGenTextures(3, g_atlas);
+    for (int i = 0; i < 3; i++) {
+        glBindTexture(GL_TEXTURE_2D, g_atlas[i]);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_R16UI, 1024, 1024);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    }
+    u_atlas = glGetUniformLocation(g_prog, "u_atlas");
+    u_up = glGetUniformLocation(g_prog, "u_up");
     glGenFramebuffers(1, &g_fbo);
     return 0;
 }
@@ -178,6 +207,7 @@ void psx_hw_shutdown(void) {
     glDeleteVertexArrays(1, &g_vao);
     glDeleteBuffers(1, &g_vbo);
     glDeleteTextures(NVTEX, g_vtex);
+    glDeleteTextures(3, g_atlas);
     for (int i = 0; i < NVTEX; i++) { free(g_shadow[i]); g_shadow[i] = NULL; }
     if (g_out) glDeleteTextures(1, &g_out);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
@@ -292,7 +322,7 @@ static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
     t[1] = p->clut_x | p->clut_y << 16;
     if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | g_epoch << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {
@@ -369,9 +399,84 @@ static void bbox(const PsxHwPrim *p, int *x1, int *y1, int *x2, int *y2) {
     } else { *x1 = p->x[0]; *y1 = p->y[0]; *x2 = p->x[0] + p->x[1]; *y2 = p->y[0] + p->y[1]; }
 }
 
+/* etapa 8, paso 3b: subidas adelantadas. Cada UPLOAD a mitad de la imagen corta el dibujo (en la
+ * GPU por baldosas de la Retroid, guarda y vuelve a cargar la imagen entera: unos 20 ms por imagen
+ * con 16-60 subidas). La que nada de lo anterior de la lista lee (textura, paleta u origen de una
+ * copia) se sube al principio */
+int psx_hw_hoist_all, psx_hw_no_maskpass;   /* medidas (app, modos de prueba) */
+static uint8_t *g_hoist;
+static int g_hoist_cap;
+int psx_hw_stat_hoisted, psx_hw_stat_inframe;
+static int read_rect(const PsxHwPrim *p, int r[4]) {   /* lo que lee de la VRAM (inclusivo); 0 si nada */
+    if (p->kind == PSX_HW_VRAM) { r[0] = p->clut_x; r[1] = p->clut_y; r[2] = p->clut_x + p->x[1] - 1; r[3] = p->clut_y + p->y[1] - 1; return 1; }
+    if (!(p->flags & PSX_HWF_TEX) || (p->kind != PSX_HW_TRI && p->kind != PSX_HW_RECT)) return 0;
+    if (p->tw_mx || p->tw_my) { r[0] = p->tp_x; r[1] = p->tp_y; r[2] = p->tp_x + 255; r[3] = p->tp_y + 255; return 1; }   /* ventana: la pagina */
+    int u1 = 255, u2 = 0, v1 = 255, v2 = 0;
+    if (p->kind == PSX_HW_RECT) {
+        u1 = p->u[0]; v1 = p->v[0]; u2 = u1 + p->x[1] - 1; v2 = v1 + p->y[1] - 1;
+        if (u2 > 255) u1 = 0, u2 = 255;
+        if (v2 > 255) v1 = 0, v2 = 255;
+    } else
+        for (int i = 0; i < 3; i++) {
+            if (p->u[i] < u1) u1 = p->u[i];
+            if (p->u[i] > u2) u2 = p->u[i];
+            if (p->v[i] < v1) v1 = p->v[i];
+            if (p->v[i] > v2) v2 = p->v[i];
+        }
+    int sh = p->depth == 0 ? 2 : p->depth == 1 ? 1 : 0;
+    r[0] = p->tp_x + (u1 >> sh); r[1] = p->tp_y + v1; r[2] = p->tp_x + (u2 >> sh); r[3] = p->tp_y + v2;
+    return 1;
+}
+static int clut_rect(const PsxHwPrim *p, int r[4]) {
+    if (!(p->flags & PSX_HWF_TEX) || p->depth >= 2 || (p->kind != PSX_HW_TRI && p->kind != PSX_HW_RECT)) return 0;
+    r[0] = p->clut_x; r[1] = p->clut_y; r[2] = p->clut_x + (p->depth ? 255 : 15); r[3] = p->clut_y;
+    return 1;
+}
+static int overlap(const int a[4], int x1, int y1, int x2, int y2) { return a[2] >= x1 && a[0] <= x2 && a[3] >= y1 && a[1] <= y2; }
+static void plan_hoist(const PsxHwList *l) {
+    if (g_hoist_cap < l->n) { free(g_hoist); g_hoist_cap = l->n + 4096; g_hoist = malloc((size_t)g_hoist_cap); }
+    if (!g_hoist) return;
+    memset(g_hoist, 0, (size_t)l->n);
+    static int (*rr)[4];
+    static int rcap;
+    if (rcap < l->n * 2) { free(rr); rcap = l->n * 2 + 4096; rr = malloc((size_t)rcap * sizeof *rr); }
+    if (!rr) return;
+    int nr = 0, any_kept = 0;
+    for (int i = 0; i < l->n; i++) {
+        const PsxHwPrim *p = &l->p[i];
+        if (p->kind == PSX_HW_UPLOAD) {
+            int x1 = p->x[0], y1 = p->y[0], x2 = p->x[0] + p->x[1] - 1, y2 = p->y[0] + p->y[1] - 1, ok = 1;
+            for (int k = 0; k < nr && ok; k++) if (overlap(rr[k], x1, y1, x2, y2)) ok = 0;
+            /* tras una que se queda en su sitio, las que se le solapan tampoco se adelantan (orden) */
+            if (ok && any_kept)
+                for (int j = 0; j < i && ok; j++)
+                    if (l->p[j].kind == PSX_HW_UPLOAD && !g_hoist[j] &&
+                        overlap((int[4]){l->p[j].x[0], l->p[j].y[0], l->p[j].x[0] + l->p[j].x[1] - 1, l->p[j].y[0] + l->p[j].y[1] - 1}, x1, y1, x2, y2)) ok = 0;
+            if (psx_hw_hoist_all) ok = 1;   /* medida (no para jugar): todas adelantadas */
+            g_hoist[i] = (uint8_t)ok;
+            if (!ok) any_kept = 1;
+            continue;
+        }
+        if (read_rect(p, rr[nr])) nr++;
+        if (clut_rect(p, rr[nr])) nr++;
+    }
+}
+
+static void apply_upload(const PsxHwPrim *p);
+static void draw_prim_2(const PsxHwPrim *p, int index);
 static void draw_prim(const PsxHwPrim *p, int index) {
+    if (p->kind == PSX_HW_UPLOAD && g_upslot && g_upslot[index]) { g_epoch = g_upslot[index]; return; }   /* en el atlas */
+    if (p->kind == PSX_HW_UPLOAD && g_hoist && g_hoist[index]) return;   /* ya subida al principio */
     if (p->kind == PSX_HW_UPLOAD) {   /* la VRAM del software cambio fuera de la imagen: a la textura */
+        psx_hw_stat_inframe++;
         flush();
+        apply_upload(p);
+        return;
+    }
+    draw_prim_2(p, index);
+}
+static void apply_upload(const PsxHwPrim *p) {
+    {
         glBindTexture(GL_TEXTURE_2D, g_vram);
         glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
         glTexSubImage2D(GL_TEXTURE_2D, 0, p->x[0], p->y[0], p->x[1], p->y[1], GL_RED_INTEGER, GL_UNSIGNED_SHORT,
@@ -381,8 +486,10 @@ static void draw_prim(const PsxHwPrim *p, int index) {
         if (sh && p->x[0] >= 0 && p->y[0] >= 0 && p->x[0] + p->x[1] <= 1024 && p->y[0] + p->y[1] <= 512)
             for (int y = 0; y < p->y[1]; y++)
                 memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
-        return;
     }
+}
+static void draw_prim_2(const PsxHwPrim *p, int index) {
+    (void)index;
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
     int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
     int32_t t[4];
@@ -704,7 +811,7 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     }
     g_last_tex = real ? tg->tex : g_out;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
-    if (keep) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
+    if (keep && !psx_hw_no_maskpass) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
     glUseProgram(g_prog);
     glUniform2f(u_origin, (float)x0, (float)y0);
@@ -744,6 +851,41 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     if (nomask) g_track = 0;
     /* fondo y texturas de partida: la VRAM de antes de la lista (con su bit 15 en el stencil) */
     upload(bg);
+    static int nohoist = -1;   /* prueba: PSX_HW_NOHOIST=1, sin adelantar subidas */
+    if (nohoist < 0) nohoist = getenv("PSX_HW_NOHOIST") != NULL;
+    /* las subidas de la lista, al atlas (en orden; las que no caben, a mitad de imagen como antes) */
+    static int noatlas = -1;   /* prueba: PSX_HW_NOATLAS=1 */
+    if (noatlas < 0) noatlas = getenv("PSX_HW_NOATLAS") != NULL;
+    if (g_upcap < l->n) { free(g_upslot); g_upcap = l->n + 4096; g_upslot = malloc((size_t)g_upcap * 2); }
+    if (g_upslot) memset(g_upslot, 0, (size_t)l->n * 2);
+    int nup = 0;
+    if (g_upslot && !noatlas) {
+        int ax = 0, ay = 0, rowh = 0;
+        glActiveTexture(GL_TEXTURE3);
+        glBindTexture(GL_TEXTURE_2D, g_atlas[g_ring % 3]);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 2);
+        for (int i = 0; i < l->n && nup < NATLAS; i++) {
+            const PsxHwPrim *p = &l->p[i];
+            if (p->kind != PSX_HW_UPLOAD) continue;
+            int w = p->x[1], h = p->y[1];
+            if (w <= 0 || h <= 0 || w > 1024 || h > 1024) continue;
+            if (ax + w > 1024) { ax = 0; ay += rowh; rowh = 0; }
+            if (ay + h > 1024) break;   /* lleno: el resto, a mitad de imagen */
+            glTexSubImage2D(GL_TEXTURE_2D, 0, ax, ay, w, h, GL_RED_INTEGER, GL_UNSIGNED_SHORT, l->data + p->data_off);
+            g_up[nup][0] = (p->x[0] & 0xFFFF) | (p->y[0] << 16); g_up[nup][1] = w | (h << 16); g_up[nup][2] = ax | (ay << 16); g_up[nup][3] = 0;
+            g_upslot[i] = (uint16_t)(++nup);
+            ax += w;
+            if (h > rowh) rowh = h;
+            psx_hw_stat_atlas++;
+        }
+        glActiveTexture(GL_TEXTURE0);
+    }
+    g_epoch = 0;
+    if (!nohoist && !nup) plan_hoist(l);
+    else if (g_hoist) memset(g_hoist, 0, (size_t)(l->n < g_hoist_cap ? l->n : g_hoist_cap));
+    if (g_hoist && !nohoist)
+        for (int i = 0; i < l->n; i++)
+            if (g_hoist[i]) { apply_upload(&l->p[i]); psx_hw_stat_hoisted++; }
     if (l->nread) {   /* lo que solo tiene la GPU y la lista lee, a la textura; despues, el estado de antes */
         read_zones(l, scale);
         glBindFramebuffer(GL_FRAMEBUFFER, dst);
@@ -762,7 +904,10 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
         quad((float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), (float)x0, (float)y0, (float)(x0 + w), (float)(y0 + h), 0, 0, 0, t);
     }
     flush();
-    /* primitivas; las UPLOAD actualizan la textura en su sitio */
+    glUseProgram(g_prog);
+    glUniform1i(u_atlas, 3);
+    if (nup) glUniform4iv(u_up, nup, &g_up[0][0]);
+    /* primitivas; las UPLOAD actualizan la textura en su sitio (las adelantadas ya estan) */
     for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
     flush();
     glDisable(GL_SCISSOR_TEST);

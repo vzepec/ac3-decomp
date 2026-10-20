@@ -157,10 +157,15 @@ static uint8_t to_axis(float v) {
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step);
 static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
                     int vb, double t_step);
-#define MODE_WIDE(m) ((m) <= 1)
-#define MODE_HW(m) ((m) == 0 || (m) == 2)
+/* medida de la GPU (temporal): 4 = GPU sin el paso 2, 5 = todas las subidas adelantadas, 6 = sin la
+ * pasada de mascara; las tres a 16:9. L3+R3: 0 -> 4 -> 5 -> 6 -> 1 -> 2 -> 3 */
+#define MODE_WIDE(m) ((m) <= 1 || (m) >= 4)
+#define MODE_HW(m) ((m) == 0 || (m) == 2 || (m) >= 4)
+extern int psx_hw_hoist_all, psx_hw_no_maskpass;
 
 static int g_nfrac = 3;   /* intermedias por paso (adaptativo) */
+static int g_late_real, g_late_inter, g_drop_inter;   /* medicion: llegan tarde a su hora; intermedias tiradas sin dibujar */
+static float g_worker_max;
 
 static void frame_wait(void) {
     static double next;
@@ -204,6 +209,7 @@ static void frame_wait(void) {
         G.st_unpaired = p.unpaired;
         G.st_worker_ms = (float)p.worker0_ms;
         G.st_rr_ms = (float)p.rebuild_ms;
+        g_worker_max = (float)p.worker_max_ms;
         G.st_real_ms = (float)(p.pair_ms + p.snap_ms + p.real_ms);
         sleep_sum = 0;
         sleep_n = 0;
@@ -253,7 +259,9 @@ static void frame_wait(void) {
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
     /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
      * solo interpreta la lista): menos trabajo en el hilo del juego */
-    psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15);
+    psx_interp_hw_main(MODE_HW(G.gfx_mode) && G.gfx_mode != 4 && terrain_idle < 15);
+    psx_hw_hoist_all = G.gfx_mode == 5;
+    psx_hw_no_maskpass = G.gfx_mode == 6;
 #endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
@@ -315,6 +323,7 @@ static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, 
         G.q[k].np = l->n; G.q[k].nd = l->ndata;
         G.q[k].hw = 1; G.q[k].w = w; G.q[k].h = h; G.q[k].x0 = x0; G.q[k].y0 = y0;
         G.q[k].real = num == den; G.q[k].stale = l->main_stale;
+        if (now() > due) { if (num == den) g_late_real++; else g_late_inter++; }
         G.q[k].due = due; G.q[k].full = 1; G.q[k].wide = MODE_WIDE(G.gfx_mode); G.q[k].seq = ++G.seq;
         G.interp_last = now();
     } else G.q[k].capp = G.q[k].capd = 0;
@@ -510,9 +519,11 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
             if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
-                G.gfx_mode = (G.gfx_mode + 1) % 4;
+                static const int next[7] = {1, 2, 3, 0, 1, 1, 1};   /* (4-6: modos de medida de la 1.10.10, ya no se usan) */
+                G.gfx_mode = next[G.gfx_mode];
                 LOG("modo de imagen: %s", G.gfx_mode == 0 ? "GPU, 60 fps, 16:9" : G.gfx_mode == 1 ? "software, 60 fps, 16:9"
-                                          : G.gfx_mode == 2 ? "GPU, 60 fps, 4:3" : "original");
+                                          : G.gfx_mode == 2 ? "GPU, 60 fps, 4:3" : G.gfx_mode == 3 ? "original"
+                                          : G.gfx_mode == 4 ? "GPU sin el paso 2" : G.gfx_mode == 5 ? "GPU, subidas adelantadas" : "GPU sin mascara");
             }
         }
         else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.keys &= (uint16_t)~m;
@@ -568,6 +579,8 @@ static const struct { char c; uint8_t row[7]; } FONT[] = {
     {'W', {0x11, 0x11, 0x11, 0x15, 0x15, 0x15, 0x0a}},
     {'.', {0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x0c}},
     {'R', {0x1e, 0x11, 0x11, 0x1e, 0x14, 0x12, 0x11}},
+    {'D', {0x1e, 0x11, 0x11, 0x11, 0x11, 0x11, 0x1e}},
+    {'M', {0x11, 0x1b, 0x15, 0x15, 0x11, 0x11, 0x11}},
     {'G', {0x0e, 0x11, 0x10, 0x17, 0x11, 0x11, 0x0f}},
 };
 
@@ -707,6 +720,7 @@ void android_main(struct android_app *app) {
                             G.q[i].np = G.q[i].nd = 0;
                             nr++;
                         }
+                        else if (G.q[i].hw && !G.q[i].real && G.q[i].np > 0) g_drop_inter++;
                         G.q[i].full = 0;
                     }
         }
@@ -760,7 +774,8 @@ void android_main(struct android_app *app) {
             c_fps = (int)lrint(c_new / (t - c_t0));
             c_vel = (int)lrint((vb - c_vb0) / (t - c_t0) * 100.0 / g_refresh);   /* % de 50 (o 60) VBlank/s */
             snprintf(line1, sizeof line1, "FPS %d  VEL %d%%", c_fps, c_vel);
-            const char *md = G.gfx_mode == 0 ? "GPU 16:9" : G.gfx_mode == 1 ? "SW 16:9" : G.gfx_mode == 2 ? "GPU 4:3" : "ORIG";
+            static const char *mds[7] = {"GPU 16:9", "SW 16:9", "GPU 4:3", "ORIG", "GPU P1", "GPU ADEL", "GPU SM"};
+            const char *md = mds[G.gfx_mode];
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
             if (G.running)
@@ -776,8 +791,10 @@ void android_main(struct android_app *app) {
             c_hw_ms = c_swap_ms = 0; c_hw_n = 0;
             psx_hw_stat_draws = psx_hw_stat_uploads = 0;
             if (G.running)
-                LOG("presentacion: %d vueltas, la mas larga %.1f ms, %d de mas de 20 ms; reales saltadas dibujadas %d; GPU de una imagen %.1f ms",
-                    c_loops, c_loop_max, c_slow, c_skipped, c_gpu_ms);
+                LOG("presentacion: %d vueltas, la mas larga %.1f ms, %d de mas de 20 ms; reales saltadas dibujadas %d; GPU de una imagen %.1f ms; "
+                    "llegan tarde: reales %d, intermedias %d; intermedias tiradas %d; hilo de dibujo, el peor %.1f ms",
+                    c_loops, c_loop_max, c_slow, c_skipped, c_gpu_ms, g_late_real, g_late_inter, g_drop_inter, g_worker_max);
+            g_late_real = g_late_inter = g_drop_inter = 0;
             c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = 1;
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
