@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 /* GPU por software segun psx-spx. Ver psx_gpu.h. */
 #include "psx_gpu.h"
 
@@ -24,10 +25,95 @@ static const int DITHER[4][4] = {{-4, 0, -3, 1}, {2, -2, 3, -1}, {-3, 1, -4, 0},
 /* registro de primitivas (ver psx_gpu.h) */
 static _Thread_local PsxHwList *g_rec;
 static _Thread_local int g_rec_only;
+
+/* etapa 8, paso 2: zonas de la VRAM que el software no tiene al dia (imagenes que, con only, solo
+ * dibuja la GPU). Por hilo: solo las lleva el del juego (psx_gpu_draw_list) */
+#define NSTALE 4
+static _Thread_local int g_st_n;
+static _Thread_local int16_t g_st[NSTALE][4];
+static _Thread_local int g_pend, g_px1, g_py1, g_px2, g_py2;   /* escrituras fuera de las listas en esas zonas */
+long psx_gpu_stale_ev[4];
+static int stale_hit(int x1, int y1, int x2, int y2) {
+    for (int i = 0; i < g_st_n; i++)
+        if (x2 >= g_st[i][0] && x1 <= g_st[i][2] && y2 >= g_st[i][1] && y1 <= g_st[i][3]) return 1;
+    return 0;
+}
+/* la lista anotada lee (como textura) esas zonas: se apuntan en ella para que la GPU las tenga en su VRAM */
+static void stale_read(int x1, int y1, int x2, int y2) {
+    for (int i = 0; i < g_st_n; i++) {
+        if (!(x2 >= g_st[i][0] && x1 <= g_st[i][2] && y2 >= g_st[i][1] && y1 <= g_st[i][3])) continue;
+        if (!g_rec) continue;
+        int k = 0;
+        while (k < g_rec->nread && memcmp(g_rec->read[k], g_st[i], sizeof g_st[i])) k++;
+        if (k == g_rec->nread && k < 4) { memcpy(g_rec->read[k], g_st[i], sizeof g_st[i]); g_rec->nread++; }
+    }
+}
+int psx_gpu_main_stale(int x1, int y1, int x2, int y2) { return stale_hit(x1, y1, x2, y2); }
+void psx_gpu_main_mark(int x1, int y1, int x2, int y2, int stale) {
+    int k = 0;
+    for (int i = 0; i < g_st_n; i++)   /* fuera las que se solapan: el software las acaba de dibujar (o se sustituyen) */
+        if (!(x2 >= g_st[i][0] && x1 <= g_st[i][2] && y2 >= g_st[i][1] && y1 <= g_st[i][3])) memcpy(g_st[k++], g_st[i], sizeof g_st[i]);
+    g_st_n = k;
+    if (stale && g_st_n < NSTALE) {
+        g_st[g_st_n][0] = (int16_t)x1; g_st[g_st_n][1] = (int16_t)y1; g_st[g_st_n][2] = (int16_t)x2; g_st[g_st_n][3] = (int16_t)y2;
+        g_st_n++;
+    }
+}
+/* escritura fuera de una lista (LoadImage, ClearImage, MoveImage) en una zona que solo tiene la GPU:
+ * se le pasa con la siguiente lista anotada (subida y copia a la imagen) */
+static void stale_write(int x1, int y1, int x2, int y2) {
+    if (g_rec || !g_st_n || !stale_hit(x1, y1, x2, y2)) return;
+    psx_gpu_stale_ev[3]++;
+    if (!g_pend) { g_px1 = x1; g_py1 = y1; g_px2 = x2; g_py2 = y2; g_pend = 1; return; }
+    if (x1 < g_px1) g_px1 = x1;
+    if (y1 < g_py1) g_py1 = y1;
+    if (x2 > g_px2) g_px2 = x2;
+    if (y2 > g_py2) g_py2 = y2;
+}
+/* textura (o paleta) leida de una zona que solo tiene la GPU: el software la tiene vieja */
+static void stale_tex(const PsxHwPrim *p, int nv) {
+    if (!g_st_n || !(p->flags & PSX_HWF_TEX)) return;
+    int u1 = 255, u2 = 0, v1 = 255, v2 = 0;
+    if (p->kind == PSX_HW_RECT) {
+        u1 = p->u[0]; v1 = p->v[0];
+        u2 = u1 + p->x[1] - 1; v2 = v1 + p->y[1] - 1;
+        if (u2 > 255) u1 = 0, u2 = 255;
+        if (v2 > 255) v1 = 0, v2 = 255;
+    } else
+        for (int i = 0; i < nv; i++) {
+            if (p->u[i] < u1) u1 = p->u[i];
+            if (p->u[i] > u2) u2 = p->u[i];
+            if (p->v[i] < v1) v1 = p->v[i];
+            if (p->v[i] > v2) v2 = p->v[i];
+        }
+    int sh = p->depth == 0 ? 2 : p->depth == 1 ? 1 : 0;
+    if (getenv("PSX_STALE_DBG") && psx_gpu_stale_ev[0] < 12 && (stale_hit(p->tp_x + (u1 >> sh), p->tp_y + v1, p->tp_x + (u2 >> sh), p->tp_y + v2) ||
+        (p->depth < 2 && stale_hit(p->clut_x, p->clut_y, p->clut_x + (p->depth ? 255 : 15), p->clut_y)))) {
+        int VSync(int);
+        fprintf(stderr, "gpu: VBlank %d, textura de la imagen de la GPU: tipo %d prof %d pagina %d,%d uv %d-%d,%d-%d clut %d,%d en (%d,%d); zonas:",
+                VSync(-1), p->kind, p->depth, p->tp_x, p->tp_y, u1, u2, v1, v2, p->clut_x, p->clut_y, p->x[0], p->y[0]);
+        for (int i = 0; i < g_st_n; i++) fprintf(stderr, " (%d,%d)-(%d,%d)", g_st[i][0], g_st[i][1], g_st[i][2], g_st[i][3]);
+        fprintf(stderr, "\n");
+    }
+    if (stale_hit(p->tp_x + (u1 >> sh), p->tp_y + v1, p->tp_x + (u2 >> sh), p->tp_y + v2)) {
+        psx_gpu_stale_ev[0]++;
+        stale_read(p->tp_x + (u1 >> sh), p->tp_y + v1, p->tp_x + (u2 >> sh), p->tp_y + v2);
+    } else if (p->depth < 2 && stale_hit(p->clut_x, p->clut_y, p->clut_x + (p->depth ? 255 : 15), p->clut_y)) {
+        psx_gpu_stale_ev[0]++;
+        stale_read(p->clut_x, p->clut_y, p->clut_x + (p->depth ? 255 : 15), p->clut_y);
+    }
+}
+
+static void rec_dirty(int x1, int y1, int x2, int y2);
 void psx_gpu_record(PsxHwList *list, int only) {
     g_rec = list;
     g_rec_only = list && only;
-    if (list) list->dirty = list->blit = 0;
+    if (list) list->dirty = list->blit = list->nread = 0;
+    if (list && g_pend) {   /* lo escrito fuera de las listas en la imagen de la GPU, al principio de esta */
+        g_pend = 0;
+        rec_dirty(g_px1, g_py1, g_px2, g_py2);
+        list->blit = 1;
+    }
 }
 /* rectangulo (inclusivo) totalmente fuera del area principal */
 static int rec_off(int x1, int y1, int x2, int y2) {
@@ -320,6 +406,7 @@ static void triangle(PsxGpu *g, Vert v0, Vert v1, Vert v2, int gouraud, int text
                 p->u[i] = (uint8_t)w[i]->u; p->v[i] = (uint8_t)w[i]->v;
             }
             p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
+            stale_tex(p, 3);
         }
         if (g_rec_only) return;
     }
@@ -536,6 +623,7 @@ static void do_rect(PsxGpu *g, const uint32_t *c) {
             p->r[0] = (uint8_t)r; p->g[0] = (uint8_t)gg; p->b[0] = (uint8_t)b;
             p->u[0] = (uint8_t)u0; p->v[0] = (uint8_t)v0;
             p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
+            stale_tex(p, 1);
         }
         if (g_rec_only) return;
     }
@@ -546,6 +634,7 @@ static void do_rect(PsxGpu *g, const uint32_t *c) {
 }
 
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b) {
+    stale_write(x, y, x + w - 1, y + h - 1);
     uint16_t c = (uint16_t)((r >> 3) | (gr >> 3) << 5 | (b >> 3) << 10);
     for (int j = 0; j < h; j++)
         for (int i = 0; i < w; i++) g->vram[((y + j) & 511) * PSX_VRAM_W + ((x + i) & 1023)] = c;
@@ -592,6 +681,18 @@ static void execute(PsxGpu *g, const uint32_t *c) {
         if (op >= 0x80 && op < 0xA0) {   /* VRAM -> VRAM */
             int sx = c[1] & 1023, sy = (c[1] >> 16) & 511, dx = c[2] & 1023, dy = (c[2] >> 16) & 511;
             int w = ((c[3] - 1) & 1023) + 1, h = (((c[3] >> 16) - 1) & 511) + 1;
+            /* (en una lista que dibuja entera el software, copiar desde su propia area lee lo ya dibujado: bien) */
+            int own = g_rec && !g_rec_only && sx >= g->area_x1 && sx + w - 1 <= g->area_x2 && sy >= g->area_y1 && sy + h - 1 <= g->area_y2;
+            if (g_st_n && !own && stale_hit(sx, sy, sx + w - 1, sy + h - 1)) {
+                psx_gpu_stale_ev[1]++;
+                stale_read(sx, sy, sx + w - 1, sy + h - 1);
+                if (getenv("PSX_STALE_DBG") && psx_gpu_stale_ev[1] < 20) {
+                    int VSync(int);
+                    fprintf(stderr, "gpu: VBlank %d, copia desde (%d,%d) %dx%d a (%d,%d), en lista %s, area (%d,%d)-(%d,%d)\n", VSync(-1), sx, sy, w, h, dx, dy,
+                            g_rec ? (g_rec_only ? "solo GPU" : "entera") : "ninguna", g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+                }
+            }
+            stale_write(dx, dy, dx + w - 1, dy + h - 1);
             if (g_rec && rec_off(dx, dy, dx + w - 1, dy + h - 1)) {
                 rec_dirty(dx, dy, dx + w - 1, dy + h - 1);   /* p. ej. las paletas de la bruma */
             } else if (g_rec) {   /* copia a la imagen: se dibuja desde el origen (u, v) */
@@ -607,6 +708,7 @@ static void execute(PsxGpu *g, const uint32_t *c) {
         } else if (op >= 0xA0 && op < 0xC0) {   /* CPU -> VRAM: siguen los datos */
             g->xfer_x = c[1] & 1023; g->xfer_y = (c[1] >> 16) & 511;
             g->xfer_w = ((c[2] - 1) & 1023) + 1; g->xfer_h = (((c[2] >> 16) - 1) & 511) + 1;
+            stale_write(g->xfer_x, g->xfer_y, g->xfer_x + g->xfer_w - 1, g->xfer_y + g->xfer_h - 1);
             if (g_rec) {   /* carga de la CPU a la VRAM: zona sucia (sube con la siguiente primitiva) */
                 rec_dirty(g->xfer_x, g->xfer_y, g->xfer_x + g->xfer_w - 1, g->xfer_y + g->xfer_h - 1);
                 if (!rec_off(g->xfer_x, g->xfer_y, g->xfer_x + g->xfer_w - 1, g->xfer_y + g->xfer_h - 1)) g_rec->blit = 1;
@@ -662,7 +764,51 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w) {
     }
 }
 
-void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) { psx_gpu_draw_list_mem(g, addr, psx_ram, psx_scratch); }
+/* etapa 8, paso 2: si la lista copia (VRAM -> VRAM) desde esa zona, sin dibujar nada. El efecto de
+ * los motores al acelerar copia un trozo de la imagen que se esta dibujando y lo vuelve a dibujar
+ * deformado: esa lista la tiene que dibujar entera el software */
+int psx_gpu_list_copies_from(uint32_t addr, const uint8_t *ram, const uint8_t *scratch, int x1, int y1, int x2, int y2) {
+    int guard = 0, need = 0, len = 0, poly = 0;
+    long xfer = 0;   /* palabras de datos de una carga de la CPU */
+    uint32_t cmd[16];
+    while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard <= 200000) {
+        const uint32_t *p = (addr & 0xFFFFFC00u) == PSX_SCRATCH_ADDR ? (const uint32_t *)(scratch + (addr & 0x3FC))
+                                                                    : (const uint32_t *)(ram + (addr & (PSX_RAM_SIZE - 4)));
+        uint32_t tag = p[0];
+        int n = tag >> 24;
+        for (int i = 1; i <= n; i++) {
+            uint32_t w = p[i];
+            if (xfer > 0) { xfer--; continue; }
+            if (poly) { if ((w & 0xF000F000u) == 0x50005000u && len >= 2) poly = len = 0; else len++; continue; }
+            if (len == 0) {
+                need = cmd_length(w);
+                if ((w >> 24) >= 0x48 && (w >> 24) < 0x60 && ((w >> 24) & 0x08)) { poly = 1; len = 1; continue; }
+            }
+            if (len < 16) cmd[len] = w;
+            len++;
+            if (len < need) continue;
+            int op = cmd[0] >> 24;
+            if (op >= 0x80 && op < 0xA0) {
+                int sx = cmd[1] & 1023, sy = (cmd[1] >> 16) & 511;
+                int cw = ((cmd[3] - 1) & 1023) + 1, ch = (((cmd[3] >> 16) - 1) & 511) + 1;
+                if (sx + cw - 1 >= x1 && sx <= x2 && sy + ch - 1 >= y1 && sy <= y2) return 1;
+            } else if (op >= 0xA0 && op < 0xC0) {
+                long cw = ((cmd[2] - 1) & 1023) + 1, ch = (((cmd[2] >> 16) - 1) & 511) + 1;
+                xfer = (cw * ch + 1) / 2;
+            }
+            len = 0;
+        }
+        addr = 0x80000000u | (tag & 0xFFFFFF);
+    }
+    return 0;
+}
+
+void psx_gpu_draw_list(PsxGpu *g, uint32_t addr) {
+    int x1 = g->area_x1, y1 = g->area_y1, x2 = g->area_x2, y2 = g->area_y2;
+    psx_gpu_draw_list_mem(g, addr, psx_ram, psx_scratch);
+    /* la imagen (el area al empezar): al dia en el software, o solo en la GPU si se anoto con only */
+    psx_gpu_main_mark(x1, y1, x2, y2, g_rec && g_rec_only);
+}
 
 void psx_gpu_draw_list_mem(PsxGpu *g, uint32_t addr, const uint8_t *ram, const uint8_t *scratch) {
     /* una lista corrupta (o ciclica) colgaria la consola; aqui se corta (un fotograma real no
@@ -684,11 +830,13 @@ void psx_gpu_draw_list_mem(PsxGpu *g, uint32_t addr, const uint8_t *ram, const u
 }
 
 void psx_gpu_load_image(PsxGpu *g, int x, int y, int w, int h, const uint16_t *src) {
+    stale_write(x, y, x + w - 1, y + h - 1);
     for (int j = 0; j < h; j++)
         for (int i = 0; i < w; i++) g->vram[((y + j) & 511) * PSX_VRAM_W + ((x + i) & 1023)] = src[j * w + i];
 }
 
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst) {
+    if (g_st_n && stale_hit(x, y, x + w - 1, y + h - 1)) psx_gpu_stale_ev[2]++;
     for (int j = 0; j < h; j++)
         for (int i = 0; i < w; i++) dst[j * w + i] = g->vram[((y + j) & 511) * PSX_VRAM_W + ((x + i) & 1023)];
 }

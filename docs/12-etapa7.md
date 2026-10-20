@@ -61,7 +61,7 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
 | 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
 | 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
-| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva) |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU) |
 
 ## Resultados
 
@@ -160,4 +160,28 @@ es la `v1.9-alfa`, con `versionCode` 21, para instalarse encima de la 1.9.6.
 
 Probada por el dueño en la Retroid: "funciona mucho mejor", aunque con bajones
 de fps mirando ciudades muy pobladas. Mismo procedimiento que la 1.7 y la 1.8.
+
+## Cuarta release (1.10-alfa)
+
+**Novedad: la imagen la dibuja la GPU** (etapa 8, pasos 1 a 3,
+`docs/14-etapa8.md`):
+- GLES a escala 1, con el tramado de la PS1;
+- en la misión, la imagen solo en la GPU;
+- atlas de subidas y ritmo de presentación: 60 fps estables en ciudad,
+  medido en la Retroid con `adb logcat`.
+
+**Correcciones:**
+- la línea del HUD bajo las llamas de los motores;
+- el avión doble de la repetición del final de misión;
+- la estela doble de los misiles.
+
+**Modos:** L3+R3 recorre `16:9` → `4:3` → `ORIG`. El modo de comparación por
+software se queda fuera del ciclo.
+
+**Validación final** (comparador, las 41 misiones, intermedias con la
+interpolación nueva y `GUION_FUEGO`): 140.139 listas, 7 con un bloque malo
+cada una; sin fallos.
+
+**Nombres:** las versiones de prueba se llamaron 1.10.1 a 1.10.13. Lo
+publicado es la `v1.10-alfa`, con `versionCode` 35.
 

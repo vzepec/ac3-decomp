@@ -23,7 +23,7 @@ ancha (16:9).
 | Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). No hay controles táctiles |
 | Juego | Tu propia imagen del disco de **Ace Combat 3: Electrosphere**:<br>• europea, `SCES-02066` (inglés, francés, alemán, español, italiano)<br>• americana, `SLUS-00972` |
 | Formato del disco | **`.bin` en bruto (2.352 bytes por sector)**, el que generan los volcados habituales (`.bin` + `.cue`; se elige el `.bin`). También sirve `.iso` de 2.048 bytes por sector, pero sin música ni vídeos (no lleva el audio XA) |
-| Espacio | 200 KB la app, más tu imagen del disco (~600 MB) |
+| Espacio | 230 KB la app, más tu imagen del disco (~600 MB) |
 
 La versión japonesa (*Ace Combat 3: Electrosphere*, `SLPS-02020/02021`) **no**
 está soportada.
@@ -90,8 +90,10 @@ Arriba a la izquierda se muestra:
     hay vértices estirados ni cielo que tiembla.
   - Lo que se mueve por su cuenta (aviones, misiles, efectos) todavía se
     interpola en pantalla, como antes.
-  - Mirando **ciudades muy pobladas** puede bajar la fluidez: algunos pasos
-    salen sin imagen intermedia. El juego no se frena (`VEL` 100 %).
+  - **La imagen la dibuja la GPU** del dispositivo, a la resolución original
+    y con el mismo aspecto que la PlayStation. Así el vuelo se mantiene a 60
+    fps también sobre las ciudades más pobladas (medido en una Retroid
+    Pocket Flip 2).
   - En los cortes de cámara, ese paso va sin imagen intermedia.
   - L3+R3 permite volver a las imágenes originales.
 - La versión **americana** es la de referencia y la más probada; la europea

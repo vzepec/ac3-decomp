@@ -5,6 +5,76 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Release v1.10-alfa: dibujo por la GPU
+
+- Pasos 1 a 3 de la etapa 8, integrados.
+- Comparador final en las 41 misiones (intermedias, interpolación nueva,
+  `GUION_FUEGO`): ver `docs/14-etapa8.md`.
+- **Publicado como `v1.10-alfa`**, con la auditoría a 0. Las pruebas
+  internas se llamaron 1.10.1 a 1.10.13.
+
+## 2026-10-20 — Rendimiento en la Retroid: 60 fps estables en ciudad (1.10.13-alfa)
+
+- **Medido en el aparato** con `adb logcat`, en varias rondas:
+  - la CPU va sobrada; el cuello era la GPU y el ritmo de presentación;
+  - cada imagen real se dibujaba dos veces;
+  - las subidas a mitad de imagen cortaban el dibujo de la GPU (por
+    baldosas): de 17,8 a 12,7 ms por imagen sin ellas.
+- **Arreglos:**
+  - atlas de subidas (sin subidas a mitad de imagen, la imagen igual: 0
+    listas malas);
+  - la presentación enseña la imagen pendiente más antigua en vez de la
+    vencida más reciente;
+  - doble pasada limitada a lo que tapa una comprobación de máscara.
+- **Resultado:** 259 s sobre la ciudad en `GPU 16:9`, 60,0 fps de media,
+  mínimo 59.
+
+## 2026-10-20 — Etapa 8, paso 3b: estela doble, lo móvil y las llamas sobre el HUD
+
+- **Estela doble del misil:** la introdujo el paso 3a. `g_render+0x3C4`
+  solo se interpola en los subpasos sin juego (US `0x80032fac`/`0x80032ffc`).
+- **Aviones y misiles:** su lógica y su dibujo van mezclados; siguen con la
+  interpolación en pantalla.
+- **Piezas enteras** (interpolar la matriz de la GTE): medidas y
+  descartadas, con más polígonos estirados (costuras).
+- **Prueba de verdad conocida con hilos:** arreglada (emparejaba cada
+  intermedia con el caso anterior). Misión 0: 29,3 dB frente a 25,3 de los
+  vecinos.
+- **Llamas que deforman el HUD** (informe del dueño, modo del paso 2): el
+  efecto de calor copia un trozo de la imagen que solo tenía la GPU. La
+  lista que lo hace la dibuja entera el software (se mira antes). Comparador:
+  de 166 listas malas a 0.
+- **Reproducir:** `GUION_FUEGO` de `tools/misiones.py`, `HWCMP_GUION` en
+  `tools/hwcmp.py`, `AC3_HWCMP_MASKCMP=1`, `AC3_INTERP_TEST`.
+
+## 2026-10-19 — Etapa 8, paso 3a: el avión de la repetición, interpolado
+
+- **El avión doble** de la repetición del final de misión (informe del dueño)
+  se reproduce con la demostración del título: lo dibuja la parte estática,
+  con la entrada `g_render+0x3C4` (posición y ángulos), que no se
+  interpolaba.
+- **Corrección:** posición y tres ángulos de 33 objetos (esa entrada y el
+  arreglo de 32).
+- **Medida** (`tools/entre_medias.py`): intermedias entre sus reales, de 0/6 a
+  504/504. La autoprueba con t = 1 sigue a 0.
+
+## 2026-10-19 — Etapa 8, paso 2: la imagen real solo en la GPU (APK 1.10.2-alfa)
+
+- **Software:** en la misión solo interpreta la lista (`only`). La GPU
+  conserva cada imagen (color, bit 15 y stencil) y dibuja encima.
+- **Seguimiento** de las zonas que solo tiene la GPU (`psx_gpu_stale_ev`), en
+  las 41 misiones:
+  - texturas que las leen en 7 misiones: el reflejo de "MISSION FAILED", que
+    usa la imagen anterior;
+  - una escritura fuera de las listas.
+  - Las dos cosas se pasan a la GPU: copia de su imagen a su textura de la
+    VRAM, con el bit 15 (sin él, el reflejo salía casi negro), y subida de lo
+    escrito.
+- **Comparador `AC3_HWCMP_ONLY=1`** (referencia por software en una copia):
+  41 misiones, 127.072 listas, 3 con bloques malos.
+- **PC:** el rasterizado de la imagen real en el hilo del juego pasa de 6,45 a
+  0,45 ms por paso.
+
 ## 2026-10-19 — Etapa 8, paso 1: dibujo por la GPU a escala 1 (APK 1.10.1-alfa)
 
 - **GLES vuelve a la app** con la interpolación nueva. Las intermedias solo

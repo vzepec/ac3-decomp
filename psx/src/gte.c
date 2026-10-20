@@ -174,6 +174,7 @@ static int64_t row_dot(PsxGte *g, int i, int64_t base, int16_t m0, int16_t m1, i
 
 /* ---- RTPS / RTPT ---- */
 void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp);
+const PsxGte *psx_gte_hook_ctx;   /* la GTE que proyecta el vertice que se pasa al enganche */
 float psx_gte_wide = 1.0f;
 static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t x = vx(g, n), y = vy(g, n), z = vz(g, n);
@@ -203,6 +204,7 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t sy = lm_g(g, ty < -0x8000 ? -0x8000 : ty > 0x7FFF ? 0x7FFF : (int32_t)ty, F_SY2);
     push_sxy(g, sx, sy);
     if (psx_gte_vertex_hook) {   /* interpolacion de imagenes */
+        psx_gte_hook_ctx = g;
         uint32_t grp = 2166136261u;   /* el objeto: rotacion (c0-c4) y traslacion (c5-c7) */
         for (int i = 0; i < 8; i++) grp = (grp ^ (uint32_t)g->c[i]) * 16777619u;
         psx_gte_vertex_hook(x, y, z, sx, sy, grp);

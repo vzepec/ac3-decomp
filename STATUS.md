@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-19 (release `v1.9-alfa`: interpolación nueva; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.10-alfa`: dibujo por la GPU; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.9-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.10-alfa`, `docs/12-etapa7.md`). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -89,21 +89,15 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Etapa 8, paso 1 (rama `etapa-8-paso-1`, sin publicar):** probar en la
-Retroid el APK 1.10.1-alfa (`data/android/AC3Recomp-1.10.1-alfa.apk`).
-- **Dibujo por la GPU a escala 1** (la misma imagen que por software).
-- L3+R3: `GPU 16:9` → `SW 16:9` → `GPU 4:3` → `ORIG`.
-- **Qué mirar:**
-  - `FPS` en ciudades, `GPU 16:9` frente a `SW 16:9`;
-  - que la imagen sea igual;
-  - `adb logcat -s AC3Game`: hilo de dibujo 0 y redibujo, ms de GLES.
-- **Después:** la imagen real solo en la GPU (quita ~7 ms al hilo del juego);
-  luego la alta resolución.
+**Alta resolución** (petición del dueño tras la `v1.10-alfa`):
+- el dibujo por la GPU (`psx/gl/psx_hw.c`) ya admite escala;
+- probar escala 2-4 en la Retroid, con el comparador para lo que no escala
+  (radar, textos);
+- después, la precisión de los vértices de la GTE (como PGXP).
 
 **Pendiente de etapa 8:**
-- objetos móviles por su identidad;
-- orientación de los objetos del arreglo;
-- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`).
+- la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);
+- los puntos sueltos en menús del comparador (`SIN RESOLVER`).
 
 ## Pendiente
 

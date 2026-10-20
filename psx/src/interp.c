@@ -27,9 +27,15 @@ static int g_nfrac, g_min_vb;
 static PsxInterpSink g_sink;
 
 /* vertices de este paso y del anterior: clave del modelo (x, y, z) y posicion de pantalla */
-typedef struct { uint64_t base; uint32_t sxy; int next; uint32_t grp; } Vert;   /* grp: el objeto (matriz de la GTE) */
+typedef struct { uint64_t base; uint32_t sxy; int next; uint32_t grp; int16_t vx, vy, vz; uint16_t mat; } Vert;   /* grp: el objeto (matriz de la GTE) */
 static Vert cur[MAXV], prv[MAXV];
 static int ncur, nprv;
+/* etapa 8, paso 3b: la matriz de cada pieza (registros de control de la GTE con que se proyecto:
+ * rotacion c0-c4, traslacion c5-c7, centro y distancia c24-c26), para interpolarla entera */
+#define MAXM 16384
+typedef struct { int32_t c[8], ofx, ofy, h; uint32_t grp; } Mat;
+static Mat mats[MAXM], pmats[MAXM];
+static int nmat, npmat;
 static int16_t pdx[MAXV], pdy[MAXV];
 static uint8_t pok[MAXV];
 static int pbest[MAXV];                 /* vertice del paso anterior con que se emparejo */
@@ -95,6 +101,17 @@ void psx_interp_vertex(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, 
     cur[ncur].base = base;
     cur[ncur].sxy = ((uint32_t)(uint16_t)sy << 16) | (uint16_t)sx;
     cur[ncur].grp = grp;
+    cur[ncur].vx = (int16_t)x; cur[ncur].vy = (int16_t)y; cur[ncur].vz = (int16_t)z;
+    const PsxGte *g = psx_gte_hook_ctx ? psx_gte_hook_ctx : (const PsxGte *)psx_gte_get_context();
+    if (!nmat || mats[nmat - 1].grp != grp || mats[nmat - 1].ofx != g->c[24] || mats[nmat - 1].ofy != g->c[25] || mats[nmat - 1].h != g->c[26]) {
+        /* la pieza cambia (otra matriz u otra proyeccion): su matriz */
+        if (nmat < MAXM) {
+            Mat *m = &mats[nmat++];
+            memcpy(m->c, g->c, sizeof m->c);
+            m->ofx = g->c[24]; m->ofy = g->c[25]; m->h = g->c[26]; m->grp = grp;
+        }
+    }
+    cur[ncur].mat = (uint16_t)(nmat ? nmat - 1 : 0);
     ncur++;
 }
 
@@ -227,8 +244,12 @@ static void capture(PsxGpu *g, int num, int den, int vb) {
  * (psx/gl/psx_hw.c). La imagen real se sigue dibujando por software (la VRAM del juego); las
  * intermedias, solo se interpretan (registro sin dibujar la imagen principal) ---- */
 static PsxInterpHwSink g_hwsink;
-static int g_hwfull;
+static int g_hwfull, g_hwmain;
 void psx_interp_hw(PsxInterpHwSink sink, int full) { g_hwsink = sink; g_hwfull = full; }
+void psx_interp_hw_main(int on) { g_hwmain = on; }
+static int g_real_only;   /* la imagen real de este paso solo se dibujo en la GPU */
+static int g_real_nread;
+static int16_t g_real_read[4][4];
 
 static int hw_prepare(PsxHwList *l, int x1, int y1, int x2, int y2) {
     if (!l->p) {
@@ -259,8 +280,16 @@ static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
     }
     int x0 = g->area_x1, y0 = g->area_y1;
     memcpy(bg, g->vram, sizeof bg);
-    psx_gpu_record(&L, 0);
+    /* etapa 8, paso 2: con g_hwmain, el software no dibuja la imagen (solo lo de fuera); la GPU
+     * parte de su propia copia si el software ya no la tenia al dia */
+    L.main_stale = psx_gpu_main_stale(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+    g_real_only = g_hwmain && !g_hwfull &&
+                  !psx_gpu_list_copies_from(ot, psx_ram, psx_scratch, g->area_x1, g->area_y1, g->area_x2, g->area_y2);
+    double r0 = tnow();
+    psx_gpu_record(&L, g_real_only);
     psx_gpu_draw_list(g, ot);
+    tm_raster_real += tnow() - r0; tm_raster_nr++;
+    g_real_nread = L.nread; memcpy(g_real_read, L.read, sizeof g_real_read);
     psx_gpu_record_flush(g);
     psx_gpu_record(NULL, 0);
     g_hwsink(&L, bg, g->vram, x0, y0, w, h, num, den, vb, g_tstep);
@@ -350,6 +379,9 @@ static struct {
     uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
     int rebuilt;
     int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
+    int real_only;                    /* etapa 8, paso 2: la real solo esta en la GPU (base de las intermedias) */
+    int nread;                        /* y las zonas de la GPU que lee como textura (las mismas en las intermedias) */
+    int16_t read[4][4];
     PsxGpu gpu;
     PhaseList L;
     int den, interval, x0, y0, dw, dh, on, rgb24;
@@ -433,13 +465,23 @@ static void *worker(void *arg) {
             int den = J.den;
             apply_phase(&J.L, k, den, R, Sc);
             if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
-                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
-                 * con full (comparador), tambien la imagen por software */
-                psx_gpu_record(&hl, !g_hwfull);
+                hl.main_stale = J.real_only;   /* la base (la real pegada) no esta en el software */
+                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja). Salvo
+                 * si la lista copia desde la imagen (el efecto de calor de los motores): entonces el
+                 * software la dibuja entera, para que la copia lea lo de esta intermedia y no la real
+                 * pegada debajo (con el HUD ya dibujado: salia una banda verde bajo las llamas) */
+                static int nofix = -1;   /* prueba: PSX_INTERP_NOCOPYFIX=1, sin esto (para ver el fallo) */
+                if (nofix < 0) nofix = getenv("PSX_INTERP_NOCOPYFIX") != NULL;
+                int only = nofix || !psx_gpu_list_copies_from(J.ot, R, Sc, J.ax1, J.ay1, J.ax2, J.ay2);
+                static _Thread_local PsxGpu *ref;   /* comparador (full): la referencia, dibujada entera en otra copia */
+                if (g_hwfull) { if (!ref) ref = malloc(sizeof *ref); if (ref) memcpy(ref, gpu, sizeof *ref); }
+                psx_gpu_record(&hl, only);
                 psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
                 psx_gpu_record_flush(gpu);
                 psx_gpu_record(NULL, 0);
-                J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
+                if (g_hwfull && ref) psx_gpu_draw_list_mem(ref, J.ot, R, Sc);
+                hl.nread = J.nread; memcpy(hl.read, J.read, sizeof hl.read);   /* lo que lee la real de la GPU */
+                J.hwsink(&hl, J.gpu.vram, g_hwfull && ref ? ref->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
                 continue;
             }
             double r0 = tnow();
@@ -531,6 +573,146 @@ static int fit_affine(const int16_t *px, const int16_t *py, const int16_t *qx, c
 }
 static int16_t fx[MAXV], fy[MAXV], fdx[MAXV], fdy[MAXV];
 
+/* ---- etapa 8, paso 3b: interpolacion rigida por pieza ---- */
+int g_rigid = -1;   /* PSX_INTERP_RIGID=1 la activa (prueba; por defecto no: abre costuras entre piezas, ver docs/14-etapa8.md) */
+int st_rigid, st_rigid_v, st_rw[6];   /* st_rw: tramos, sin mayoria, otra proyeccion, giro, salto, no cuadra */
+static void unpack_r(const int32_t *c, double r[3][3]) {
+    r[0][0] = (int16_t)c[0]; r[0][1] = (int16_t)(c[0] >> 16); r[0][2] = (int16_t)c[1];
+    r[1][0] = (int16_t)(c[1] >> 16); r[1][1] = (int16_t)c[2]; r[1][2] = (int16_t)(c[2] >> 16);
+    r[2][0] = (int16_t)c[3]; r[2][1] = (int16_t)(c[3] >> 16); r[2][2] = (int16_t)c[4];
+}
+/* la matriz a medio camino: media, filas otra vez ortogonales (con su largo medio: puede haber
+ * escala). 0 si las dos rotaciones estan demasiado lejos para mezclarlas */
+static int mid_matrix(const Mat *a, const Mat *b, int32_t out[8]) {
+    double ra[3][3], rb[3][3], r[3][3], len[3];
+    unpack_r(a->c, ra); unpack_r(b->c, rb);
+    for (int i = 0; i < 3; i++) {
+        double la = 0, lb = 0, dot = 0;
+        for (int j = 0; j < 3; j++) { la += ra[i][j] * ra[i][j]; lb += rb[i][j] * rb[i][j]; dot += ra[i][j] * rb[i][j]; }
+        la = sqrt(la); lb = sqrt(lb);
+        if (la < 1 || lb < 1 || dot < 0.5 * la * lb) return 0;   /* mas de 60 grados */
+        len[i] = (la + lb) / 2;
+        for (int j = 0; j < 3; j++) r[i][j] = ra[i][j] / la + rb[i][j] / lb;
+    }
+    for (int i = 0; i < 3; i++) {   /* Gram-Schmidt */
+        for (int k = 0; k < i; k++) {
+            double d = 0;
+            for (int j = 0; j < 3; j++) d += r[i][j] * r[k][j];
+            for (int j = 0; j < 3; j++) r[i][j] -= d * r[k][j];
+        }
+        double l = sqrt(r[i][0] * r[i][0] + r[i][1] * r[i][1] + r[i][2] * r[i][2]);
+        if (l < 1e-9) return 0;
+        for (int j = 0; j < 3; j++) r[i][j] /= l;
+    }
+    int16_t q[9];
+    for (int i = 0; i < 3; i++)
+        for (int j = 0; j < 3; j++) {
+            double v = r[i][j] * len[i];
+            q[i * 3 + j] = (int16_t)lrint(v > 32767 ? 32767 : v < -32768 ? -32768 : v);
+        }
+    out[0] = (uint16_t)q[0] | (int32_t)((uint32_t)(uint16_t)q[1] << 16);
+    out[1] = (uint16_t)q[2] | (int32_t)((uint32_t)(uint16_t)q[3] << 16);
+    out[2] = (uint16_t)q[4] | (int32_t)((uint32_t)(uint16_t)q[5] << 16);
+    out[3] = (uint16_t)q[6] | (int32_t)((uint32_t)(uint16_t)q[7] << 16);
+    out[4] = q[8];
+    for (int i = 5; i < 8; i++) out[i] = (int32_t)(((int64_t)a->c[i] + b->c[i]) / 2);
+    return 1;
+}
+static void rigid_pieces(void) {
+    st_rigid = st_rigid_v = 0;
+    memset(st_rw, 0, sizeof st_rw);
+    /* pieza anterior de cada pieza: la que mas vertices emparejados le da */
+    static int from[MAXM], votes[MAXM], second[MAXM];
+    for (int m = 0; m < nmat; m++) from[m] = -1, votes[m] = second[m] = 0;
+    /* los vertices de una pieza son seguidos: se recorre por tramos */
+    for (int a = 0; a < ncur;) {
+        int b = a, m = cur[a].mat;
+        while (b < ncur && cur[b].mat == m) b++;
+        /* mayoria entre las piezas anteriores de sus parejas */
+        enum { NC = 8 };
+        int cand[NC], cnt[NC], nc = 0;
+        for (int k = a; k < b; k++) {
+            if (!pok[k] || !in3d[k]) continue;
+            int pm = prv[pbest[k]].mat, j = 0;
+            while (j < nc && cand[j] != pm) j++;
+            if (j == nc) { if (nc == NC) continue; cand[nc] = pm; cnt[nc] = 0; nc++; }
+            cnt[j]++;
+        }
+        int best = -1, bc = 0, sc = 0;
+        for (int j = 0; j < nc; j++) {
+            if (cnt[j] > bc) { sc = bc; bc = cnt[j]; best = cand[j]; }
+            else if (cnt[j] > sc) sc = cnt[j];
+        }
+        st_rw[0]++;
+        if (!(best >= 0 && bc >= 3 && bc >= 3 * sc && best < npmat)) st_rw[1]++;
+        else if (!(pmats[best].ofx == mats[m].ofx && pmats[best].ofy == mats[m].ofy && pmats[best].h == mats[m].h)) st_rw[2]++;
+        if (best >= 0 && bc >= 3 && bc >= 3 * sc && best < npmat) {
+            int32_t mc[8];
+            Mat *A = &pmats[best], *B = &mats[m];
+            int same = A->ofx == B->ofx && A->ofy == B->ofy && A->h == B->h, mm = same && mid_matrix(A, B, mc);
+            if (same && !mm) st_rw[3]++;
+            if (mm) {
+                /* proyeccion de cada vertice con la matriz a medio camino (la GTE del juego, con su
+                 * pantalla ancha), sin pasar por el enganche de la interpolacion */
+                static PsxGte gt;
+                void (*hook)(int32_t, int32_t, int32_t, int32_t, int32_t, uint32_t) = psx_gte_vertex_hook;
+                psx_gte_vertex_hook = NULL;
+                memcpy(&gt, psx_gte_get_context(), sizeof gt);
+                memcpy(gt.c, mc, sizeof mc);
+                gt.c[24] = B->ofx; gt.c[25] = B->ofy; gt.c[26] = B->h;
+                if (getenv("PSX_INTERP_RIGID_CHK")) {   /* depuracion: con la matriz del propio paso debe salir lo registrado */
+                    static int shown;
+                    PsxGte g2 = gt;
+                    memcpy(g2.c, B->c, sizeof B->c);
+                    g2.c[24] = B->ofx; g2.c[25] = B->ofy; g2.c[26] = B->h;
+                    for (int k = a; k < b && shown < 6; k++) {
+                        g2.d[0] = (int32_t)((uint32_t)(uint16_t)cur[k].vx | (uint32_t)(uint16_t)cur[k].vy << 16);
+                        g2.d[1] = cur[k].vz;
+                        psx_gte_command(&g2, 0x0180001);
+                        if ((uint32_t)g2.d[14] != cur[k].sxy) {
+                            fprintf(stderr, "rigida: vertice %d (%d,%d,%d) registrado (%d,%d), rehecho (%d,%d); ofx %08x ofy %08x h %d, contexto %08x %08x %d\n", k, cur[k].vx, cur[k].vy, cur[k].vz,
+                                    lo(cur[k].sxy), hi(cur[k].sxy), (int16_t)(g2.d[14] & 0xFFFF), (int16_t)(g2.d[14] >> 16), B->ofx, B->ofy, B->h,
+                                    ((PsxGte *)psx_gte_get_context())->c[24], ((PsxGte *)psx_gte_get_context())->c[25], ((PsxGte *)psx_gte_get_context())->c[26]);
+                            shown++;
+                        }
+                    }
+                }
+                int16_t nx[4096], ny[4096];
+                int nv = b - a > 4096 ? 0 : b - a, okk = 1;
+                double dev = 0;
+                int ndev = 0;
+                for (int k = 0; k < nv; k++) {
+                    gt.d[0] = (int32_t)((uint32_t)(uint16_t)cur[a + k].vx | (uint32_t)(uint16_t)cur[a + k].vy << 16);
+                    gt.d[1] = cur[a + k].vz;
+                    psx_gte_command(&gt, 0x0180001);   /* RTPS */
+                    uint32_t sxy = (uint32_t)gt.d[14];
+                    nx[k] = (int16_t)(sxy & 0xFFFF); ny[k] = (int16_t)(sxy >> 16);
+                    int x1 = lo(cur[a + k].sxy), y1 = hi(cur[a + k].sxy);
+                    /* desplazamiento hacia el paso anterior que da esa posicion en t = 1/2 */
+                    int dx = 2 * (nx[k] - x1), dy = 2 * (ny[k] - y1);
+                    if (abs(dx) > JUMP_FIT || abs(dy) > JUMP_FIT) okk = 0;
+                    if (pok[a + k] && in3d[a + k]) { dev += hypot(dx - pdx[a + k], dy - pdy[a + k]); ndev++; }
+                }
+                psx_gte_vertex_hook = hook;
+                /* las parejas tienen que cuadrar con la pieza (si no, el emparejamiento era de otra) */
+                if (!okk) st_rw[4]++;
+                else if (!(ndev && dev / ndev < 6 + 0.1 * nv)) st_rw[5]++;
+                if (nv && okk && ndev && dev / ndev < 6 + 0.1 * nv) {
+                    for (int k = 0; k < nv; k++) {
+                        if (!in3d[a + k]) continue;
+                        pdx[a + k] = (int16_t)(2 * (nx[k] - lo(cur[a + k].sxy)));
+                        pdy[a + k] = (int16_t)(2 * (ny[k] - hi(cur[a + k].sxy)));
+                        pok[a + k] = 1;
+                        st_rigid_v++;
+                    }
+                    st_rigid++;
+                }
+            }
+        }
+        a = b;
+    }
+}
+
 /* la lista de la fase a partir del emparejamiento de este paso */
 static PhaseList g_L;
 static void build_list(PhaseList *L) {
@@ -556,10 +738,14 @@ static void build_list(PhaseList *L) {
 
 int psx_interp_skip_test;   /* prueba: S pasos de cada S + 1 se dibujan sin usarse de referencia */
 
+static int g_parity;
+/* prueba: el paso que va a dibujar psx_interp_draw sirve de referencia (lo usa el redibujo para
+ * interpolar entre los pasos k y k+S+1) */
+int psx_interp_next_is_ref(void) { return !psx_interp_skip_test || g_parity % (psx_interp_skip_test + 1) == 0; }
+
 int psx_interp_draw(void *gpu, uint32_t ot) {
     PsxGpu *g = gpu;
-    static int parity;
-    int ph = psx_interp_skip_test ? parity++ % (psx_interp_skip_test + 1) : 0;
+    int ph = psx_interp_skip_test ? g_parity++ % (psx_interp_skip_test + 1) : 0;
     if (ph) {   /* pasos k+1 .. k+S: solo la imagen real (fase ph/0) */
         psx_gpu_draw_list(g, ot);
         capture(g, ph, 0, 1);
@@ -793,6 +979,12 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
         for (int k = 0; k < ncur; k++)
             if (rej[k]) { pok[k] = 0; st_reject++; }
     }
+    /* 2d. (etapa 8, paso 3b) piezas enteras: la pieza (matriz de la GTE) cuya mayoria de vertices
+     *     emparejados viene de una misma pieza del paso anterior se interpola entera: rotacion y
+     *     traslacion a medio camino, y todos sus vertices (tambien los que no tenian pareja) se
+     *     vuelven a proyectar con la GTE. Sin estiramientos ni piezas partidas */
+    if (g_rigid < 0) g_rigid = getenv("PSX_INTERP_RIGID") ? atoi(getenv("PSX_INTERP_RIGID")) : 0;   /* medido: mas estirados (costuras) */
+    if (have_prev && g_rigid) rigid_pieces();
     /* 3. desplazamiento de cada coordenada de la lista */
     for (int i = 0; i < nref; i++) {
         uint32_t w = *ref[i];
@@ -980,6 +1172,9 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     }
     memcpy(pp_xy, orig, (size_t)nref * sizeof orig[0]);
     prev_gen++;
+    memcpy(pmats, mats, (size_t)nmat * sizeof mats[0]);
+    npmat = nmat;
+    nmat = 0;
     nprv = ncur;
     for (int i = ncur - 1; i >= 0; i--) {
         prv[i] = cur[i];
@@ -998,8 +1193,9 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     int stuck = 0;
     for (int i = 0; i < nref; i++) stuck += moved[i] == 1;
     st_stuck = stuck;
-    if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d\n",
-                                           VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model);
+    if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "paso vb %d: gte %d reconocidas %d emparejadas %d arrastradas %d quietas %d modelo %d; piezas enteras %d (%d vertices)\n",
+                                           VSync(-1), ncur, st_matched, st_paired, st_dragged, stuck, model, st_rigid, st_rigid_v);
+    if (getenv("PSX_INTERP_DBG2")) fprintf(stderr, "  piezas: tramos %d, sin mayoria %d, otra proyeccion %d, giro %d, salto %d, no cuadran %d; matrices %d\n", st_rw[0], st_rw[1], st_rw[2], st_rw[3], st_rw[4], st_rw[5], nmat);
     int ok = !g_cut && have_prev && interval >= g_min_vb && st_matched > 64 && st_paired * 4 >= st_matched && stuck * 33 <= st_matched;
     /* etapa 8: con el redibujo, el mundo sale exacto aunque el emparejamiento falle; lo movil, quieto */
     int nodyn = 0;
@@ -1037,6 +1233,10 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             if (nodyn) J.L.n = J.L.np = 0;
             J.rebuilt = g_rebuild ? rebuild_phases(ot, g_nfrac + 1) : 0;
             J.rr_async = g_rra && !g_rra->prep(ot);
+            /* prueba (AC3_RR_DYN=0): con el redibujo, lo movil no se interpola (se queda como en el paso) */
+            static int dyn = -1;
+            if (dyn < 0) dyn = getenv("AC3_RR_DYN") ? atoi(getenv("AC3_RR_DYN")) : 1;
+            if (J.rr_async && dyn == 0) J.L.n = J.L.np = 0;
             if (g_rra && !J.rr_async) psx_interp_rebuild_fails++;
             if (nodyn && !J.rebuilt) J.L.n = J.L.np = 0;
             J.ot = ot; J.den = g_nfrac + 1; J.interval = interval; J.t = ta; J.sink = g_sink;
@@ -1045,6 +1245,8 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
             psx_display_geom(&J.dw, &J.dh, &J.on, &J.rgb24);
             if (J.dw * J.dh > 1024 * 512) J.dw = J.dh = 0;
             J.hwsink = J.on && !J.rgb24 ? g_hwsink : NULL;
+            J.real_only = g_real_only;
+            J.nread = g_real_nread; memcpy(J.read, g_real_read, sizeof J.read);
             if (J.rr_async && !(J.dw > 0 && J.dh > 0)) { g_rra->done(); J.rr_async = 0; }   /* sin trabajo: se suelta */
         }
         double tc = tnow();
