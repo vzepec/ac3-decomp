@@ -204,11 +204,42 @@ static double psnr(const uint32_t *a, const uint32_t *b, int n) {
     e /= 3.0 * n;
     return e < 1e-9 ? 99 : 10 * log10(255.0 * 255.0 / e);
 }
+/* con hilos de dibujo la intermedia de (k, k+S+1) llega despues de la real k+S+1 (y quiza
+ * despues del paso del medio siguiente): la real y su paso del medio esperan a su intermedia */
+static uint32_t t_pend[640 * 512], t_pend_mid[640 * 512];
+static int t_pend_on, t_pend_have_mid, t_threads = -1;
+static void interp_test_case(const uint32_t *rgba, int w, int h);
 static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
     int n = w * h;
     if (n > 640 * 512) return;
     if (den == 0) { if (num == (psx_interp_skip_test + 1) / 2) { memcpy(t_mid, rgba, n * 4); t_have_mid = 1; } return; }
+    if (t_threads < 0) t_threads = getenv("AC3_INTERP_THREADS") && atoi(getenv("AC3_INTERP_THREADS")) > 0;
+    if (t_threads) {
+        if (num == den) {   /* la real: espera a su intermedia (si la anterior no la tuvo, pasa a ser la de referencia) */
+            if (t_pend_on) { memcpy(t_prev, t_pend, n * 4); t_have_prev = 1; }
+            memcpy(t_pend, rgba, n * 4);
+            t_pend_have_mid = t_have_mid;
+            if (t_have_mid) memcpy(t_pend_mid, t_mid, n * 4);
+            t_have_mid = 0;
+            t_pend_on = 1;
+            return;
+        }
+        if (!t_pend_on) return;
+        memcpy(t_int, rgba, n * 4);
+        if (t_have_prev && t_pend_have_mid) {
+            memcpy(t_mid, t_pend_mid, n * 4);
+            t_have_mid = t_fresh = 1;
+            interp_test_case(t_pend, w, h);   /* compara y deja la real como la anterior */
+        } else { memcpy(t_prev, t_pend, n * 4); t_have_prev = 1; }
+        t_pend_on = 0;
+        t_have_mid = 0;
+        return;
+    }
     if (num < den) { memcpy(t_int, rgba, n * 4); t_fresh = 1; return; }
+    interp_test_case(rgba, w, h);
+}
+static void interp_test_case(const uint32_t *rgba, int w, int h) {
+    int n = w * h, den = 2;
     if (t_have_prev && t_have_mid && den == 2 && t_fresh) {
         double pi = psnr(t_int, t_mid, n), pp = psnr(t_prev, t_mid, n), pn = psnr(rgba, t_mid, n);
         t_sum_int += pi; t_sum_prev += pp; t_sum_next += pn; t_n++;
@@ -222,7 +253,9 @@ static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
         if (hi_ - hm > t_holes_max) { t_holes_max = hi_ - hm; t_holes_max_f = last_vcount; }
         double gain = pi - (pp > pn ? pp : pn);
         if (gain < t_min_gain) t_min_gain = gain;
-        if (getenv("AC3_INTERP_TEST_DUMP") && shots && abs(last_vcount - atoi(getenv("AC3_INTERP_TEST_DUMP"))) <= 1) {
+        int d0 = -9, d1 = -9;   /* AC3_INTERP_TEST_DUMP=v (v +- 1) o v1,v2 */
+        if (getenv("AC3_INTERP_TEST_DUMP") && sscanf(getenv("AC3_INTERP_TEST_DUMP"), "%d,%d", &d0, &d1) == 1) { d1 = d0 + 1; d0 -= 1; }
+        if (getenv("AC3_INTERP_TEST_DUMP") && shots && last_vcount >= d0 && last_vcount <= d1) {
             const uint32_t *im[4] = {t_prev, t_mid, t_int, rgba};
             const char *nm[4] = {"0anterior", "1real_intermedio", "2interpolada", "3siguiente"};
             for (int q = 0; q < 4; q++) {
@@ -255,7 +288,9 @@ static void interp_test(const uint32_t *rgba, int w, int h, int num, int den) {
 static pthread_mutex_t sink_mu = PTHREAD_MUTEX_INITIALIZER;
 
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step) {
-    if (psx_interp_skip_test && last_vcount > 3500) interp_test(rgba, w, h, num, den);
+    static int test_from = -1;
+    if (test_from < 0) test_from = getenv("AC3_INTERP_TEST_FROM") ? atoi(getenv("AC3_INTERP_TEST_FROM")) : 3500;
+    if (psx_interp_skip_test && last_vcount > test_from) interp_test(rgba, w, h, num, den);
     if (den == 0) return;
     static int last_stat;
     if (num == den && last_vcount - last_stat >= 100) {

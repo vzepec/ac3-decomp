@@ -88,6 +88,7 @@ extern int psx_interp_on;
 /* prueba (tools: AC3_INTERP_TEST=S de native_main): S pasos de cada S + 1 se entregan con fase
  * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1
  * con el paso real del medio (S impar; S = 3 simula movimientos el doble de rapidos) */
-extern int psx_interp_skip_test;   /* atajo para la GTE */
+extern int psx_interp_skip_test;
+int psx_interp_next_is_ref(void);   /* con la prueba, si el paso que viene es de referencia */   /* atajo para la GTE */
 
 #endif

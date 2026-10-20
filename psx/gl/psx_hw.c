@@ -92,6 +92,7 @@ static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
 typedef struct { int x0, y0, w, h, scale, valid; unsigned use; GLuint tex, mask, stencil, fbo; } Target;
 static Target g_tg[NTARGET];
 static GLuint g_cprog, g_cvao, g_cvbo, g_vfbo;   /* copia de una imagen conservada a la textura de la VRAM */
+static GLuint g_sprog;                           /* stencil (bit 15) desde el segundo bufer de una imagen conservada */
 static unsigned g_tg_use;
 static GLuint g_last_tex, g_read_fbo;   /* lo que devuelven psx_hw_texture y psx_hw_read */
 /* la VRAM como textura: tres que se turnan (la que se rellena no la esta leyendo la GPU para una
@@ -563,6 +564,52 @@ static void copy_init(void) {
     glBindVertexArray(0);
     glGenFramebuffers(1, &g_vfbo);
 }
+/* el stencil de la imagen que se dibuja, desde el bit 15 exacto del segundo bufer de la conservada
+ * (el stencil que hereda solo es aproximado fuera de la zona que comprueba la mascara: sin el bit
+ * de los texeles; las llamas de los motores dejaban pasar la linea del HUD encima) */
+static const char *SVS =
+    "#version 300 es\n"
+    "layout(location = 0) in vec2 a_pos;\n"
+    "void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }\n";
+static const char *SFS =
+    "#version 300 es\n"
+    "precision highp float;\n"
+    "uniform sampler2D u_msk;\n"
+    "out vec4 o;\n"
+    "void main() { if (texelFetch(u_msk, ivec2(gl_FragCoord.xy), 0).a < 0.5) discard; o = vec4(0.0); }\n";
+static void stencil_from_mask(GLuint mask, int ow, int oh) {
+    if (!g_cprog) copy_init();
+    if (!g_sprog) {
+        g_sprog = glCreateProgram();
+        glAttachShader(g_sprog, shader(GL_VERTEX_SHADER, SVS));
+        glAttachShader(g_sprog, shader(GL_FRAGMENT_SHADER, SFS));
+        glLinkProgram(g_sprog);
+    }
+    glViewport(0, 0, ow, oh);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_BLEND);
+    glClearStencil(0);
+    glClear(GL_STENCIL_BUFFER_BIT);
+    glEnable(GL_STENCIL_TEST);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glStencilMask(0xFF);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+    glUseProgram(g_sprog);
+    glActiveTexture(GL_TEXTURE2);
+    glBindTexture(GL_TEXTURE_2D, mask);
+    glUniform1i(glGetUniformLocation(g_sprog, "u_msk"), 2);
+    static const float q[12] = {-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1};
+    glBindVertexArray(g_cvao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_cvbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof q, q, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glDisable(GL_STENCIL_TEST);
+    glActiveTexture(GL_TEXTURE0);
+}
+
 static void read_zones(const PsxHwList *l, int scale) {
     for (int k = 0; k < l->nread; k++) {
         int x1 = l->read[k][0], y1 = l->read[k][1], x2 = l->read[k][2], y2 = l->read[k][3];
@@ -657,6 +704,7 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     }
     g_last_tex = real ? tg->tex : g_out;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
+    if (keep) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
     glUseProgram(g_prog);
     glUniform2f(u_origin, (float)x0, (float)y0);
@@ -730,6 +778,22 @@ unsigned psx_hw_texture(int *w, int *h) {
     if (w) *w = g_ow;
     if (h) *h = g_oh;
     return g_last_tex;
+}
+
+/* pruebas: el bit 15 que guarda la imagen conservada de la ultima lista dibujada (1 byte por pixel) */
+int psx_hw_read_mask(uint8_t *out) {
+    Target *t = NULL;
+    for (int i = 0; i < NTARGET; i++) if (g_tg[i].fbo == g_read_fbo) t = &g_tg[i];
+    if (!t) return -1;
+    static uint32_t *tmp;
+    if (!tmp) tmp = malloc(1024 * 512 * 4);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, t->fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+    glReadPixels(0, 0, g_ow, g_oh, GL_RGBA, GL_UNSIGNED_BYTE, tmp);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
+    for (int i = 0; i < g_ow * g_oh; i++) out[i] = (tmp[i] >> 24) > 127;
+    return 0;
 }
 
 void psx_hw_read(uint32_t *out) {

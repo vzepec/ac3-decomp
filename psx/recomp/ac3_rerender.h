@@ -41,6 +41,7 @@ typedef struct {
     const uint8_t *s0, *s0_scr;   /* RAM y scratchpad al empezar el dibujo estático (S0) */
     PsxGte gte;
     float wide;                   /* psx_gte_wide del paso */
+    int view;                     /* subpaso sin juego (repetición, demostración) */
 } RrSnap;
 /* hilo del juego, en DrawOTag: 0 si este paso se puede redibujar; el búfer de S0 queda reservado
  * hasta ac3_rr_release (mientras, el juego guarda el del paso siguiente en el otro) */

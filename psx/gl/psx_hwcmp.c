@@ -126,7 +126,8 @@ static void hook(PsxGpu *g, uint32_t ot) {
         static PsxGpu ref;
         memcpy(&ref, g, sizeof ref);
         l.main_stale = psx_gpu_main_stale(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
-        psx_gpu_record(&l, 1);
+        /* como en la app: la lista que copia desde la imagen la dibuja entera el software */
+        psx_gpu_record(&l, !psx_gpu_list_copies_from(ot, psx_ram, psx_scratch, g->area_x1, g->area_y1, g->area_x2, g->area_y2));
         psx_gpu_draw_list(g, ot);
         psx_gpu_record_flush(g);
         psx_gpu_record(NULL, 0);
@@ -201,6 +202,18 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
         psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
+    if (g_cmp_persist && getenv("AC3_HWCMP_MASKCMP")) {   /* el bit 15 de la GPU frente al del software */
+        static uint8_t mk[1024 * 512];
+        if (!psx_hw_read_mask(mk)) {
+            int n = 0, shown = 0;
+            for (int y = 0; y < h; y++)
+                for (int x = 0; x < w; x++) {
+                    int s15 = (swv[((y0 + y) & 511) * 1024 + ((x0 + x) & 1023)] >> 15) & 1;
+                    if (s15 != mk[y * w + x]) { n++; if (shown++ < 4) printf("  mascara (%d,%d): software %d, GPU %d\n", x, y, s15, mk[y * w + x]); }
+                }
+            if (n) printf("mascara VBlank %d: %d pixeles con el bit 15 distinto\n", VSync(-1), n);
+        }
+    }
     for (int y = 0; y < h; y++)
         for (int x = 0; x < w; x++) g_sw[y * w + x] = x5(swv[((y0 + y) & 511) * 1024 + ((x0 + x) & 1023)]);
     int bw = (w + 7) / 8, bh = (h + 7) / 8, nbad = 0, bx1 = 9999, by1 = 9999, bx2 = -1, by2 = -1;

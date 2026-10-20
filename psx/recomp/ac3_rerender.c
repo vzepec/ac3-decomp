@@ -24,11 +24,18 @@ typedef struct {
     uint32_t cam_matrix;                  /* FUN_8003304c(cámara, g_render+0x2C, g_render+0x4C) */
     uint32_t draw[4];                     /* dibujo estático, en orden */
     uint32_t after;                       /* la primera función después (fin del dibujo estático) */
+    uint32_t view[2];                     /* lógica de los subpasos sin juego (repetición, demostración) */
 } RrAddr;
-static const RrAddr RR_EU = {0x800BACC4u, 0x8003304Cu, {0x8003308Cu, 0x80033140u, 0x80033194u, 0x800331D4u}, 0x80039D84u};
+/* view: la tabla de subpasos de la misión (US 0x8009F230 en ACE.BIN, +0x9f230) llama al dibujo de
+ * la misión con una lógica por subpaso: 0x80032e6c en vuelo, 0x80032ffc en la demostración del
+ * título y la repetición (reproduce un vuelo grabado), 0x80032fac (otra vista sin lógica). EU, por
+ * la misma forma: 0x80032de4 y 0x80032e34 */
+static const RrAddr RR_EU = {0x800BACC4u, 0x8003304Cu, {0x8003308Cu, 0x80033140u, 0x80033194u, 0x800331D4u}, 0x80039D84u,
+                             {0x80032DE4u, 0x80032E34u}};
 /* US: por firma desde la EU; FUN_80033140 (constantes distintas) por la secuencia de llamadas de
  * FUN_80033910, el dibujo de la mision */
-static const RrAddr RR_US = {0x800BB81Cu, 0x80033214u, {0x80033254u, 0x80033308u, 0x8003335Cu, 0x8003339Cu}, 0x80039F8Cu};
+static const RrAddr RR_US = {0x800BB81Cu, 0x80033214u, {0x80033254u, 0x80033308u, 0x8003335Cu, 0x8003339Cu}, 0x80039F8Cu,
+                             {0x80032FACu, 0x80032FFCu}};
 
 /* entradas del dibujo estático que cambian entre pasos (encuesta de la etapa 8: AC3_RR_SURVEY, las
  * 41 misiones US): la cámara y las posiciones del arreglo de objetos móviles del mundo (vehículos,
@@ -89,6 +96,11 @@ static void survey_print(void) {
     }
 }
 static int g_have_cur, g_have_prev, g_complete, g_mark_vb, g_in_static;
+/* el objeto de +0x3C4 solo se interpola en los subpasos sin juego: alli es el avion que dibuja el
+ * dibujo estatico; en vuelo, el dibujo estatico lo usa de origen de estelas (paso 3: interpolado,
+ * la estela del misil se estiraba) */
+static int g_step_view, g_view;
+static void mark_view(RCpu *c) { (void)c; if (!g_busy) g_step_view = 1; }
 int VSync(int);
 
 static uint32_t field_addr(int i) {
@@ -127,8 +139,33 @@ static void mark0(RCpu *c) {
     mipsi_wtrace = g_wt;
     if (g_survey < 0) { g_survey = getenv("AC3_RR_SURVEY") != NULL; if (g_survey) atexit(survey_print); }
     if (g_survey) { memset(g_rt, 0, sizeof g_rt); mipsi_rtrace = g_rt; }
-    if (g_have_cur) { memcpy(g_prev, g_cur, sizeof g_prev); g_have_prev = 1; }
-    for (int i = 0; i < NFIELDS; i++) g_cur[i] = field_get(i);
+    /* con la prueba de verdad conocida (AC3_INTERP_TEST), el anterior es el ultimo paso de referencia */
+    int psx_interp_next_is_ref(void);
+    static int32_t ref_fields[NFIELDS];
+    static int have_ref;
+    if (psx_interp_next_is_ref()) {
+        if (have_ref) { memcpy(g_prev, ref_fields, sizeof g_prev); g_have_prev = 1; }
+        for (int i = 0; i < NFIELDS; i++) g_cur[i] = field_get(i);
+        memcpy(ref_fields, g_cur, sizeof ref_fields);
+        have_ref = 1;
+    } else for (int i = 0; i < NFIELDS; i++) g_cur[i] = field_get(i);
+    { /* depuracion: AC3_RR_DUMPJ=vb1,vb2, objetos del arreglo que se mueven mucho entre pasos */
+        int j0 = 0, j1 = -1;
+        if (getenv("AC3_RR_DUMPJ") && sscanf(getenv("AC3_RR_DUMPJ"), "%d,%d", &j0, &j1) == 2 && VSync(-1) >= j0 && VSync(-1) <= j1) {
+            uint32_t G = rd32(g_a->g_render);
+            for (int k = 0; k <= 32; k++) {
+                int f = 9 + k * 6;
+                int64_t dx = (int64_t)g_cur[f] - g_prev[f], dy = (int64_t)g_cur[f + 1] - g_prev[f + 1], dz = (int64_t)g_cur[f + 2] - g_prev[f + 2];
+                if (llabs(dx) + llabs(dy) + llabs(dz) < (1 << 18)) continue;
+                uint32_t b = G + (k == 0 ? 0x3C4 : 0x474 + (k - 1) * 0x5C);
+                fprintf(stderr, "obj vb %d k %d d %lld,%lld,%lld:", VSync(-1), k, (long long)dx, (long long)dy, (long long)dz);
+                for (int o = 0x18; o < 0x5C; o += 4) fprintf(stderr, " %08x", rd32(b + o));
+                fprintf(stderr, "\n");
+            }
+        }
+    }
+    g_view = g_step_view;
+    g_step_view = 0;
     g_have_cur = 1;
     g_complete = 0;
     g_in_static = 1;
@@ -168,6 +205,8 @@ int ac3_rr_install(const Ac3Version *v) {
     if (!g_a) return -1;
     mipsi_set_hook(g_a->draw[0], mark0);
     mipsi_set_hook(g_a->after, mark1);
+    mipsi_set_hook(g_a->view[0], mark_view);
+    mipsi_set_hook(g_a->view[1], mark_view);
     return 0;
 }
 
@@ -245,6 +284,7 @@ int ac3_rr_snapshot(RrSnap *s) {
     memcpy(s->prev, g_prev, sizeof s->prev);
     s->s0 = g_s0; s->s0_scr = g_s0_scr; s->gte = g_s0_gte;
     s->wide = psx_gte_wide;
+    s->view = g_view;
     __atomic_store_n(&g_s0_locked, g_s0_idx, __ATOMIC_RELEASE);
     return 0;
 }
@@ -257,6 +297,7 @@ int ac3_rr_build_from(const RrSnap *s, uint32_t ot, float t) {
     memcpy(g_prev, s->prev, sizeof g_prev);
     g_s0 = s->s0; g_s0_scr = s->s0_scr; g_s0_gte = s->gte;
     psx_gte_wide = s->wide;
+    g_view = s->view;
     return build_core(ot, t);
 }
 
@@ -334,6 +375,7 @@ static int build_core(uint32_t ot, float t) {
             if (FIELDS[j].kind == F_I32 && (d > (1 << 20) || d < -(1 << 20))) jump = 1;
             j++;
         }
+        if (FIELDS[i].group == 2 && !g_view) jump = 1;   /* el de +0x3C4, solo sin juego */
         for (int k = i; k < j; k++) field_set(k, t >= 1.0f || jump ? g_cur[k] : lerp_field(k, t));
         i = j;
     }

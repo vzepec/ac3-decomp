@@ -88,6 +88,8 @@ void psx_gpu_record_flush(PsxGpu *g);              /* al terminar la lista: lo p
 int psx_gpu_main_stale(int x1, int y1, int x2, int y2);
 void psx_gpu_main_mark(int x1, int y1, int x2, int y2, int stale);
 extern long psx_gpu_stale_ev[4];
+/* la lista copia (VRAM -> VRAM) desde ese rectangulo (inclusivo); no dibuja nada */
+int psx_gpu_list_copies_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int x1, int y1, int x2, int y2);
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b);
 

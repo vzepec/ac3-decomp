@@ -29,6 +29,11 @@ GUION = ('300:start:8,500:cruz:6,700:cruz:6,900:cruz:6,1100:cruz:6,1300:cruz:6,1
          '3400:laba:40,3500:circulo:6,3600:rder:30,3700:lizq+larr:60,3850:circulo:6')
 FRAMES = 4000
 SHEET = [2700, 3000, 3300, 3600, 3900]
+# vista exterior (SELECT) con el postquemador (R1) y giros: las llamas de los motores y su efecto de
+# calor, que copia un trozo de la imagen (etapa 8, paso 2; tools/hwcmp.py con HWCMP_GUION)
+GUION_FUEGO = ('300:start:8,500:cruz:6,700:cruz:6,900:cruz:6,1100:cruz:6,1300:cruz:6,1500:cruz:6,1700:cruz:6,'
+               '1900:cruz:6,2100:cruz:6,2300:cruz:6,2700:select:6,2800:r1:300,2900:lizq:60,3050:lder:60,3200:r2:200,'
+               '3300:circulo:6,3400:r1:300,3500:circulo:6,3700:lizq+larr:60')
 # europea (--eu): menu de idioma; la mision arranca hacia el fotograma 3500 (50 Hz)
 GUION_EU = ('320:cruz:6,1100:start:8,1400:cruz:6,1600:cruz:6,1800:cruz:6,2000:cruz:6,2200:cruz:6,2400:cruz:6,'
             '2600:cruz:6,2800:cruz:6,3000:cruz:6,3200:cruz:6,3400:cruz:6,4000:lizq:60,4150:lder:60,4300:larr:40,'

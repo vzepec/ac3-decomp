@@ -28,6 +28,7 @@ uint32_t psx_gte_unr_divide(uint32_t h, uint32_t sz3);
 /* grp identifica el objeto: resumen de la matriz de rotacion y la traslacion con que se proyecto
  * (paso 19: la interpolacion empareja por objeto) */
 extern void (*psx_gte_vertex_hook)(int32_t x, int32_t y, int32_t z, int32_t sx, int32_t sy, uint32_t grp);
+extern const PsxGte *psx_gte_hook_ctx;   /* durante el enganche: la GTE que proyecta (sus registros de control) */
 /* pantalla ancha (etapa 6, paso 16): factor de la x proyectada por RTPS/RTPT alrededor del centro
  * (OFX). 0.75 = una escena 16:9 dibujada en 4:3, que luego se ensancha al presentarla; 1 = normal */
 extern float psx_gte_wide;

@@ -455,13 +455,77 @@ el avión enfocado sale doble y parpadeando.
 - **Sin romper nada:** autoprueba con t = 1 en las misiones 0, 10 y 24, 0
   imágenes distintas.
 
-### 3b: aviones, misiles y efectos de la misión (pendiente)
+### 3b: aviones, misiles y efectos de la misión
 
-- Los dibujan los subsistemas que llama la lógica de la misión
-  (`FUN_80033034` en la US: `FUN_8006b088`, `FUN_8007c6e4`, `FUN_80083cfc`…),
-  antes del dibujo estático.
-- En la repetición (`FUN_80032fac`) solo se llaman `FUN_8006b5e4` y
-  `FUN_8007c6e4`: candidatos a ser dibujo puro.
-- **Lo que hace falta:** separar el dibujo de la lógica de cada subsistema,
-  guardar su estado al empezar y volver a llamarlo con las posiciones y
-  orientaciones a medio camino, como el mundo estático.
+**Lo que se averiguó:**
+- En la misión, la lógica y el dibujo de los objetos móviles van mezclados.
+  - Los subsistemas que llama la lógica del vuelo (US `0x80032e6c`; en la
+    tabla de subpasos, `+0x9f230` de ACE.BIN) actualizan y dibujan en el
+    mismo bucle. Por ejemplo, `FUN_8006b48c` mueve cada partícula y la
+    dibuja.
+  - Volver a dibujarlos con el código del juego exigiría separar el dibujo
+    de la lógica de cada subsistema: **no es viable por ahora**.
+  - Lo móvil sigue con la interpolación en pantalla (emparejamiento por
+    vértices), dentro de la interpolación nueva.
+- **Prueba de verdad conocida con hilos** (`AC3_INTERP_TEST`, arreglada):
+  - con hilos de dibujo, la intermedia llega después de la real siguiente, y
+    el comparador emparejaba cada intermedia con el caso anterior; ahora la
+    real espera a su intermedia;
+  - con la interpolación nueva, interpola entre los dos pasos de referencia
+    (`psx_interp_next_is_ref`);
+  - `AC3_INTERP_TEST_FROM` y `AC3_INTERP_TEST_DUMP=v1,v2`.
+- **Misión 0, todo el vuelo, a ritmo real:**
+
+| | Intermedia | Vecinos reales |
+|---|---|---|
+| Interpolación antigua | 26,8 dB | 25,3 dB |
+| Nueva | 29,2 dB | 25,3 dB |
+| Nueva, con la corrección de abajo | 29,3 dB (peor caso −4,1 en vez de −8,0) | 25,3 dB |
+
+**Fallo del paso 3a, corregido:** interpolar `g_render+0x3C4` en el vuelo
+estiraba la estela del misil (la intermedia la dibujaba doble).
+- En el vuelo, el dibujo estático usa esa entrada como origen de las
+  estelas. Con `AC3_RR_NODRAW` la estela desaparecía, y sin interpolar esa
+  entrada también.
+- **Ahora** se interpola solo en los subpasos sin juego. Los marcan dos
+  enganches: US `0x80032fac` y `0x80032ffc` (demostración y repetición; la
+  demostración usa el segundo, comprobado con `AC3_TRACE`); EU `0x80032de4`
+  y `0x80032e34`.
+- Demostración: **570 de 570** intermedias entre medias.
+- Máximo de enganches del intérprete: de 8 a 12.
+
+**Probado y descartado: piezas enteras** (`PSX_INTERP_RIGID=1`).
+- Cada pieza (matriz de la GTE) emparejada se interpolaba entera: rotación
+  y traslación a medio camino, y sus vértices otra vez por la GTE.
+  - La reconstrucción es exacta: con la matriz del propio paso sale lo
+    registrado. Hizo falta pasar el contexto de la GTE que proyecta
+    (`psx_gte_hook_ctx`): el de la librería tenía otro centro.
+  - 62 piezas por paso en la misión 0.
+- **Medida:** el PSNR no cambia, y los polígonos estirados aumentan
+  (demostración, de 3.188 a 3.471; misión 2, de 1.831 a 2.773), con más pasos
+  tomados por cortes. Una pieza que se mueve entera junto a vecinas que se
+  mueven vértice a vértice abre costuras.
+- Queda en el código, desactivada.
+
+### Las llamas de los motores sobre el HUD (paso 2)
+
+- **Informe del dueño:** al acelerar, las llamas deforman la línea verde
+  del HUD y salen rectángulos verdes.
+- **Reproducido** con `tools/misiones.py` `GUION_FUEGO` (vista exterior con
+  SELECT y postquemador con R1), y con el comparador en el modo del paso 2:
+  166 listas malas en la misión 0.
+- **Causa:** el efecto de calor de los motores copia (VRAM → VRAM, 16×1) un
+  trozo de la imagen que se está dibujando y lo vuelve a dibujar. Con la
+  imagen solo en la GPU, el software copiaba una imagen vieja: 2.760 copias
+  contadas.
+  - Medido antes de concluir: el bit 15 de la GPU coincide con el del
+    software (1-20 píxeles distintos por imagen), así que no era la máscara.
+  - Además, al partir de una imagen conservada, el stencil se rehace desde el
+    bit 15 exacto de su segundo búfer (`stencil_from_mask`).
+- **Corrección:** antes de dibujar, se mira la lista
+  (`psx_gpu_list_copies_from`). Si copia desde su imagen, la dibuja entera
+  el software, y la copia lee lo recién dibujado. Ninguna imagen mal; solo
+  se pierde el ahorro mientras dura el efecto.
+- **Resultado:** 0 listas malas (de 2.794) y 0 copias de imágenes viejas.
+- **Las 41 misiones con `GUION_FUEGO`** (comparador, modo del paso 2): 127.072
+  listas, 5 con un bloque malo cada una; sin fallos.

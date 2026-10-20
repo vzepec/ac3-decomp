@@ -33,5 +33,6 @@ unsigned psx_hw_texture(int *w, int *h);
 void psx_hw_dither(int on);
 /* lee el resultado (RGBA, fila 0 = arriba) en out; para las pruebas */
 void psx_hw_read(uint32_t *out);
+int psx_hw_read_mask(uint8_t *out);   /* pruebas: bit 15 de la imagen conservada de la ultima lista */
 
 #endif

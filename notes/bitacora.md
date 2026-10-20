@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Etapa 8, paso 3b: estela doble, lo móvil y las llamas sobre el HUD
+
+- **Estela doble del misil:** la introdujo el paso 3a. `g_render+0x3C4`
+  solo se interpola en los subpasos sin juego (US `0x80032fac`/`0x80032ffc`).
+- **Aviones y misiles:** su lógica y su dibujo van mezclados; siguen con la
+  interpolación en pantalla.
+- **Piezas enteras** (interpolar la matriz de la GTE): medidas y
+  descartadas, con más polígonos estirados (costuras).
+- **Prueba de verdad conocida con hilos:** arreglada (emparejaba cada
+  intermedia con el caso anterior). Misión 0: 29,3 dB frente a 25,3 de los
+  vecinos.
+- **Llamas que deforman el HUD** (informe del dueño, modo del paso 2): el
+  efecto de calor copia un trozo de la imagen que solo tenía la GPU. La
+  lista que lo hace la dibuja entera el software (se mira antes). Comparador:
+  de 166 listas malas a 0.
+- **Reproducir:** `GUION_FUEGO` de `tools/misiones.py`, `HWCMP_GUION` en
+  `tools/hwcmp.py`, `AC3_HWCMP_MASKCMP=1`, `AC3_INTERP_TEST`.
+
 ## 2026-10-19 — Etapa 8, paso 3a: el avión de la repetición, interpolado
 
 - **El avión doble** de la repetición del final de misión (informe del dueño)

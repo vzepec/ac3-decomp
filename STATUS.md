@@ -89,18 +89,14 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
-**Probar en la Retroid el APK 1.10.3-alfa** (`data/android/AC3Recomp-1.10.3-alfa.apk`,
+**Probar en la Retroid el APK 1.10.4-alfa** (`data/android/AC3Recomp-1.10.4-alfa.apk`,
 rama `etapa-8-paso-3`, sobre `etapa-8-paso-2`; sin publicar).
-- **Paso 2:** en la misión, la imagen real solo la dibuja la GPU (menos
-  trabajo en el hilo del juego). Mirar `FPS`/`VEL` en ciudades a baja altura
-  y la pantalla de "MISSION FAILED" (el reflejo).
-- **Paso 3a:** la repetición del final de misión, sin el avión doble.
+- **Llamas de los motores:** ya no deforman la línea del HUD.
+- **Repetición del final de misión:** sin el avión doble.
+- **Misiles:** sin la estela doble.
 
-**Paso 3b (siguiente):** aviones, misiles y efectos de la misión en la
-interpolación nueva (`docs/14-etapa8.md`).
-- Separar el dibujo de la lógica de los subsistemas que llama `FUN_80033034`
-  (US).
-- Volver a llamarlos con las transformaciones a medio camino.
+Después: decidir con el dueño si se integran los pasos 2 y 3 en `etapa-8`, y
+seguir con el rendimiento (`adb logcat -s AC3Game` en ciudades).
 
 ## Pendiente
 
