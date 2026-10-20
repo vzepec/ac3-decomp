@@ -31,6 +31,10 @@ void psx_hw_frame_ex(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int
 unsigned psx_hw_texture(int *w, int *h);
 /* tramado de la PS1 (matriz 4x4 por pixel de la VRAM); para comparar a escala 1 con el software */
 void psx_hw_dither(int on);
+/* etapa 8, paso 4: color de 24 bits, sin tramado (alta resolucion: degradados suaves) */
+void psx_hw_truecolor(int on);
+/* filtro de texturas de los triangulos: 0 el de la PS1 (texel mas cercano), 1 bilineal */
+void psx_hw_filter(int mode);
 /* lee el resultado (RGBA, fila 0 = arriba) en out; para las pruebas */
 void psx_hw_read(uint32_t *out);
 int psx_hw_read_mask(uint8_t *out);   /* pruebas: bit 15 de la imagen conservada de la ultima lista */

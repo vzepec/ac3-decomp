@@ -35,12 +35,14 @@ public class MainActivity extends NativeActivity {
     private static native void nativeSetDisc(int fd);
 
     /** Implementado en game_main.c: opciones del menu de inicio (antes de arrancar el juego). */
-    private static native void nativeSetOptions(boolean showStats);
+    private static native void nativeSetOptions(boolean showStats, int scale, int filter);
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        nativeSetOptions(getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(LauncherActivity.KEY_STATS, true));
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        nativeSetOptions(p.getBoolean(LauncherActivity.KEY_STATS, true), p.getInt(LauncherActivity.KEY_SCALE, LauncherActivity.DEFAULT_SCALE),
+                         p.getInt(LauncherActivity.KEY_FILTER, 0));
         if (savedInstanceState == null && !openSavedDisc()) {
             pickDisc();
         }

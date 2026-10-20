@@ -44,6 +44,9 @@ public class LauncherActivity extends Activity {
     static final String KEY_URI = "disc_uri";
     static final String KEY_STATS = "show_stats";   /* contador y estadisticas de desarrollo en pantalla */
     static final String KEY_LANG = "lang";          /* idioma del menu: "en" (por defecto) o "es" */
+    static final String KEY_SCALE = "scale";        /* resolucion interna de la GPU, 1-4 (etapa 8, paso 4) */
+    static final int DEFAULT_SCALE = 1;
+    static final String KEY_FILTER = "filter";      /* filtro de texturas: 0 el de la PS1, 1 bilineal */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */
 
@@ -446,17 +449,80 @@ public class LauncherActivity extends Activity {
 
     /* ------------------------------------------------------------- opciones y acerca de */
 
-    /** Opciones: se guardan al marcarlas y el juego las lee al arrancar. */
+    /** Una opcion de varias: titulo, explicacion y una fila de botones; el elegido va resaltado y se
+     *  guarda en `key` (valores vals). Devuelve el boton elegido (para darle el foco). */
+    private Button choice(LinearLayout box, String title, String hint, String key, int def, String[] names, int[] vals, int[] widths) {
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        TextView label = text(title, 16, TEXT, true);
+        label.setGravity(Gravity.START);
+        box.addView(label);
+        TextView h = text(hint, 13, DIM, false);
+        h.setGravity(Gravity.START);
+        box.addView(h);
+        LinearLayout row = new LinearLayout(this);
+        row.setOrientation(LinearLayout.HORIZONTAL);
+        row.setPadding(0, dp(6), 0, dp(12));
+        int n = names.length, cur = p.getInt(key, def);
+        Button[] bs = new Button[n];
+        Button sel = null;
+        for (int i = 0; i < n; i++) {
+            bs[i] = button(names[i], 15, vals[i] == cur ? 0xFF1F5F99 : PANEL, null);
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(widths[i]), dp(42));
+            lp.rightMargin = dp(8);
+            bs[i].setLayoutParams(lp);
+            row.addView(bs[i]);
+            if (vals[i] == cur) sel = bs[i];
+        }
+        for (int i = 0; i < n; i++) {
+            int val = vals[i];
+            bs[i].setOnClickListener(v -> {
+                p.edit().putInt(key, val).commit();
+                for (int k = 0; k < n; k++) {   /* el resaltado pasa al elegido */
+                    StateListDrawable st = new StateListDrawable();
+                    st.addState(new int[] {android.R.attr.state_pressed}, box(ACCENT, ACCENT));
+                    st.addState(new int[] {android.R.attr.state_focused}, box(0xFF22345A, ACCENT));
+                    st.addState(new int[] {}, box(vals[k] == val ? 0xFF1F5F99 : PANEL, 0));
+                    bs[k].setBackground(st);
+                }
+            });
+        }
+        box.addView(row);
+        return sel != null ? sel : bs[0];
+    }
+
+    /** Opciones: se guardan al elegirlas y el juego las lee al arrancar. */
     private void options() {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
-        boolean[] on = {p.getBoolean(KEY_STATS, true)};
+        LinearLayout box = new LinearLayout(this);
+        box.setOrientation(LinearLayout.VERTICAL);
+        box.setPadding(dp(20), dp(8), dp(20), dp(4));
+
+        Button first = choice(box, t("Internal resolution", "Resolución interna"),
+                              t("Higher looks sharper and needs a faster GPU", "Más alta se ve más nítida y pide más a la GPU"),
+                              KEY_SCALE, DEFAULT_SCALE, new String[] {t("Original", "Original"), "2x", "3x", "4x"},
+                              new int[] {1, 2, 3, 4}, new int[] {96, 64, 64, 64});
+        choice(box, t("Texture filtering", "Filtro de texturas"),
+               t("Bilinear smooths the textures of 3D models; menus and HUD stay sharp",
+                 "Bilineal suaviza las texturas de los modelos 3D; menús y HUD siguen nítidos"),
+               KEY_FILTER, 0, new String[] {t("Original", "Original"), t("Bilinear", "Bilineal")},
+               new int[] {0, 1}, new int[] {96, 110});
+
+        android.widget.CheckBox stats = new android.widget.CheckBox(this);
+        stats.setText(t("Show development counters and statistics", "Mostrar contadores y estadísticas de desarrollo"));
+        stats.setTextColor(TEXT);
+        stats.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        stats.setChecked(p.getBoolean(KEY_STATS, true));
+        stats.setOnCheckedChangeListener((v, on) -> p.edit().putBoolean(KEY_STATS, on).commit());
+        box.addView(stats);
+
+        ScrollView sv = new ScrollView(this);   /* por si no cabe en pantallas bajas */
+        sv.addView(box);
         new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
                 .setTitle(t("Options", "Opciones"))
-                .setMultiChoiceItems(new String[] {t("Show development counters and statistics",
-                                                     "Mostrar contadores y estadísticas de desarrollo")}, on,
-                        (d, which, checked) -> p.edit().putBoolean(KEY_STATS, checked).commit())
+                .setView(sv)
                 .setPositiveButton(t("Back", "Volver"), null)
                 .show();
+        first.requestFocus();
     }
 
     private void about() {

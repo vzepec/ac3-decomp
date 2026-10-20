@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -122,6 +123,12 @@ static struct {
      * 3 = original (software, 4:3, sin intermedias) */
     volatile int gfx_mode;
     volatile int show_stats;       /* contador y estadisticas en pantalla (opcion del menu de inicio) */
+    volatile int scale;            /* resolucion interna de la GPU (etapa 8, paso 4; opcion del menu): 1-4 */
+    volatile int filter;           /* filtro de texturas: 0 el de la PS1, 1 bilineal (opcion del menu) */
+    /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
+     * "escala=N color24=0|1 solo=0|1 filtro=0|1" (-1: lo normal) */
+    char dbg_path[512];
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -131,7 +138,27 @@ static struct {
     volatile float st_worker_ms, st_real_ms, st_rr_ms;
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
-} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1};
+} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1};
+
+static void dbg_read(void) {
+    FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
+    int s = -1, t = -1, o = -1, fl = -1;
+    if (f) {
+        char k[32];
+        int v;
+        while (fscanf(f, " %31[^=]=%d", k, &v) == 2) {
+            if (!strcmp(k, "escala")) s = v;
+            else if (!strcmp(k, "color24")) t = v;
+            else if (!strcmp(k, "solo")) o = v;
+            else if (!strcmp(k, "filtro")) fl = v;
+        }
+        fclose(f);
+    }
+    if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter)
+        LOG("depurar: escala %d, color24 %d, solo %d, filtro %d", s, t, o, fl);
+    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl;
+}
 
 static double now(void) {
     struct timespec t;
@@ -148,9 +175,13 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv
 }
 
 /* opciones del menu de inicio (LauncherActivity), antes de arrancar el juego */
-JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats) {
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats, jint scale,
+                                                                             jint filter) {
     (void)env; (void)cls;
     G.show_stats = stats;   /* (el registro de adb logcat sigue igual) */
+    G.scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+    G.filter = filter == 1;
+    LOG("opciones: contadores %d, resolucion interna x%d, filtro %d", stats, G.scale, G.filter);
 }
 
 /* ------------------------------------------------------------------ hilo del juego */
@@ -266,7 +297,7 @@ static void frame_wait(void) {
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
     /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
      * solo interpreta la lista): menos trabajo en el hilo del juego */
-    psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15);
+    psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15 && G.dbg_only != 0);
     psx_hw_onepass = G.gfx_mode == 4;
 #endif
     psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
@@ -659,6 +690,10 @@ void android_main(struct android_app *app) {
     app->onAppCmd = on_cmd;
     app->onInputEvent = on_input;
     snprintf(G.card_path, sizeof G.card_path, "%s/tarjeta1.mcd", app->activity->internalDataPath);
+    if (app->activity->externalDataPath) {
+        mkdir(app->activity->externalDataPath, 0770);
+        snprintf(G.dbg_path, sizeof G.dbg_path, "%s/depurar.txt", app->activity->externalDataPath);
+    }
     for (;;) {
         int events;
         struct android_poll_source *src;
@@ -806,9 +841,9 @@ void android_main(struct android_app *app) {
             extern int psx_hw_stat_draws, psx_hw_stat_uploads;
             if (c_hw_n) {
                 snprintf(line3, sizeof line3, "GL %.1f  SWAP %.1f", c_hw_ms / c_hw_n, c_swap_ms / c_hw_n);
-                LOG("GPU: %d imagenes, %.1f ms de dibujo y %.1f de eglSwapBuffers por imagen; %d llamadas y %d subidas por imagen; "
+                LOG("GPU x%d: %d imagenes, %.1f ms de dibujo y %.1f de eglSwapBuffers por imagen; %d llamadas y %d subidas por imagen; "
                     "cortes por imagen: recorte %d, mezcla %d, pasada %d, mascara %d",
-                    c_hw_n, c_hw_ms / c_hw_n, c_swap_ms / c_hw_n, psx_hw_stat_draws / c_hw_n, psx_hw_stat_uploads / c_hw_n,
+                    G.scale, c_hw_n, c_hw_ms / c_hw_n, c_swap_ms / c_hw_n, psx_hw_stat_draws / c_hw_n, psx_hw_stat_uploads / c_hw_n,
                     psx_hw_stat_cut[0] / c_hw_n, psx_hw_stat_cut[1] / c_hw_n, psx_hw_stat_cut[2] / c_hw_n, psx_hw_stat_cut[3] / c_hw_n);
                 memset(psx_hw_stat_cut, 0, sizeof psx_hw_stat_cut);
             } else line3[0] = 0;
@@ -831,19 +866,25 @@ void android_main(struct android_app *app) {
                     int tg[4]; memcpy(tg, rgeo[a], sizeof tg); memcpy(rgeo[a], rgeo[b], sizeof tg); memcpy(rgeo[b], tg, sizeof tg);
                     double td = rdue[a]; rdue[a] = rdue[b]; rdue[b] = td;
                 }
-        for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], 1, 1);
+        /* alta resolucion (etapa 8, paso 4): a mas de 1x, color de 24 bits sin tramado (degradados suaves) */
+        static double dbg_t;
+        if (t - dbg_t > 1.0) { dbg_t = t; dbg_read(); }
+        int scale = G.dbg_scale >= 1 && G.dbg_scale <= 4 ? G.dbg_scale : G.scale;
+        psx_hw_truecolor(G.dbg_true >= 0 ? G.dbg_true : scale > 1);
+        psx_hw_filter(G.dbg_filter >= 0 ? G.dbg_filter : G.filter);
+        for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], scale, 1);
         c_skipped += nr;
         if (hw) {
             if (seq != hw_seq) {
                 double a = now();
-                psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, 1, hw_real);
+                psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, scale, hw_real);
                 if (c_measure) { c_measure = 0; double g0 = now(); glFinish(); c_gpu_ms = (now() - a) * 1000; (void)g0; }
                 c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
                 hw_seq = seq;
             }
             int tw, th;
             unsigned tex = psx_hw_texture(&tw, &th);
-            psx_present_texture(tex, tw, th, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
+            psx_present_texture(tex, tw, th, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, scale > 1);
             if (G.show_stats && line1[0]) {   /* el contador encima, como textura con transparencia */
                 static uint32_t ov[128 * 29];
                 memset(ov, 0, sizeof ov);
