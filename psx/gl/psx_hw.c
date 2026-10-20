@@ -92,22 +92,22 @@ static const char *FS =
     "    if (u_true != 0) { put(clamp(col, 0.0, 255.0) / 255.0, semi, abr); return; }\n"
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
-    "  ivec2 c0 = ivec2(floor(uv + 0.001));\n"
-    "  uint t = texel(c0, depth);\n"
-    "  vec3 tc;\n"
+    "  uint t; vec3 tc;\n"
     "  bool filt = u_filter != 0 && (flags & 8) != 0;\n"
-    "  if (filt) {   /* bilineal: los 4 vecinos dentro de la textura del poligono; los transparentes no cuentan */\n"
-    "    vec2 st = uv - 0.5; vec2 f = st - floor(st); ivec2 b = ivec2(floor(st));\n"
+    "  if (filt) {   /* bilineal: los 4 vecinos dentro de la textura del poligono; los transparentes no cuentan.\n"
+    "                 * El del pixel (el de la PS1, para el bit 15) es uno de ellos */\n"
+    "    vec2 st = uv - 0.5; vec2 f = st - floor(st); ivec2 b = ivec2(floor(st)), near = ivec2(step(0.5, f));\n"
     "    ivec2 lo = ivec2(floor(v_uvr.xy + 0.001)), hi = ivec2(floor(v_uvr.zw + 0.001));\n"
-    "    vec3 acc = vec3(0.0); float wa = 0.0; uint any = 0u;\n"
+    "    vec3 acc = vec3(0.0); float wa = 0.0; uint any = 0u; t = 0u;\n"
     "    for (int k = 0; k < 4; k++) {\n"
     "      ivec2 o = ivec2(k & 1, k >> 1); uint s = texel(clamp(b + o, lo, hi), depth);\n"
     "      float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);\n"
+    "      if (o == near) t = s;\n"
     "      if (s != 0u) { acc += t5(s) * w; wa += w; if (any == 0u) any = s; }\n"
     "    }\n"
     "    if (wa < 0.5) discard;\n"
     "    tc = acc / wa; if (t == 0u) t = any;\n"
-    "  } else { if (t == 0u) discard; tc = t5(t); }\n"
+    "  } else { t = texel(ivec2(floor(uv + 0.001)), depth); if (t == 0u) discard; tc = t5(t); }\n"
     "  bool stp = (t & 0x8000u) != 0u;\n"
     "  m.a = stp || mset ? 1.0 : 0.0;\n"
     "  if (u_pass == 1 && stp) discard;\n"
@@ -351,12 +351,31 @@ static HwVert *push(int k) {
     return v;
 }
 
+/* (etapa 8, paso 4) subidas del atlas que la primitiva tiene que mirar: hasta la ultima anterior a
+ * ella que toca su textura, su paleta o el origen de su copia; casi siempre ninguna. Antes miraba
+ * todas las anteriores en cada lectura de la textura: con el filtro bilineal (8 lecturas por pixel)
+ * y muchas subidas (explosiones) la GPU de la Retroid tardaba de 30 a 450 ms por imagen a 4x */
+static int read_rect(const PsxHwPrim *p, int r[4]);
+static int clut_rect(const PsxHwPrim *p, int r[4]);
+static int epoch_of(const PsxHwPrim *p) {
+    if (!g_epoch) return 0;
+    int r[2][4], n = 0;
+    if (read_rect(p, r[n])) n++;
+    if (clut_rect(p, r[n])) n++;
+    for (int i = g_epoch - 1; i >= 0; i--) {
+        int x1 = g_up[i][0] & 0xFFFF, y1 = g_up[i][0] >> 16, x2 = x1 + (g_up[i][1] & 0xFFFF) - 1, y2 = y1 + (g_up[i][1] >> 16) - 1;
+        for (int k = 0; k < n; k++)
+            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) return i + 1;
+    }
+    return 0;
+}
+
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
     t[0] = p->tp_x | p->tp_y << 16;
     t[1] = p->clut_x | p->clut_y << 16;
     if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | g_epoch << 20;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | epoch_of(p) << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {

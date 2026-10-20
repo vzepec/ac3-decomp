@@ -45,7 +45,7 @@ public class LauncherActivity extends Activity {
     static final String KEY_STATS = "show_stats";   /* contador y estadisticas de desarrollo en pantalla */
     static final String KEY_LANG = "lang";          /* idioma del menu: "en" (por defecto) o "es" */
     static final String KEY_SCALE = "scale";        /* resolucion interna de la GPU, 1-4 (etapa 8, paso 4) */
-    static final int DEFAULT_SCALE = 1;
+    static final int DEFAULT_SCALE = 4;   /* 60 fps en la Retroid Pocket Flip 2 (medido) */
     static final String KEY_FILTER = "filter";      /* filtro de texturas: 0 el de la PS1, 1 bilineal */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */

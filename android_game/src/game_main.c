@@ -126,9 +126,10 @@ static struct {
     volatile int scale;            /* resolucion interna de la GPU (etapa 8, paso 4; opcion del menu): 1-4 */
     volatile int filter;           /* filtro de texturas: 0 el de la PS1, 1 bilineal (opcion del menu) */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
-     * "escala=N color24=0|1 solo=0|1 filtro=0|1" (-1: lo normal) */
+     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3" (-1: lo normal; modo: el de L3+R3, 1 = software
+     * a 16:9 con intermedias, fuera del ciclo) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -139,11 +140,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1;
     if (f) {
         char k[32];
         int v;
@@ -152,12 +153,15 @@ static void dbg_read(void) {
             else if (!strcmp(k, "color24")) t = v;
             else if (!strcmp(k, "solo")) o = v;
             else if (!strcmp(k, "filtro")) fl = v;
+            else if (!strcmp(k, "modo")) md = v;
         }
         fclose(f);
     }
-    if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter)
-        LOG("depurar: escala %d, color24 %d, solo %d, filtro %d", s, t, o, fl);
+    if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
+        LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
     G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl;
+    if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
+    G.dbg_mode = md;
 }
 
 static double now(void) {

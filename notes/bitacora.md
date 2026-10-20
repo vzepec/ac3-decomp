@@ -5,6 +5,22 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Alta resolución y filtro bilineal (v1.12-alfa)
+
+- **Resolución interna 1x-4x** con color de 24 bits sin tramado, y filtro
+  bilineal opcional. **4x a 60 fps en la Retroid**, medido.
+- **Radar con líneas oscuras a 4x.** Los triángulos con la uv al revés leían
+  el texel del borde que la GPU nunca lee. Ahora el rango de uv es el que lee
+  la GPU (comprobado en la Retroid con la depuración por adb y en el PC con
+  `AC3_HWCMP_PROBE`).
+- **Bajones del bilineal.** El shader recorría todas las subidas del atlas en
+  cada lectura; ahora solo las que tocan a la primitiva (de 30-450 ms a 21 ms
+  de GPU por imagen).
+- **Estela del misil que parpadea:** la misma secuencia en ORIG que a 60 fps;
+  no es de la interpolación. Si la consola real hace lo mismo: `SIN
+  RESOLVER`.
+- Detalles y cómo reproducir: `docs/14-etapa8.md`, paso 4.
+
 ## 2026-10-20 — Menú de inicio y actualizador (v1.11-alfa)
 
 - **Menú de inicio:** Jugar, Cambiar disco, Opciones (contadores, se guarda),
