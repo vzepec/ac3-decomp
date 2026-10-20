@@ -20,7 +20,7 @@ ancha (16:9).
 |---|---|
 | Android | 8.0 o superior (API 26), procesador de 64 bits (arm64-v8a) |
 | Gráficos | OpenGL ES 3.0 |
-| Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). No hay controles táctiles |
+| Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). Desde la 1.12-alfa también hay mando táctil en pantalla |
 | Juego | Tu propia imagen del disco de **Ace Combat 3: Electrosphere**:<br>• europea, `SCES-02066` (inglés, francés, alemán, español, italiano)<br>• americana, `SLUS-00972` |
 | Formato del disco | **`.bin` en bruto (2.352 bytes por sector)**, el que generan los volcados habituales (`.bin` + `.cue`; se elige el `.bin`). También sirve `.iso` de 2.048 bytes por sector, pero sin música ni vídeos (no lleva el audio XA) |
 | Espacio | 250 KB la app, más tu imagen del disco (~600 MB) |
@@ -54,7 +54,7 @@ Se maneja con la cruceta y A (B vuelve atrás). Desde la 1.11-alfa:
 | **Play / Jugar** | Arranca el juego con tu disco |
 | **Update / Actualizar** | Solo aparece si hay una versión nueva (ver abajo) |
 | **Change disc / Cambiar disco** | Elegir otra imagen del disco |
-| **Options / Opciones** | Resolución interna (Original, 2x, 3x, 4x; por defecto 4x), filtro de texturas (Original o Bilineal) y mostrar u ocultar el contador y las estadísticas de desarrollo. Todo se guarda |
+| **Options / Opciones** | Resolución interna (Original, 2x, 3x, 4x; por defecto 4x), filtro de texturas (Original o Bilineal), mando táctil (Automático, Siempre, Nunca) y mostrar u ocultar el contador y las estadísticas de desarrollo. Todo se guarda |
 | **About / Acerca de** | Versión y aviso legal |
 | **Exit / Salir** | Cerrar la app |
 | **EN / ES** (arriba a la derecha) | Idioma del menú: inglés (por defecto) o español; se guarda. El juego va en el idioma de tu disco |
@@ -77,6 +77,24 @@ Para volver al menú desde el juego, usa el botón de atrás de Android.
   versiones no tienen actualizador).
 
 ## Controles
+
+### Mando táctil (desde la 1.12-alfa)
+
+Si el dispositivo no tiene botones, el juego se maneja con un mando dibujado
+en pantalla:
+- **Stick analógico flotante**, abajo a la izquierda: su centro se pone donde
+  apoyas el pulgar.
+- **Cruceta** encima del stick.
+- **✕ ○ □ △** abajo a la derecha. Se puede deslizar el dedo de uno a otro.
+- **L1, L2, R1, R2** arriba; **SELECT y START** abajo en el centro.
+- **Mostrar u ocultar el mando**: el icono de arriba en el centro.
+- **Options / Opciones → Mando táctil**:
+  - **Automático** (por defecto): se oculta al usar un mando físico y vuelve
+    al tocar la pantalla;
+  - **Siempre**;
+  - **Nunca**.
+
+### Mando físico
 
 La app convierte los botones de Android en los del mando analógico de
 PlayStation (DualShock, modo analógico):

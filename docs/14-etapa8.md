@@ -646,6 +646,12 @@ interpolación.**
 - **SIN RESOLVER:** si una PlayStation real hace lo mismo (comparar con otro
   emulador).
 
+**Validación final** (comparador a 1x, las 41 misiones, intermedias y
+`GUION_FUEGO`):
+- 140.276 listas, 8 con un bloque malo;
+- en las mismas misiones que en la v1.10-alfa (3, 7, 20, 22 y 23);
+- sin fallos.
+
 **Pendiente:**
 - precisión de vértices (tipo PGXP), si se ven temblores;
 - otros filtros (xBR).

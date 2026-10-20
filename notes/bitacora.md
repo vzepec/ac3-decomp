@@ -7,6 +7,10 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ## 2026-10-20 — Alta resolución y filtro bilineal (v1.12-alfa)
 
+- **Mando táctil** en la misma versión (etapa 7, paso 8): stick flotante,
+  cruceta, botones de cara, gatillos y START/SELECT; modo automático, siempre
+  o nunca. Ver `docs/12-etapa7.md`, paso 8.
+
 - **Resolución interna 1x-4x** con color de 24 bits sin tramado, y filtro
   bilineal opcional. **4x a 60 fps en la Retroid**, medido.
 - **Radar con líneas oscuras a 4x.** Los triángulos con la uv al revés leían

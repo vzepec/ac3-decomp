@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-20 (release `v1.12-alfa`: alta resolución y filtro bilineal; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.12-alfa`: alta resolución, filtro bilineal y mando táctil; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -94,6 +94,8 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 `vX.Y-alfa` es la versión que compara el actualizador.
 
 **Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
+
+**Mando táctil: primera versión** (`v1.12-alfa`, `docs/12-etapa7.md` paso 8). Ajustarlo con lo que diga el dueño.
 
 **Siguiente, a elegir con el dueño:**
 - precisión de vértices (tipo PGXP), si se ven temblores a 4x;

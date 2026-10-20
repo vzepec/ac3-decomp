@@ -107,5 +107,5 @@ una copia propia del juego. Ver [`docs/06-legal.md`](docs/06-legal.md).
 | Pantalla ancha (16:9) | ✅ release `v1.8-alfa` |
 | Alta resolución (GPU por GLES) | ⏳ en curso (paso 7) |
 | **Android** (etapa 7) | |
-| APK publicable sin nada de Namco (`AC3Recomp-<versión>.apk`) | ✅ release `v1.12-alfa` (alta resolución y filtro bilineal); lee el juego del disco del usuario |
+| APK publicable sin nada de Namco (`AC3Recomp-<versión>.apk`) | ✅ release `v1.12-alfa` (alta resolución, filtro bilineal y mando táctil); lee el juego del disco del usuario |
 | Probado en una Retroid Pocket Flip 2 | ✅ velocidad completa (`VEL` 100 %) |
