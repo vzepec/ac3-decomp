@@ -65,6 +65,7 @@
 #include "recomp_rt.h"
 #include "../../psx/gl/psx_present.h"
 #include "../../psx/gl/psx_hw.h"
+#include "touchpad.h"
 
 #define LOG(...) __android_log_print(ANDROID_LOG_INFO, "AC3Game", __VA_ARGS__)
 
@@ -179,13 +180,21 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv
 }
 
 /* opciones del menu de inicio (LauncherActivity), antes de arrancar el juego */
+/* graficos del mando virtual (los dibuja MainActivity) */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetTouchAtlas(JNIEnv *env, jclass cls, jintArray px, jint w, jint h) {
+    (void)cls;
+    jint *p = (*env)->GetIntArrayElements(env, px, NULL);
+    if (p) { touchpad_set_atlas((const uint32_t *)p, w, h); (*env)->ReleaseIntArrayElements(env, px, p, JNI_ABORT); }
+}
+
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats, jint scale,
-                                                                             jint filter) {
+                                                                             jint filter, jint touch) {
     (void)env; (void)cls;
     G.show_stats = stats;   /* (el registro de adb logcat sigue igual) */
     G.scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
     G.filter = filter == 1;
-    LOG("opciones: contadores %d, resolucion interna x%d, filtro %d", stats, G.scale, G.filter);
+    touchpad_set_mode(touch >= 0 && touch <= 2 ? touch : 0);
+    LOG("opciones: contadores %d, resolucion interna x%d, filtro %d, mando tactil %d", stats, G.scale, G.filter, touch);
 }
 
 /* ------------------------------------------------------------------ hilo del juego */
@@ -304,7 +313,12 @@ static void frame_wait(void) {
     psx_interp_hw_main(MODE_HW(G.gfx_mode) && terrain_idle < 15 && G.dbg_only != 0);
     psx_hw_onepass = G.gfx_mode == 4;
 #endif
-    psx_pad_set(0, (uint16_t)(G.buttons | G.keys), to_axis(G.lx), to_axis(G.ly), to_axis(G.rx), to_axis(G.ry));
+    /* mando fisico y mando virtual (etapa 7, paso 8): los botones se suman; el stick tactil, si se toca, manda */
+    float tx, ty;
+    int tact;
+    touchpad_stick(&tx, &ty, &tact);
+    psx_pad_set(0, (uint16_t)(G.buttons | G.keys | touchpad_buttons()), to_axis(tact ? tx : G.lx), to_axis(tact ? ty : G.ly),
+                to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
@@ -493,13 +507,15 @@ static void egl_init(void) {
     psx_present_init();
     if (psx_hw_init()) LOG("GPU: el dibujo por GLES no arranca");
     psx_hw_dither(1);   /* escala 1: el tramado de la PS1, la misma imagen que por software */
-    LOG("EGL %dx%d", G.w, G.h);
+    touchpad_set_screen(G.w, G.h, AConfiguration_getDensity(G.app->config));
+    LOG("EGL %dx%d, %d dpi", G.w, G.h, AConfiguration_getDensity(G.app->config));
 }
 
 static void egl_term(void) {
     if (G.dpy == EGL_NO_DISPLAY) return;
     psx_present_shutdown();
     psx_hw_shutdown();
+    touchpad_gl_lost();
     eglMakeCurrent(G.dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     eglDestroyContext(G.dpy, G.ctx);
     eglDestroySurface(G.dpy, G.surf);
@@ -534,7 +550,9 @@ static uint16_t key_button(int32_t k) {
 static int32_t on_input(struct android_app *app, AInputEvent *e) {
     (void)app;
     int32_t type = AInputEvent_getType(e);
+    if (touchpad_event(e)) return 1;   /* la pantalla tactil: el mando virtual */
     if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK)) {
+        touchpad_physical();   /* (modo automatico: con un mando fisico se oculta) */
         G.lx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_X, 0);
         G.ly = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Y, 0);
         G.rx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Z, 0);
@@ -556,6 +574,7 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
     if (type == AINPUT_EVENT_TYPE_KEY) {
         uint16_t m = key_button(AKeyEvent_getKeyCode(e));
         if (!m) return 0;
+        touchpad_physical();
         if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
@@ -901,6 +920,7 @@ void android_main(struct android_app *app) {
             if (G.show_stats && line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
+        touchpad_draw();   /* el mando virtual, encima de todo */
         double sa = now();
         eglSwapBuffers(G.dpy, G.surf);
         if (hw_drawn) c_swap_ms += (now() - sa) * 1000;

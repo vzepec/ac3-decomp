@@ -47,6 +47,7 @@ public class LauncherActivity extends Activity {
     static final String KEY_SCALE = "scale";        /* resolucion interna de la GPU, 1-4 (etapa 8, paso 4) */
     static final int DEFAULT_SCALE = 4;   /* 60 fps en la Retroid Pocket Flip 2 (medido) */
     static final String KEY_FILTER = "filter";      /* filtro de texturas: 0 el de la PS1, 1 bilineal */
+    static final String KEY_TOUCH = "touch";        /* mando tactil: 0 automatico, 1 siempre, 2 nunca (etapa 7, paso 8) */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */
 
@@ -506,6 +507,10 @@ public class LauncherActivity extends Activity {
                  "Bilineal suaviza las texturas de los modelos 3D; menús y HUD siguen nítidos"),
                KEY_FILTER, 0, new String[] {t("Original", "Original"), t("Bilinear", "Bilineal")},
                new int[] {0, 1}, new int[] {96, 110});
+        choice(box, t("Touch controls", "Mando táctil"),
+               t("Auto hides it when you use a physical controller", "Automático lo oculta al usar un mando físico"),
+               KEY_TOUCH, 0, new String[] {t("Auto", "Automático"), t("Always", "Siempre"), t("Never", "Nunca")},
+               new int[] {0, 1, 2}, new int[] {120, 96, 96});
 
         android.widget.CheckBox stats = new android.widget.CheckBox(this);
         stats.setText(t("Show development counters and statistics", "Mostrar contadores y estadísticas de desarrollo"));

@@ -98,8 +98,10 @@ if [ "$REGION" = libre ]; then
         "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c" "$ROOT/psx/src/mem.c" "$ROOT/psx/src/gte.c" "$ROOT/psx/src/libgte.c" \
         "$ROOT/psx/src/libgpu.c"
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+    $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 else
     $CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+    $CC -O2 $CF -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 fi
 $CC -O2 -fPIC -I"$GLUE" -w -c "$GLUE/android_native_app_glue.c" -o "$B/obj/glue.o"
 [ -s "$B/ace_image.S" ] && $CC -c "$B/ace_image.S" -o "$B/obj/ace_image.o"
