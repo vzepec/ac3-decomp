@@ -121,6 +121,7 @@ static struct {
     /* L3+R3 (v1.10-alfa): 0 -> 2 -> 3. 0 = GPU + 16:9, 1 = software + 16:9 (fuera del ciclo), 2 = GPU + 4:3,
      * 3 = original (software, 4:3, sin intermedias) */
     volatile int gfx_mode;
+    volatile int show_stats;       /* contador y estadisticas en pantalla (opcion del menu de inicio) */
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -130,7 +131,7 @@ static struct {
     volatile float st_worker_ms, st_real_ms, st_rr_ms;
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
-} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1};
+} G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1};
 
 static double now(void) {
     struct timespec t;
@@ -144,6 +145,12 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv
     (void)env; (void)cls;
     int old = __atomic_exchange_n(&G.disc_fd, fd, __ATOMIC_SEQ_CST);
     if (old >= 0) close(old);
+}
+
+/* opciones del menu de inicio (LauncherActivity), antes de arrancar el juego */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats) {
+    (void)env; (void)cls;
+    G.show_stats = stats;   /* (el registro de adb logcat sigue igual) */
 }
 
 /* ------------------------------------------------------------------ hilo del juego */
@@ -837,7 +844,7 @@ void android_main(struct android_app *app) {
             int tw, th;
             unsigned tex = psx_hw_texture(&tw, &th);
             psx_present_texture(tex, tw, th, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
-            if (line1[0]) {   /* el contador encima, como textura con transparencia */
+            if (G.show_stats && line1[0]) {   /* el contador encima, como textura con transparencia */
                 static uint32_t ov[128 * 29];
                 memset(ov, 0, sizeof ov);
                 draw_text(ov, 128, 29, 1, 1, line1);
@@ -846,7 +853,7 @@ void android_main(struct android_app *app) {
                 psx_present_overlay(ov, 128, 29, hw_w, hw_h);
             }
         } else if (sw && sh) {
-            if (line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
+            if (G.show_stats && line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         double sa = now();

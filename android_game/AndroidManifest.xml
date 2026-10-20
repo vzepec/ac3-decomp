@@ -4,28 +4,57 @@
      Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3game"
-    android:versionCode="35"
-    android:versionName="1.10-alfa">
+    android:versionCode="49"
+    android:versionName="1.11-alfa">
+
+    <!-- actualizador del menu (etapa 7, paso 7): consultar las releases de GitHub y descargar el
+         APK nuevo; Android pide confirmacion para instalarlo y solo acepta la misma firma -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />
 
     <application
         android:label="AC3 Recomp"
+        android:icon="@mipmap/ic_launcher"
         android:hasCode="true"
         android:extractNativeLibs="true"
         android:isGame="true"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+        <!-- menu de inicio (etapa 7, paso 7) -->
         <activity
-            android:name=".MainActivity"
+            android:name=".LauncherActivity"
             android:exported="true"
+            android:launchMode="singleTop"
             android:screenOrientation="sensorLandscape"
+            android:theme="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen"
             android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">
-            <meta-data android:name="android.app.lib_name" android:value="ac3game" />
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+        </activity>
+        <!-- tras actualizar desde el menu (Android cierra la app): el menu lo avisara al abrirse -->
+        <receiver android:name=".UpdatedReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+        <!-- el APK descargado, para el instalador de Android -->
+        <provider
+            android:name=".ApkProvider"
+            android:authorities="com.vzepec.ac3game.apk"
+            android:exported="false"
+            android:grantUriPermissions="true" />
+        <!-- el juego, en su propio proceso: al salir termina y se vuelve al menu -->
+        <activity
+            android:name=".MainActivity"
+            android:exported="false"
+            android:process=":game"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|screenLayout|keyboard|keyboardHidden|navigation|uiMode">
+            <meta-data android:name="android.app.lib_name" android:value="ac3game" />
         </activity>
     </application>
 </manifest>

@@ -14,14 +14,18 @@ import android.util.Log;
  * Pide la imagen de disco con el selector de archivos del sistema (Storage
  * Access Framework): no hace falta ningun permiso de almacenamiento. El URI
  * elegido se guarda con permiso persistente, asi que solo se pide la primera
- * vez (o cuando el disco no es valido, o al pulsar Select + Start).
+ * vez (o cuando el disco no es valido).
  * El descriptor de archivo abierto se pasa al codigo nativo.
+ *
+ * Desde el paso 7 de la etapa 7 se abre desde el menu de inicio (LauncherActivity), en su propio
+ * proceso (":game"): al salir, el proceso termina (android_main hace _exit) y se vuelve al menu.
+ * El disco y las opciones llegan por las preferencias compartidas.
  */
 public class MainActivity extends NativeActivity {
     private static final String TAG = "AC3Game";
     private static final int PICK_DISC = 1;
-    private static final String PREFS = "ac3game";
-    private static final String KEY_URI = "disc_uri";
+    private static final String PREFS = LauncherActivity.PREFS;
+    private static final String KEY_URI = LauncherActivity.KEY_URI;
 
     static {
         System.loadLibrary("ac3game");
@@ -30,9 +34,13 @@ public class MainActivity extends NativeActivity {
     /** Implementado en game_main.c: entrega al codigo nativo el fd de la imagen. */
     private static native void nativeSetDisc(int fd);
 
+    /** Implementado en game_main.c: opciones del menu de inicio (antes de arrancar el juego). */
+    private static native void nativeSetOptions(boolean showStats);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+        nativeSetOptions(getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(LauncherActivity.KEY_STATS, true));
         if (savedInstanceState == null && !openSavedDisc()) {
             pickDisc();
         }
@@ -77,7 +85,7 @@ public class MainActivity extends NativeActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != PICK_DISC) return;
         if (resultCode != RESULT_OK || data == null || data.getData() == null) {
-            pickDisc();  /* sin disco no hay nada que mostrar: se vuelve a pedir */
+            finish();  /* sin disco no hay nada que mostrar: de vuelta al menu */
             return;
         }
         Uri uri = data.getData();
