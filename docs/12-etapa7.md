@@ -61,7 +61,8 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
 | 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
 | 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
-| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU) |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU); v1.11-alfa (menú) |
+| 7 | Menú de inicio, opciones, idioma y actualizador (`LauncherActivity`, `Updater`) | ✅ probado en la Retroid (dueño); v1.11-alfa |
 
 ## Resultados
 
@@ -184,4 +185,63 @@ cada una; sin fallos.
 
 **Nombres:** las versiones de prueba se llamaron 1.10.1 a 1.10.13. Lo
 publicado es la `v1.10-alfa`, con `versionCode` 35.
+
+## Paso 7: menú de inicio y actualizador (1.11-alfa)
+
+**El menú** (`android_game/java/.../LauncherActivity.java`):
+- Vistas de Android, sin librerías ni imágenes del juego; se maneja con la
+  cruceta y A.
+- Botones: Jugar, Actualizar (solo con versión nueva), Cambiar disco,
+  Opciones, Acerca de y Salir, en dos columnas. Arriba a la derecha, el
+  idioma (inglés por defecto, o español).
+- Lo elegido se guarda en las preferencias `ac3game`: disco, idioma y
+  «mostrar contadores y estadísticas» (el juego lo lee al arrancar con
+  `nativeSetOptions`; el registro de `adb logcat` sigue igual).
+- **El juego va en su propio proceso** (`android:process=":game"`): al
+  salir, `android_main` hace `_exit` y se vuelve al menú; cada partida
+  arranca de cero.
+- **Icono propio**: un caza vectorial (`android_game/res/`), sin arte del
+  juego.
+
+**El actualizador** (`Updater.java`):
+1. Al abrir el menú pide `/repos/vzepec/ac3-decomp/releases`. Como todas son
+   pre-release, `/releases/latest` da 404 (comprobado).
+2. Toma la release con la versión más alta: la de la etiqueta (`v1.11-alfa`
+   → 1.11), comparada número a número con la instalada.
+3. Descarga el APK y comprueba el tamaño y el `digest` SHA-256 que publica
+   GitHub para cada archivo.
+4. Lo pasa al instalador de Android (`ACTION_INSTALL_PACKAGE` con
+   `ApkProvider`, un proveedor mínimo sin librerías). Android pide
+   confirmación y solo acepta la misma firma.
+5. Las novedades salen de `## What's new` (menú en inglés) o `## Novedades`
+   de la release: **las releases llevan las dos secciones**.
+
+**Probado y descartado** (con `adb logcat` en la Retroid, Android 13):
+- **Reabrir el menú solo tras actualizar.** Android cierra la app para
+  sustituirla. Ni el aviso de la sesión de `PackageInstaller` ni
+  `MY_PACKAGE_REPLACED` pueden abrirla: «Background activity start»
+  bloqueado.
+- **Abrir el instalador dentro de nuestra tarea.** Android la cerraba con la
+  app y el botón **Abrir** del instalador no abría nada. Ahora va en su
+  propia tarea (`FLAG_ACTIVITY_NEW_TASK`) y **Abrir** vuelve al menú, que
+  dice «Actualizada a la …» (marca de `UpdatedReceiver`).
+
+**Prueba sin publicar nada:**
+- `UPDATE_URL=http://127.0.0.1:8765/releases.json sh android_game/build.sh`
+  genera un APK que consulta un servidor del PC (`adb reverse tcp:8765
+  tcp:8765`, `python3 -m http.server`), con un `releases.json` del mismo
+  formato que el de GitHub.
+- **Un APK así no se publica.**
+
+**Permisos nuevos:**
+- `INTERNET`: solo la consulta y la descarga;
+- `REQUEST_INSTALL_PACKAGES`: abrir el instalador.
+
+## Quinta release (1.11-alfa)
+
+- Menú de inicio, opciones guardadas, inglés/español, icono y actualizador
+  (paso 7).
+- El juego no cambia respecto a la 1.10-alfa.
+- **Las pruebas se llamaron 1.11.1 a 1.11.13.** El instalado en la Retroid
+  tras ellas lleva `versionCode` 48, así que la release lleva el 49.
 

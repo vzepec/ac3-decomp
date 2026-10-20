@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-20 — Menú de inicio y actualizador (v1.11-alfa)
+
+- **Menú de inicio:** Jugar, Cambiar disco, Opciones (contadores, se guarda),
+  Acerca de, Salir; inglés/español; icono propio. El juego va en su propio
+  proceso.
+- **Actualizador:** consulta las releases de GitHub (`/releases/latest` da
+  404 porque todas son pre-release: comprobado con `gh api`). Descarga y
+  comprueba el SHA-256 publicado; luego abre el instalador de Android.
+- **Medido en la Retroid (Android 13) con `adb logcat`:**
+  - la app no puede reabrirse sola tras actualizarse («Background activity
+    start» bloqueado, tanto desde la sesión de `PackageInstaller` como desde
+    `MY_PACKAGE_REPLACED`);
+  - el botón **Abrir** del instalador solo funciona si el instalador va en
+    su propia tarea.
+- **Ciclo completo probado sin publicar nada:** servidor del PC con
+  `adb reverse` y APK de prueba con `UPDATE_URL`. Ver `docs/12-etapa7.md`,
+  paso 7.
+
 ## 2026-10-20 — Release v1.10-alfa: dibujo por la GPU
 
 - Pasos 1 a 3 de la etapa 8, integrados.

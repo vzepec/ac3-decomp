@@ -15,6 +15,14 @@ sh android_game/build.sh   # -> data/android/AC3Recomp-<version>.apk
     con la misma.
 - Antes de publicarlo, `tools/apk_audit.py` debe dar 0 coincidencias.
 - Instalación, controles y requisitos para quien lo usa: [`INSTALAR.md`](../INSTALAR.md).
+- Java (`java/com/vzepec/ac3game/`):
+  - `LauncherActivity`: el menú de inicio;
+  - `Updater`, `ApkProvider`, `UpdatedReceiver`: el actualizador
+    (`docs/12-etapa7.md`, paso 7);
+  - `MainActivity`: el juego (`NativeActivity`, proceso `:game`).
+- `res/`: solo el icono (vectorial, dibujo propio).
+- `UPDATE_URL=... sh build.sh`: APK de prueba del actualizador contra un
+  servidor del PC. **No se publica.**
 
 ---
 

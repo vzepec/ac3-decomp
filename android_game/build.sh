@@ -12,6 +12,9 @@
 #   libre (por defecto, etapa 7): sin codigo traducido ni ACE.BIN; ejecuta el juego con el
 #        interprete (psx/recomp/mipsi.c). No necesita data/ salvo la clave de firma
 #        (data/android/debug.keystore: guardar copia, las actualizaciones deben ir firmadas igual).
+# UPDATE_URL: de donde mira el menu si hay version nueva (por defecto, las releases de GitHub).
+#   Solo para probar el actualizador con un servidor del PC (adb reverse); con http:// el APK
+#   admite trafico sin cifrar. Un APK asi no se publica.
 # Los simbolos del codigo traducido americano llevan el sufijo _us (llvm-objcopy) para no chocar
 # con los europeos (las funciones se llaman por su direccion: f_80025458...).
 set -e
@@ -105,20 +108,28 @@ $CC -shared "$B"/obj/*.o $(ls "$B"/obj_*/*.o 2>/dev/null) -landroid -llog -lEGL 
     -Wl,-z,max-page-size=16384 -Wl,-z,common-page-size=16384 \
     -u ANativeActivity_onCreate -o "$B/apk/lib/arm64-v8a/libac3game.so"
 
-rm -rf "$B/classes" "$B/dex" && mkdir -p "$B/classes" "$B/dex"
-"$JDK/bin/javac" --release 11 -nowarn -classpath "$PLAT" -d "$B/classes" java/com/vzepec/ac3game/*.java
+rm -rf "$B/classes" "$B/dex" "$B/gen" && mkdir -p "$B/classes" "$B/dex" "$B/gen"
+UPDATE_URL=${UPDATE_URL:-https://api.github.com/repos/vzepec/ac3-decomp/releases?per_page=10}
+printf 'package com.vzepec.ac3game;\n/** Generado por build.sh. */\nfinal class BuildInfo {\n    static final String UPDATE_URL = "%s";\n}\n' \
+    "$UPDATE_URL" > "$B/gen/BuildInfo.java"
+"$JDK/bin/javac" --release 11 -nowarn -classpath "$PLAT" -d "$B/classes" java/com/vzepec/ac3game/*.java "$B/gen/BuildInfo.java"
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8" --min-api 26 --lib "$PLAT" --output "$B/dex" "$B"/classes/com/vzepec/ac3game/*.class
 cp "$B/dex/classes.dex" "$B/apk/"
 
 # recursos: solo el icono (vectorial, dibujo propio; etapa 7, paso 7)
 rm -f "$B/res.zip" && "$BT/aapt2" compile --dir res -o "$B/res.zip"
+CLEAR=
+case "$UPDATE_URL" in http://*) CLEAR='android:usesCleartextTraffic="true"' ;; esac
+# (variantes personales: la autoridad del ApkProvider va con su paquete, para que convivan)
+sed -e "s/android:label=\"AC3 Recomp\"/android:label=\"${LABEL:-AC3 Recomp}\" $CLEAR/" \
+    -e "s/android:authorities=\"com.vzepec.ac3game.apk\"/android:authorities=\"${PKG:-com.vzepec.ac3game}.apk\"/" \
+    AndroidManifest.xml > "$B/AndroidManifest.xml"
 if [ -n "$PKG" ]; then
     # otro paquete y otro nombre visible; las clases siguen en com.vzepec.ac3game (JNI)
-    sed "s/android:label=\"AC3 Recomp\"/android:label=\"$LABEL\"/" AndroidManifest.xml > "$B/AndroidManifest.xml"
     "$BT/aapt2" link -o "$B/base.apk" --manifest "$B/AndroidManifest.xml" -I "$PLAT" \
         --min-sdk-version 26 --target-sdk-version 36 --rename-manifest-package "$PKG" "$B/res.zip"
 else
-    "$BT/aapt2" link -o "$B/base.apk" --manifest AndroidManifest.xml -I "$PLAT" \
+    "$BT/aapt2" link -o "$B/base.apk" --manifest "$B/AndroidManifest.xml" -I "$PLAT" \
         --min-sdk-version 26 --target-sdk-version 36 "$B/res.zip"
 fi
 (cd "$B/apk" && zip -q -r ../base.apk lib classes.dex)
