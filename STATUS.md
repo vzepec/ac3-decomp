@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-20 (release `v1.10-alfa`: dibujo por la GPU; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.11-alfa`: menú de inicio y actualizador; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.10-alfa`, `docs/12-etapa7.md`). Desde
+**Etapa 7 — APK libre: publicada** (`v1.11-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -88,6 +88,10 @@ compilando, pero no se afina. Pruebas de referencia: `make libre
 DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
+
+**Al publicar una release:** la nota lleva `## Novedades de la …` y
+`## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
+`vX.Y-alfa` es la versión que compara el actualizador.
 
 **Alta resolución** (petición del dueño tras la `v1.10-alfa`):
 - el dibujo por la GPU (`psx/gl/psx_hw.c`) ya admite escala;

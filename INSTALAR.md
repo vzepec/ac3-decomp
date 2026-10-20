@@ -23,7 +23,8 @@ ancha (16:9).
 | Mando | Recomendado: botones físicos (consolas Android tipo Retroid, AYN, Anbernic… o un mando Bluetooth/USB). No hay controles táctiles |
 | Juego | Tu propia imagen del disco de **Ace Combat 3: Electrosphere**:<br>• europea, `SCES-02066` (inglés, francés, alemán, español, italiano)<br>• americana, `SLUS-00972` |
 | Formato del disco | **`.bin` en bruto (2.352 bytes por sector)**, el que generan los volcados habituales (`.bin` + `.cue`; se elige el `.bin`). También sirve `.iso` de 2.048 bytes por sector, pero sin música ni vídeos (no lleva el audio XA) |
-| Espacio | 230 KB la app, más tu imagen del disco (~600 MB) |
+| Espacio | 250 KB la app, más tu imagen del disco (~600 MB) |
+| Internet | Solo para buscar versiones nuevas (opcional: sin conexión, todo funciona igual) |
 
 La versión japonesa (*Ace Combat 3: Electrosphere*, `SLPS-02020/02021`) **no**
 está soportada.
@@ -36,13 +37,44 @@ está soportada.
    interno, tarjeta SD, etc.
 3. Instala el APK. Android pedirá permitir la instalación desde esa fuente
    ("orígenes desconocidos").
-4. Abre **AC3 Recomp**. La primera vez se abre el selector de archivos:
-   elige el `.bin` del juego.
+4. Abre **AC3 Recomp**: aparece el menú de inicio. Pulsa **Play / Jugar**.
+   La primera vez se abre el selector de archivos: elige el `.bin` del juego.
    - La app reconoce si es el disco europeo o el americano y arranca.
    - Si eliges otro archivo, vuelve a pedirlo.
    - La siguiente vez abre directamente la misma imagen.
 5. La partida se guarda en una tarjeta de memoria virtual dentro de la app.
    Se conserva al actualizar a una versión nueva.
+
+## El menú de inicio
+
+Se maneja con la cruceta y A (B vuelve atrás). Desde la 1.11-alfa:
+
+| Botón | Qué hace |
+|---|---|
+| **Play / Jugar** | Arranca el juego con tu disco |
+| **Update / Actualizar** | Solo aparece si hay una versión nueva (ver abajo) |
+| **Change disc / Cambiar disco** | Elegir otra imagen del disco |
+| **Options / Opciones** | Mostrar u ocultar el contador y las estadísticas de desarrollo (se guarda) |
+| **About / Acerca de** | Versión y aviso legal |
+| **Exit / Salir** | Cerrar la app |
+| **EN / ES** (arriba a la derecha) | Idioma del menú: inglés (por defecto) o español; se guarda. El juego va en el idioma de tu disco |
+
+Para volver al menú desde el juego, usa el botón de atrás de Android.
+
+### Actualizaciones
+
+- Al abrir el menú, la app mira en GitHub si hay una versión nueva. Si la
+  hay, lo avisa en naranja y aparece **Update / Actualizar**, con las
+  novedades.
+- Al confirmar, descarga el APK y comprueba su **SHA-256** con el que publica
+  GitHub. Luego abre el instalador de Android.
+- **La primera vez**, Android pide permitir que AC3 Recomp instale apps. Se
+  activa una vez en la pantalla de ajustes que se abre.
+- Android pide confirmar la actualización y solo la acepta si va firmada con
+  la misma clave. Al terminar, **Abrir** vuelve al menú.
+- La partida guardada se conserva.
+- Desde la 1.10-alfa o anteriores hay que instalar la 1.11-alfa a mano (esas
+  versiones no tienen actualizador).
 
 ## Controles
 
@@ -70,7 +102,7 @@ están comprobadas en pruebas.
 
 ## El contador
 
-Arriba a la izquierda se muestra:
+Arriba a la izquierda se muestra (se puede ocultar en Opciones):
 
 | | Qué significa |
 |---|---|

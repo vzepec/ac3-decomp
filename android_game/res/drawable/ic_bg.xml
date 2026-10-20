@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- icono (etapa 7, paso 7): fondo, cielo nocturno con una franja mas clara; dibujo propio -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <path android:fillColor="#0B1220" android:pathData="M0,0h108v108h-108z" />
+    <path android:fillColor="#13284A" android:pathData="M0,70 L108,30 L108,58 L0,98 Z" />
+    <path android:fillColor="#1B3A66" android:pathData="M0,80 L108,40 L108,46 L0,86 Z" />
+</vector>
