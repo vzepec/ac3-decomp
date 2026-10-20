@@ -110,14 +110,16 @@ rm -rf "$B/classes" "$B/dex" && mkdir -p "$B/classes" "$B/dex"
 JAVA_HOME="$JDK" PATH="$JDK/bin:$PATH" "$BT/d8" --min-api 26 --lib "$PLAT" --output "$B/dex" "$B"/classes/com/vzepec/ac3game/*.class
 cp "$B/dex/classes.dex" "$B/apk/"
 
+# recursos: solo el icono (vectorial, dibujo propio; etapa 7, paso 7)
+rm -f "$B/res.zip" && "$BT/aapt2" compile --dir res -o "$B/res.zip"
 if [ -n "$PKG" ]; then
     # otro paquete y otro nombre visible; las clases siguen en com.vzepec.ac3game (JNI)
     sed "s/android:label=\"AC3 Recomp\"/android:label=\"$LABEL\"/" AndroidManifest.xml > "$B/AndroidManifest.xml"
     "$BT/aapt2" link -o "$B/base.apk" --manifest "$B/AndroidManifest.xml" -I "$PLAT" \
-        --min-sdk-version 26 --target-sdk-version 36 --rename-manifest-package "$PKG"
+        --min-sdk-version 26 --target-sdk-version 36 --rename-manifest-package "$PKG" "$B/res.zip"
 else
     "$BT/aapt2" link -o "$B/base.apk" --manifest AndroidManifest.xml -I "$PLAT" \
-        --min-sdk-version 26 --target-sdk-version 36
+        --min-sdk-version 26 --target-sdk-version 36 "$B/res.zip"
 fi
 (cd "$B/apk" && zip -q -r ../base.apk lib classes.dex)
 "$BT/zipalign" -P 16 -f 4 "$B/base.apk" "$B/aligned.apk"

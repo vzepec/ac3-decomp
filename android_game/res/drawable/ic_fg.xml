@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- icono: caza visto desde arriba con la llama del postquemador; dibujo propio, sin arte del juego -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- llama -->
+    <path android:fillColor="#FF8A1F" android:pathData="M51.6,84 L56.4,84 L55.2,92 L54,95 L52.8,92 Z" />
+    <path android:fillColor="#FFE07A" android:pathData="M52.8,84 L55.2,84 L54.6,89 L54,91 L53.4,89 Z" />
+    <!-- avion -->
+    <path android:fillColor="#E8EEF8"
+        android:pathData="M54,22 L56.6,32 L57.6,44 L82,61 L82,66 L58.6,62 L58.6,72 L68,79 L68,83 L56,81 L55.4,85 L52.6,85 L52,81 L40,83 L40,79 L49.4,72 L49.4,62 L26,66 L26,61 L50.4,44 L51.4,32 Z" />
+    <!-- cabina -->
+    <path android:fillColor="#3FA9F5" android:pathData="M54,28 C55.6,31 55.8,37 54,41 C52.2,37 52.4,31 54,28 Z" />
+</vector>
