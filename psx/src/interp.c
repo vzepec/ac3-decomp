@@ -466,14 +466,22 @@ static void *worker(void *arg) {
             apply_phase(&J.L, k, den, R, Sc);
             if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
                 hl.main_stale = J.real_only;   /* la base (la real pegada) no esta en el software */
-                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja);
-                 * con full (comparador), tambien la imagen por software */
-                psx_gpu_record(&hl, !g_hwfull);
+                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja). Salvo
+                 * si la lista copia desde la imagen (el efecto de calor de los motores): entonces el
+                 * software la dibuja entera, para que la copia lea lo de esta intermedia y no la real
+                 * pegada debajo (con el HUD ya dibujado: salia una banda verde bajo las llamas) */
+                static int nofix = -1;   /* prueba: PSX_INTERP_NOCOPYFIX=1, sin esto (para ver el fallo) */
+                if (nofix < 0) nofix = getenv("PSX_INTERP_NOCOPYFIX") != NULL;
+                int only = nofix || !psx_gpu_list_copies_from(J.ot, R, Sc, J.ax1, J.ay1, J.ax2, J.ay2);
+                static _Thread_local PsxGpu *ref;   /* comparador (full): la referencia, dibujada entera en otra copia */
+                if (g_hwfull) { if (!ref) ref = malloc(sizeof *ref); if (ref) memcpy(ref, gpu, sizeof *ref); }
+                psx_gpu_record(&hl, only);
                 psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
                 psx_gpu_record_flush(gpu);
                 psx_gpu_record(NULL, 0);
+                if (g_hwfull && ref) psx_gpu_draw_list_mem(ref, J.ot, R, Sc);
                 hl.nread = J.nread; memcpy(hl.read, J.read, sizeof hl.read);   /* lo que lee la real de la GPU */
-                J.hwsink(&hl, J.gpu.vram, g_hwfull ? gpu->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
+                J.hwsink(&hl, J.gpu.vram, g_hwfull && ref ? ref->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
                 continue;
             }
             double r0 = tnow();

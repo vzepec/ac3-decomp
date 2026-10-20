@@ -692,7 +692,8 @@ void android_main(struct android_app *app) {
             if (best >= 0)
                 for (int i = 0; i < 8; i++)
                     if (G.q[i].full && G.q[i].due < G.q[best].due) {
-                        if (G.q[i].hw && G.q[i].real) {   /* sus buferes se intercambian con los de rl[nr] */
+                        /* (la que ya se dibujo como la que tocaba tiene np = 0: no se repite) */
+                        if (G.q[i].hw && G.q[i].real && G.q[i].np > 0) {   /* sus buferes se intercambian con los de rl[nr] */
                             PsxHwPrim *tp = rl[nr].p; int tcp = rl[nr].max;
                             uint16_t *td = rl[nr].data; int tcd = rl[nr].maxdata;
                             uint16_t *tb = rbg[nr];
@@ -741,6 +742,12 @@ void android_main(struct android_app *app) {
         static int c_new, c_fps, c_vel;
         static char line1[48], line2[48], line3[48];
         static double c_hw_ms, c_swap_ms;   /* GPU: ms de CPU en el dibujo y en eglSwapBuffers, por imagen */
+        /* medicion (paso 3): vueltas de este bucle (una por refresco si va bien), la mas larga, las de
+         * mas de 20 ms, imagenes reales saltadas que se dibujan igual, y el tiempo de la GPU de una
+         * imagen por segundo (glFinish) */
+        static int c_loops, c_slow, c_skipped;
+        static double c_loop_max, c_last_loop, c_gpu_ms = -1;
+        static int c_measure;
         static int c_hw_n;
         if (seq) { if (seq != last_seq) { c_new++; last_seq = seq; } }
         else if (sw && sh) {
@@ -768,6 +775,10 @@ void android_main(struct android_app *app) {
             } else line3[0] = 0;
             c_hw_ms = c_swap_ms = 0; c_hw_n = 0;
             psx_hw_stat_draws = psx_hw_stat_uploads = 0;
+            if (G.running)
+                LOG("presentacion: %d vueltas, la mas larga %.1f ms, %d de mas de 20 ms; reales saltadas dibujadas %d; GPU de una imagen %.1f ms",
+                    c_loops, c_loop_max, c_slow, c_skipped, c_gpu_ms);
+            c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = 1;
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
         int hw_drawn = 0;
@@ -780,10 +791,12 @@ void android_main(struct android_app *app) {
                     double td = rdue[a]; rdue[a] = rdue[b]; rdue[b] = td;
                 }
         for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], 1, 1);
+        c_skipped += nr;
         if (hw) {
             if (seq != hw_seq) {
                 double a = now();
                 psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, 1, hw_real);
+                if (c_measure) { c_measure = 0; double g0 = now(); glFinish(); c_gpu_ms = (now() - a) * 1000; (void)g0; }
                 c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
                 hw_seq = seq;
             }
@@ -805,5 +818,15 @@ void android_main(struct android_app *app) {
         double sa = now();
         eglSwapBuffers(G.dpy, G.surf);
         if (hw_drawn) c_swap_ms += (now() - sa) * 1000;
+        {
+            double tl = now();
+            if (c_last_loop > 0) {
+                double d = (tl - c_last_loop) * 1000;
+                c_loops++;
+                if (d > c_loop_max) c_loop_max = d;
+                if (d > 20) c_slow++;
+            }
+            c_last_loop = tl;
+        }
     }
 }
