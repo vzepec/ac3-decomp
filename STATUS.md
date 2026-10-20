@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-20 (release `v1.11-alfa`: menú de inicio y actualizador; se trabaja con la versión americana)
+**Última actualización:** 2026-10-20 (release `v1.12-alfa`: alta resolución, filtro bilineal y mando táctil; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.11-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
+**Etapa 7 — APK libre: publicada** (`v1.12-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -93,11 +93,16 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
 `vX.Y-alfa` es la versión que compara el actualizador.
 
-**Alta resolución** (petición del dueño tras la `v1.10-alfa`):
-- el dibujo por la GPU (`psx/gl/psx_hw.c`) ya admite escala;
-- probar escala 2-4 en la Retroid, con el comparador para lo que no escala
-  (radar, textos);
-- después, la precisión de los vértices de la GTE (como PGXP).
+**Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
+
+**Mando táctil: primera versión** (`v1.12-alfa`, `docs/12-etapa7.md` paso 8). Ajustarlo con lo que diga el dueño.
+
+**Siguiente, a elegir con el dueño:**
+- precisión de vértices (tipo PGXP), si se ven temblores a 4x;
+- otros filtros de textura (xBR);
+- la estela del misil junto a la cámara: comprobar en otro emulador si la
+  consola real también parpadea (`SIN RESOLVER`; la mejora queda para el
+  futuro, decisión del dueño).
 
 **Pendiente de etapa 8:**
 - la europea (2 imágenes con cuña del cielo en 16:9: `SIN RESOLVER`);

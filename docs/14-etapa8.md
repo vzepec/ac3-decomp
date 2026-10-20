@@ -570,3 +570,89 @@ El registro sigue dando por segundo:
 - imágenes que llegan tarde y tiradas;
 - el peor tiempo del hilo de dibujo;
 - llamadas, subidas y motivos de corte de lote.
+
+## Paso 4: alta resolución y filtro de texturas (rama `etapa-8-paso-4`, release v1.12-alfa)
+
+**Qué hace** (`psx/gl/psx_hw.c`, `android_game/`):
+- **Resolución interna 1x-4x**, elegida en las Opciones del menú (por
+  defecto 4x: 1280×960 en 4:3).
+- **A más de 1x, color de 24 bits sin tramado** (`psx_hw_truecolor`). Los
+  degradados (gouraud, modulación) quedan suaves en vez de en escalones de 15
+  bits con la trama 4x4 ampliada.
+- **La imagen se presenta con filtro lineal** a más de 1x.
+- **Filtro de texturas bilineal** (opción; por defecto, el de la PS1),
+  hecho en el shader:
+  - solo en los triángulos con textura: textos, menús y la mayor parte del
+    HUD siguen nítidos;
+  - cada vecino pasa por su paleta, y los transparentes (texel 0) no
+    cuentan;
+  - los vecinos no salen del rango de uv del polígono (no se mezcla con la
+    VRAM de al lado).
+
+**Medido en la Retroid (60 fps):**
+
+| Configuración | fps de media | GPU por imagen |
+|---|---|---|
+| 4x sin filtro | 60,0 | 19,1 ms |
+| 4x bilineal | 59,4 | 21,0 ms |
+| 3x bilineal | 59,0 | 19,7 ms |
+| 2x bilineal | 60,0 | 17,4 ms |
+
+Las configuraciones las cambiaba el PC cada 20 s mientras el dueño jugaba,
+por `adb` (ver *Depuración por adb*, abajo).
+
+**Fallos de la alta resolución, corregidos:**
+1. **Líneas oscuras alrededor del radar.** Las primitivas del radar son
+   triángulos con la uv al revés (decrece hacia la derecha y hacia abajo).
+   - La GPU lee la textura en la esquina de cada píxel y no dibuja los bordes
+     derecho e inferior: nunca llega al texel del vértice.
+   - A 4x, los subpíxeles de la última columna sí llegaban, y ese texel está
+     fuera del mapa.
+   - **Ahora** el rango de uv de cada triángulo es el que lee la GPU
+     (`set_uvr_tri`): se mira en las esquinas cubiertas de los 3x3 píxeles de
+     cada vértice.
+   - Reproducido en el PC con `AC3_HWCMP_PROBE` y las capturas a escala: la
+     columna 75 del radar, de 15 píxeles distintos a 0.
+2. **Líneas (primitivas LINE) medio píxel desplazadas** a más de 1x: la franja
+   se miraba en la esquina del píxel. Ahora cubre el píxel de la recta.
+3. **Bajones con el filtro bilineal** (30-450 ms de GPU por imagen en
+   explosiones). Cada lectura de textura recorría todas las subidas del
+   atlas.
+   - **Ahora** cada primitiva lleva solo hasta la última subida que toca su
+     textura, su paleta o el origen de su copia (`epoch_of`); casi siempre
+     ninguna.
+   - Comparador: 0 listas malas.
+
+**Herramientas:**
+- `AC3_HWSHOT=escala,vb1,vb2,dir` (comparador): imagen de GLES a escala 1 y a
+  la pedida, de cada lista entre esos VBlank.
+  - Con `AC3_HWCMP_ONLY` o `_PERSIST`, conservando la imagen como la app.
+  - `AC3_HWSHOT_FILTRO=1`: con el bilineal.
+- **Depuración por adb**: `<externalDataPath>/depurar.txt` (en la Retroid,
+  `/sdcard/Android/data/com.vzepec.ac3game/files/depurar.txt`), releído cada
+  segundo:
+  - `escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3`;
+  - permite probar hipótesis con el juego en pausa en el sitio del fallo y
+    capturar con `adb exec-out screencap`.
+
+**La estela del misil que parpadea junto a la cámara (a 60 fps): no es de la
+interpolación.**
+- Misión 2, disparo hacia delante con la cámara detrás. El trozo de estela
+  junto a la cámara aparece y desaparece paso a paso.
+- Píxeles brillantes de esa zona, VBlank 3316-3345: **la misma secuencia en
+  ORIG** (sin interpolación, capturas por VBlank) **que en las imágenes
+  reales** con interpolación. Las intermedias siguen a su real.
+- Con 60 fps se nota más porque lo demás va fluido.
+- **SIN RESOLVER:** si una PlayStation real hace lo mismo (comparar con otro
+  emulador).
+
+**Validación final** (comparador a 1x, las 41 misiones, intermedias y
+`GUION_FUEGO`):
+- 140.276 listas, 8 con un bloque malo;
+- en las mismas misiones que en la v1.10-alfa (3, 7, 20, 22 y 23);
+- sin fallos.
+
+**Pendiente:**
+- precisión de vértices (tipo PGXP), si se ven temblores;
+- otros filtros (xBR).
+

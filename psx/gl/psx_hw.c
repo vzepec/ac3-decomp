@@ -39,6 +39,12 @@ static const char *FS =
     "#version 300 es\n"
     "precision highp float; precision highp int; precision highp usampler2D;\n"
     "uniform usampler2D u_vram; uniform int u_pass; uniform int u_dither; uniform float u_delta;\n"
+    "/* etapa 8, paso 4: color de 24 bits (alta resolucion): sin pasar a 15 bits ni tramado, los degradados\n"
+    " * (gouraud, modulacion) quedan suaves */\n"
+    "uniform int u_true;\n"
+    "/* filtro de texturas (etapa 8, paso 4): 0 el de la PS1 (el texel mas cercano), 1 bilineal en los\n"
+    " * triangulos con textura (bandera 8), con la paleta y la transparencia de cada texel */\n"
+    "uniform int u_filter;\n"
     "/* subidas de la lista (etapa 8, paso 3b): sus datos, en el atlas desde el principio; u_up[i] = (x | y << 16,\n"
     " * w | h << 16, x en el atlas | y << 16). La primitiva ve las primeras v_tex.w >> 20 */\n"
     "uniform usampler2D u_atlas; uniform ivec4 u_up[128];\n"
@@ -62,6 +68,16 @@ static const char *FS =
     "      return texelFetch(u_atlas, ivec2((r.z & 0xFFFF) + x - rx, (r.z >> 16) + y - ry), 0).r;\n"
     "  }\n"
     "  return texelFetch(u_vram, ivec2(x, y), 0).r; }\n"
+    "/* el texel (u, v) de la textura de la primitiva: ventana, pagina y paleta */\n"
+    "uint texel(ivec2 c, int depth) {\n"
+    "  int u = c.x & 255, v = c.y & 255;\n"
+    "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
+    "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
+    "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
+    "  if (depth == 0) { uint w = fetch(tpx + u / 4, tpy + v); return fetch(cx + int((w >> uint((u & 3) * 4)) & 15u), cy); }\n"
+    "  if (depth == 1) { uint w = fetch(tpx + u / 2, tpy + v); return fetch(cx + int((w >> uint((u & 1) * 8)) & 255u), cy); }\n"
+    "  return fetch(tpx + u, tpy + v); }\n"
+    "vec3 t5(uint t) { return vec3(float(t & 31u), float((t >> 5) & 31u), float((t >> 10) & 31u)) * 8.0; }\n"
     "vec3 x5(uint c) { vec3 v = vec3(float(c & 31u), float((c >> 5) & 31u), float((c >> 10) & 31u));\n"
     "  return (v * 8.0 + floor(v / 4.0)) / 255.0; }\n"
     "void main() {\n"
@@ -73,23 +89,31 @@ static const char *FS =
     "  if ((flags & 128) != 0) { uint d = fetch(int(floor(uv.x + 0.001)), int(floor(uv.y + 0.001))); bool s = (d & 0x8000u) != 0u;\n"
     "    if ((u_pass == 1 && s) || (u_pass == 2 && !s)) discard; o = vec4(x5(d), 1.0); m.a = s || mset ? 1.0 : 0.0; return; }\n"
     "  if ((flags & 1) == 0) {\n"
+    "    if (u_true != 0) { put(clamp(col, 0.0, 255.0) / 255.0, semi, abr); return; }\n"
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
-    "  int u = int(floor(uv.x + 0.001)) & 255, v = int(floor(uv.y + 0.001)) & 255;\n"
-    "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
-    "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
-    "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
-    "  uint t;\n"
-    "  if (depth == 0) { uint w = fetch(tpx + u / 4, tpy + v); t = fetch(cx + int((w >> uint((u & 3) * 4)) & 15u), cy); }\n"
-    "  else if (depth == 1) { uint w = fetch(tpx + u / 2, tpy + v); t = fetch(cx + int((w >> uint((u & 1) * 8)) & 255u), cy); }\n"
-    "  else t = fetch(tpx + u, tpy + v);\n"
-    "  if (t == 0u) discard;\n"
+    "  uint t; vec3 tc;\n"
+    "  bool filt = u_filter != 0 && (flags & 8) != 0;\n"
+    "  if (filt) {   /* bilineal: los 4 vecinos dentro de la textura del poligono; los transparentes no cuentan.\n"
+    "                 * El del pixel (el de la PS1, para el bit 15) es uno de ellos */\n"
+    "    vec2 st = uv - 0.5; vec2 f = st - floor(st); ivec2 b = ivec2(floor(st)), near = ivec2(step(0.5, f));\n"
+    "    ivec2 lo = ivec2(floor(v_uvr.xy + 0.001)), hi = ivec2(floor(v_uvr.zw + 0.001));\n"
+    "    vec3 acc = vec3(0.0); float wa = 0.0; uint any = 0u; t = 0u;\n"
+    "    for (int k = 0; k < 4; k++) {\n"
+    "      ivec2 o = ivec2(k & 1, k >> 1); uint s = texel(clamp(b + o, lo, hi), depth);\n"
+    "      float w = (o.x == 1 ? f.x : 1.0 - f.x) * (o.y == 1 ? f.y : 1.0 - f.y);\n"
+    "      if (o == near) t = s;\n"
+    "      if (s != 0u) { acc += t5(s) * w; wa += w; if (any == 0u) any = s; }\n"
+    "    }\n"
+    "    if (wa < 0.5) discard;\n"
+    "    tc = acc / wa; if (t == 0u) t = any;\n"
+    "  } else { t = texel(ivec2(floor(uv + 0.001)), depth); if (t == 0u) discard; tc = t5(t); }\n"
     "  bool stp = (t & 0x8000u) != 0u;\n"
     "  m.a = stp || mset ? 1.0 : 0.0;\n"
     "  if (u_pass == 1 && stp) discard;\n"
     "  if (u_pass == 2 && !stp) discard;\n"
-    "  if ((flags & 2) != 0) { put(x5(t), semi && stp, abr); return; }\n"
-    "  vec3 tc = vec3(float(t & 31u), float((t >> 5) & 31u), float((t >> 10) & 31u)) * 8.0;\n"
+    "  if ((flags & 2) != 0) { put(filt ? tc * (8.25 / 8.0) / 255.0 : x5(t), semi && stp, abr); return; }\n"
+    "  if (u_true != 0) { put(clamp(tc * col / 128.0, 0.0, 255.0) / 255.0, semi && stp, abr); return; }\n"
     "  vec3 c = floor(clamp(floor(tc * floor(col + 0.001) / 128.0) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "  put((c * 8.0 + floor(c / 4.0)) / 255.0, semi && stp, abr);\n"
     "}\n";
@@ -108,7 +132,7 @@ int psx_hw_stat_atlas;
 /* etapa 8, paso 2: cada imagen de la VRAM (doble bufer) se conserva en la GPU, color y bit de
  * mascara (stencil), como en una GPU de verdad: las reales se dibujan encima de la suya y las
  * intermedias parten de una copia */
-#define NTARGET 4
+#define NTARGET 8   /* (8: el comparador conserva tambien las de otra escala, AC3_HWSHOT) */
 typedef struct { int x0, y0, w, h, scale, valid; unsigned use; GLuint tex, mask, stencil, fbo; } Target;
 static Target g_tg[NTARGET];
 static GLuint g_cprog, g_cvao, g_cvbo, g_vfbo;   /* copia de una imagen conservada a la textura de la VRAM */
@@ -122,9 +146,11 @@ static GLuint g_last_tex, g_read_fbo;   /* lo que devuelven psx_hw_texture y psx
 static GLuint g_vtex[NVTEX];
 static uint16_t *g_shadow[NVTEX];
 static int g_ring;
-static GLint u_origin, u_size, u_vram, u_pass, u_dither, u_shift, u_delta;
-static int g_dither;
+static GLint u_origin, u_size, u_vram, u_pass, u_dither, u_shift, u_delta, u_true, u_filter;
+static int g_dither, g_true, g_filter;
+void psx_hw_filter(int mode) { g_filter = mode; }
 void psx_hw_dither(int on) { g_dither = on; }
+void psx_hw_truecolor(int on) { g_true = on; }
 static int g_ow, g_oh, g_scale, g_x0, g_y0;
 static HwVert *g_buf;
 static int g_n, g_cap;
@@ -164,6 +190,8 @@ int psx_hw_init(void) {
     u_dither = glGetUniformLocation(g_prog, "u_dither");
     u_shift = glGetUniformLocation(g_prog, "u_shift");
     u_delta = glGetUniformLocation(g_prog, "u_delta");
+    u_true = glGetUniformLocation(g_prog, "u_true");
+    u_filter = glGetUniformLocation(g_prog, "u_filter");
     glGenVertexArrays(1, &g_vao);
     glGenBuffers(1, &g_vbo);
     glBindVertexArray(g_vao);
@@ -323,12 +351,31 @@ static HwVert *push(int k) {
     return v;
 }
 
+/* (etapa 8, paso 4) subidas del atlas que la primitiva tiene que mirar: hasta la ultima anterior a
+ * ella que toca su textura, su paleta o el origen de su copia; casi siempre ninguna. Antes miraba
+ * todas las anteriores en cada lectura de la textura: con el filtro bilineal (8 lecturas por pixel)
+ * y muchas subidas (explosiones) la GPU de la Retroid tardaba de 30 a 450 ms por imagen a 4x */
+static int read_rect(const PsxHwPrim *p, int r[4]);
+static int clut_rect(const PsxHwPrim *p, int r[4]);
+static int epoch_of(const PsxHwPrim *p) {
+    if (!g_epoch) return 0;
+    int r[2][4], n = 0;
+    if (read_rect(p, r[n])) n++;
+    if (clut_rect(p, r[n])) n++;
+    for (int i = g_epoch - 1; i >= 0; i--) {
+        int x1 = g_up[i][0] & 0xFFFF, y1 = g_up[i][0] >> 16, x2 = x1 + (g_up[i][1] & 0xFFFF) - 1, y2 = y1 + (g_up[i][1] >> 16) - 1;
+        for (int k = 0; k < n; k++)
+            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) return i + 1;
+    }
+    return 0;
+}
+
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
     t[0] = p->tp_x | p->tp_y << 16;
     t[1] = p->clut_x | p->clut_y << 16;
     if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | g_epoch << 20;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | epoch_of(p) << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {
@@ -359,6 +406,52 @@ static void set_uvr(int k) {
         if (v[i].v > r[3]) r[3] = v[i].v;
     }
     for (int i = 0; i < k; i++) memcpy(v[i].uvr, r, sizeof r);
+}
+
+/* (etapa 8, paso 4) rango de uv de un triangulo: el que lee la GPU, no el de sus vertices. La GPU lee
+ * la textura en la esquina de cada pixel y no dibuja los bordes derecho e inferior, asi que con una uv
+ * que decrece hacia ese lado nunca llega al texel del vertice; a mas de 1x, los subpixeles de la
+ * ultima columna si llegaban (lineas oscuras alrededor del radar: su mapa va con la u al reves). La uv
+ * es afin en el triangulo y su minimo y su maximo sobre los pixeles cubiertos estan junto a los
+ * vertices: se mira en las esquinas cubiertas de los 3x3 pixeles de cada uno (cubierta = la esquina,
+ * con el mismo desplazamiento de 1/128 que el dibujo, dentro del triangulo). Un vertice sin ninguna
+ * cubierta cerca (triangulo muy fino) aporta su propia uv, como antes */
+static void set_uvr_tri(const PsxHwPrim *p) {
+    float x0 = p->x[0], y0 = p->y[0], x1 = p->x[1], y1 = p->y[1], x2 = p->x[2], y2 = p->y[2];
+    float det = (x1 - x0) * (y2 - y0) - (x2 - x0) * (y1 - y0);
+    if (det == 0) { set_uvr(3); return; }
+    /* u = u0 + au (x - x0) + bu (y - y0); igual v */
+    float du1 = p->u[1] - p->u[0], du2 = p->u[2] - p->u[0], dv1 = p->v[1] - p->v[0], dv2 = p->v[2] - p->v[0];
+    float au = (du1 * (y2 - y0) - du2 * (y1 - y0)) / det, bu = (du2 * (x1 - x0) - du1 * (x2 - x0)) / det;
+    float av = (dv1 * (y2 - y0) - dv2 * (y1 - y0)) / det, bv = (dv2 * (x1 - x0) - dv1 * (x2 - x0)) / det;
+    const float d = 1.0f / 128.0f;
+    float r[4] = {1e9f, 1e9f, -1e9f, -1e9f};
+    for (int k = 0; k < 3; k++) {
+        int found = 0;
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++) {
+                float px = (float)(p->x[k] + dx) + d, py = (float)(p->y[k] + dy) + d;
+                float e0 = (x1 - x0) * (py - y0) - (y1 - y0) * (px - x0);
+                float e1 = (x2 - x1) * (py - y1) - (y2 - y1) * (px - x1);
+                float e2 = (x0 - x2) * (py - y2) - (y0 - y2) * (px - x2);
+                if (!((e0 > 0 && e1 > 0 && e2 > 0) || (e0 < 0 && e1 < 0 && e2 < 0))) continue;
+                float cx = (float)(p->x[k] + dx) - x0, cy = (float)(p->y[k] + dy) - y0;
+                float u = p->u[0] + au * cx + bu * cy, v = p->v[0] + av * cx + bv * cy;
+                if (u < r[0]) r[0] = u;
+                if (v < r[1]) r[1] = v;
+                if (u > r[2]) r[2] = u;
+                if (v > r[3]) r[3] = v;
+                found = 1;
+            }
+        if (!found) {
+            if (p->u[k] < r[0]) r[0] = p->u[k];
+            if (p->v[k] < r[1]) r[1] = p->v[k];
+            if (p->u[k] > r[2]) r[2] = p->u[k];
+            if (p->v[k] > r[3]) r[3] = p->v[k];
+        }
+    }
+    HwVert *v = &g_buf[g_n - 3];
+    for (int i = 0; i < 3; i++) memcpy(v[i].uvr, r, sizeof r);
 }
 
 /* la VRAM de partida a la siguiente textura del turno: solo las franjas que difieren de lo que ya
@@ -564,14 +657,16 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
         else state(p->ax1, p->ay1, p->ax2, p->ay2, cls, pass, st);
         switch (p->kind) {
         case PSX_HW_TRI: {
-            tex_of(p, (tex ? 1 : 0) | (f & PSX_HWF_RAW ? 2 : 0) | (semi ? 4 : 0) | (f & PSX_HWF_DITHER ? 16 : 0), t);
+            /* (bandera 8: triangulo con textura, el que se filtra) */
+            tex_of(p, (tex ? 1 | 8 : 0) | (f & PSX_HWF_RAW ? 2 : 0) | (semi ? 4 : 0) | (f & PSX_HWF_DITHER ? 16 : 0), t);
             HwVert *v = push(3);
             for (int i = 0; i < 3; i++) {
                 int r = p->r[i], g = p->g[i], b = p->b[i];
                 if (!(f & PSX_HWF_GOURAUD)) { r = p->r[0]; g = p->g[0]; b = p->b[0]; }
                 vert(&v[i], p->x[i], p->y[i], p->u[i], p->v[i], r, g, b, t);
             }
-            set_uvr(3);
+            if (tex && g_scale > 1) set_uvr_tri(p);
+            else set_uvr(3);
             break;
         }
         case PSX_HW_RECT:
@@ -612,6 +707,12 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
              * d menor < 0: lejos de cero) */
             float dl = (1.0f / 128.0f) / (float)g_scale, e = 0.01f;
             float off = (dn > 0 ? -0.5f + e : -0.5f - e) - (k - 1) * dl;
+            /* (etapa 8, paso 4) a mas de 1x la franja se mira en todo el pixel de la VRAM, no en su
+             * esquina: con ese desplazamiento cubria medio pixel por encima y medio por debajo, y la
+             * mitad de fuera escapaba de la mascara (lineas oscuras alrededor del radar, medido en la
+             * Retroid). La franja va del pixel de la recta al siguiente, con la recta en el centro de
+             * cada columna */
+            if (g_scale > 1) off = -0.5f * k;
             float n1 = na + k * (lo - ma) + off, n2 = na + k * (hi - ma) + off;
             /* color en cada extremo del paralelogramo (el de a en el lado de a) */
             int ra = p->r[0], ga = p->g[0], ba = p->b[0];
@@ -857,7 +958,9 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glUseProgram(g_prog);
     glUniform2f(u_origin, (float)x0, (float)y0);
     glUniform2f(u_size, (float)w, (float)h);
-    glUniform1i(u_dither, g_dither);
+    glUniform1i(u_dither, g_dither && !g_true);
+    glUniform1i(u_true, g_true);
+    glUniform1i(u_filter, g_filter);
     const float delta = 1.0f / 128.0f;   /* pixeles de salida */
     float sh = (0.5f - delta) / (float)scale;   /* en pixeles de la VRAM: casi medio pixel de salida */
     glUniform2f(u_shift, sh, sh);

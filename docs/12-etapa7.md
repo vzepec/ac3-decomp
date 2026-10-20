@@ -61,8 +61,9 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 3 | `ACE.BIN` leído y descomprimido del disco (`psx/src/acebin.c`) | ✅ hecho |
 | 4 | APK libre (`android_game/build.sh`, ahora por defecto: `AC3Recomp-<versión>.apk`) y auditoría (`tools/apk_audit.py`) | ✅ probado en la Retroid: `VEL` 100 %, todo correcto (dueño) |
 | 5 | Rendimiento en la Retroid | ✅ no hace falta: el intérprete llega a tiempo real |
-| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU); v1.11-alfa (menú) |
+| 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU); v1.11-alfa (menú); v1.12-alfa (alta resolución) |
 | 7 | Menú de inicio, opciones, idioma y actualizador (`LauncherActivity`, `Updater`) | ✅ probado en la Retroid (dueño); v1.11-alfa |
+| 8 | Mando táctil en pantalla (`android_game/src/touchpad.c`) | ✅ v1.12-alfa |
 
 ## Resultados
 
@@ -244,4 +245,40 @@ publicado es la `v1.10-alfa`, con `versionCode` 35.
 - El juego no cambia respecto a la 1.10-alfa.
 - **Las pruebas se llamaron 1.11.1 a 1.11.13.** El instalado en la Retroid
   tras ellas lleva `versionCode` 48, así que la release lleva el 49.
+
+## Paso 8: mando táctil (v1.12-alfa)
+
+Petición del dueño: poder jugar sin botones físicos.
+
+**Diseño:** tomado de otros ports a Android, solo como idea (sin su código,
+que es GPL):
+- el stick analógico flotante de HarvestMoon64Recomp, con el centro donde se
+  apoya el pulgar;
+- un botón para ocultar el mando;
+- un ajuste para desactivarlo.
+
+**Cómo está hecho:**
+- **Nativo** (`android_game/src/touchpad.c`):
+  - capa GLES semitransparente, dibujada antes de cada `eglSwapBuffers`;
+  - multitoque: cada dedo se queda con el control que tocó; en los botones de
+    cara y la cruceta se puede deslizar a un vecino del mismo grupo;
+  - tamaños en dp (densidad de `AConfiguration`).
+- **Gráficos:** los dibuja `MainActivity.touchAtlas()` con `Canvas` en un
+  atlas de celdas de 128 px. Son dibujo propio: la auditoría del APK sigue
+  a 0.
+- **Entrada:** los botones se suman a los del mando físico, y el stick táctil
+  manda mientras se toca.
+- **Modo** (Opciones del menú):
+  - automático: se oculta con cualquier evento de un mando físico y vuelve al
+    tocar la pantalla;
+  - siempre;
+  - nunca.
+
+**Probado en la Retroid por adb:**
+- se dibuja encima;
+- un toque en START (`adb shell input swipe`) avanza los menús;
+- con START físico se oculta.
+
+**Pendiente:** lo que diga el dueño de tamaños, posiciones, transparencia,
+segundo stick para la cámara y vibración.
 
