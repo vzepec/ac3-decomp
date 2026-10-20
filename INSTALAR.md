@@ -54,7 +54,7 @@ Se maneja con la cruceta y A (B vuelve atrás). Desde la 1.11-alfa:
 | **Play / Jugar** | Arranca el juego con tu disco |
 | **Update / Actualizar** | Solo aparece si hay una versión nueva (ver abajo) |
 | **Change disc / Cambiar disco** | Elegir otra imagen del disco |
-| **Options / Opciones** | Mostrar u ocultar el contador y las estadísticas de desarrollo (se guarda) |
+| **Options / Opciones** | Resolución interna (Original, 2x, 3x, 4x; por defecto 4x), filtro de texturas (Original o Bilineal) y mostrar u ocultar el contador y las estadísticas de desarrollo. Todo se guarda |
 | **About / Acerca de** | Versión y aviso legal |
 | **Exit / Salir** | Cerrar la app |
 | **EN / ES** (arriba a la derecha) | Idioma del menú: inglés (por defecto) o español; se guarda. El juego va en el idioma de tu disco |
@@ -137,8 +137,14 @@ Arriba a la izquierda se muestra (se puede ocultar en Opciones):
   - **Menús y briefing** se estiran a 16:9.
   - **Los vídeos** siguen a 4:3, para no deformarlos.
   - L3+R3 pasa a 4:3.
-- Imagen a la resolución original (320×240/256), escalada a la pantalla.
-  Todavía no hay alta resolución.
+- **Alta resolución** (desde la 1.12-alfa): la imagen se dibuja hasta a 4
+  veces la original (1280×960), con degradados suaves (cielo, humo,
+  sombras). Se elige en Opciones. En una Retroid Pocket Flip 2, 4x va a 60
+  fps.
+  - Las texturas del juego son de baja resolución: con **Filtro de texturas
+    → Bilineal** se suavizan las de los modelos 3D. Textos y HUD siguen
+    nítidos.
+  - Si tu dispositivo no llega a 60 fps, baja la resolución.
 
 ## Si algo falla
 

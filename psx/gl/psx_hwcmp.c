@@ -99,8 +99,62 @@ static void save(int vb, int num, int den, int w, int h, const uint8_t *badmap, 
 }
 
 static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv, int x0, int y0, int w, int h, int num, int den);
-int psx_hwcmp_only;          /* lo pone native_main (AC3_HWCMP_ONLY) mientras hay mision */
+
 static int g_cmp_persist;    /* compare: la GPU conserva la imagen (real) */
+
+static void ppm(const char *path, const uint32_t *px, int w, int h) {
+    FILE *f = fopen(path, "wb");
+    if (!f) return;
+    fprintf(f, "P6\n%d %d\n255\n", w, h);
+    for (int i = 0; i < w * h; i++) fwrite(&px[i], 1, 3, f);
+    fclose(f);
+}
+
+/* etapa 8, paso 4: AC3_HWSHOT=escala,vb1,vb2,dir guarda, de cada lista entre esos VBlank, la imagen
+ * de GLES a escala 1 (con tramado, la de la comparacion) y a la escala pedida (color de 24 bits),
+ * para ver la alta resolucion: s<VBlank>[_k-n]_x1.ppm y _x<escala>.ppm */
+static void shot(const PsxHwList *lp, const uint16_t *bg, int x0, int y0, int w, int h, int num, int den) {
+    static int sc = -1, v1, v2;
+    static char dir[400];
+    if (sc < 0) {
+        sc = 0;
+        if (getenv("AC3_HWSHOT") && sscanf(getenv("AC3_HWSHOT"), "%d,%d,%d,%399s", &sc, &v1, &v2, dir) != 4) sc = 0;
+    }
+    int vb = VSync(-1);
+    if (sc < 1) return;
+    psx_hw_filter(getenv("AC3_HWSHOT_FILTRO") ? atoi(getenv("AC3_HWSHOT_FILTRO")) : 0);   /* (solo en la imagen a escala) */
+    static uint32_t *big;
+    if (!big) big = malloc((size_t)1024 * 512 * 16 * 4);
+    if (!big || w * sc > 4096 || h * sc > 2048) return;
+    int pers = g_cmp_persist || getenv("AC3_HWCMP_PERSIST");
+    if (pers) {   /* (AC3_HWCMP_ONLY o _PERSIST) como la app: imagen conservada a esa escala, en cada lista */
+        psx_hw_truecolor(1);
+        if (g_cmp_persist) psx_hw_frame_ex(lp, bg, x0, y0, w, h, sc, 1);
+        else {
+            PsxHwList l2 = *lp;
+            l2.main_stale = 1;
+            psx_hw_frame_ex(&l2, bg, x0, y0, w, h, sc, num == den);
+        }
+        psx_hw_truecolor(0);
+        if (vb < v1 || vb > v2) return;
+        psx_hw_read(big);
+    }
+    if (vb < v1 || vb > v2) return;
+    char path[600];
+    const char *tag = num == den ? "" : "_i";
+    snprintf(path, sizeof path, "%s/s%05d%s_x1.ppm", dir, vb, tag);
+    ppm(path, g_hw, w, h);
+    if (!pers) {
+        psx_hw_truecolor(1);
+        psx_hw_frame(lp, bg, x0, y0, w, h, sc);
+        psx_hw_read(big);
+        psx_hw_truecolor(0);
+    }
+    snprintf(path, sizeof path, "%s/s%05d%s_x%d.ppm", dir, vb, tag, sc);
+    ppm(path, big, w * sc, h * sc);
+}
+
+int psx_hwcmp_only;          /* lo pone native_main (AC3_HWCMP_ONLY) mientras hay mision */
 static int g_maxdraws, g_maxdraws_vb, g_maxdraws_n;
 
 static void hook(PsxGpu *g, uint32_t ot) {
@@ -186,6 +240,9 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
                 in = (d0 >= 0 && d1 >= 0 && d2 >= 0) || (d0 <= 0 && d1 <= 0 && d2 <= 0);
             } else if (q->kind == PSX_HW_RECT || q->kind == PSX_HW_FILL || q->kind == PSX_HW_VRAM)
                 in = X >= q->x[0] && X < q->x[0] + q->x[1] && Y >= q->y[0] && Y < q->y[0] + q->y[1];
+            else if (q->kind == PSX_HW_LINE)   /* (las lineas: su caja, con un pixel de margen) */
+                in = X >= (q->x[0] < q->x[1] ? q->x[0] : q->x[1]) - 1 && X <= (q->x[0] > q->x[1] ? q->x[0] : q->x[1]) + 1 &&
+                     Y >= (q->y[0] < q->y[1] ? q->y[0] : q->y[1]) - 1 && Y <= (q->y[0] > q->y[1] ? q->y[0] : q->y[1]) + 1;
             if (in)
                 printf("sonda: prim %d tipo %d banderas %#x abr %d prof %d pag %d,%d clut %d,%d ventana %d,%d,%d,%d color %d,%d,%d (%d,%d) (%d,%d) (%d,%d) uv (%d,%d) (%d,%d) (%d,%d) area %d,%d-%d,%d\n", i, q->kind, q->flags, q->abr, q->depth, q->tp_x, q->tp_y, q->clut_x, q->clut_y, q->tw_mx, q->tw_my, q->tw_ox, q->tw_oy, q->r[0], q->g[0], q->b[0],
                        q->x[0] - x0, q->y[0] - y0, q->x[1] - x0, q->y[1] - y0, q->x[2] - x0, q->y[2] - y0, q->u[0], q->v[0], q->u[1], q->v[1],
@@ -205,6 +262,8 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
         psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
+    shot(lp, bg, x0, y0, w, h, num, den);
+    psx_hw_filter(0);
     if (psx_hw_stat_draws - d0 > g_maxdraws) { g_maxdraws = psx_hw_stat_draws - d0; g_maxdraws_vb = VSync(-1); g_maxdraws_n = lp->n; }
     if (g_cmp_persist && getenv("AC3_HWCMP_MASKCMP")) {   /* el bit 15 de la GPU frente al del software */
         static uint8_t mk[1024 * 512];
