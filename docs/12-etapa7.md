@@ -311,6 +311,20 @@ segundo stick para la cámara y vibración.
   `dumpsys vibrator_manager` registra las órdenes de la app con amplitud 0,78.
 - Opción **Vibración** en el menú; permiso `VIBRATE`.
 
+**Vibración extra (no es del original).**
+- Medido en el PC con `PSX_PAD_LOG`: el juego **no** pide vibración al
+  disparar misiles (○), con la ametralladora (✕) ni al acelerar (R1). Solo la
+  pide con daños, roces con el suelo y choques.
+- Opción del menú, desactivada por defecto, durante la misión (terreno
+  dibujado):
+  - golpe de 150 ms (fuerza 190) al pulsar ○;
+  - traqueteo 95/45 a unos 8 Hz con ✕ mantenida;
+  - temblor de 40 con R1.
+- Se suma a la del juego: vale la mayor de las dos.
+- **Comprobado en la Retroid:** amplitudes 0,75, 0,37 y 0,18 en
+  `dumpsys vibrator_manager`.
+- **Limitación:** en el menú de pausa del juego, ○ y ✕ también vibran.
+
 **Pausa al volver.**
 - Al salir de la app (`APP_CMD_PAUSE`) con el juego en marcha, queda en pausa
   (`G.hold`) hasta que se pulse un botón o la pantalla. El primer toque no

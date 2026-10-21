@@ -131,6 +131,8 @@ static struct {
      * algo; SELECT + START mantenidos 1,5 s vuelven al menu de inicio */
     volatile int hold;
     double exit_t0;
+    volatile int in_mission;       /* el juego dibuja terreno (la mision en vuelo) */
+    volatile int rumble_extra;     /* vibracion extra (no del original) al disparar y acelerar: opcion */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
      * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1 vibrar=N" (-1: lo normal; modo: el de
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
@@ -203,12 +205,13 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetTouchAtlas(
 }
 
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats, jint scale,
-                                                                             jint filter, jint touch) {
+                                                                             jint filter, jint touch, jboolean rumble_extra) {
     (void)env; (void)cls;
     G.show_stats = stats;   /* (el registro de adb logcat sigue igual) */
     G.scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
     G.filter = filter == 1;
     touchpad_set_mode(touch >= 0 && touch <= 2 ? touch : 0);
+    G.rumble_extra = rumble_extra;
     LOG("opciones: contadores %d, resolucion interna x%d, filtro %d, mando tactil %d", stats, G.scale, G.filter, touch);
 }
 
@@ -322,6 +325,7 @@ static void frame_wait(void) {
     if (ac3_terrain_count != terrain_last) { terrain_last = ac3_terrain_count; terrain_idle = 0; }
     else if (terrain_idle < 1000) terrain_idle++;
     G.wide_now = MODE_WIDE(G.gfx_mode) && terrain_idle < 15;
+    G.in_mission = terrain_idle < 15;
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
     /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
      * solo interpreta la lista): menos trabajo en el hilo del juego */
@@ -755,6 +759,22 @@ static void app_extras(double t) {
     static int last = -1;
     static double last_t;
     int m = G.running && !G.paused && !G.hold ? (G.dbg_rumble >= 0 ? G.dbg_rumble : psx_pad_motor(0)) : 0;
+    /* vibracion extra (opcion, desactivada por defecto; el original solo vibra con danos y choques): en la
+     * mision, un golpe corto al lanzar un misil (O), traqueteo con la ametralladora (X mantenida) y un
+     * temblor leve con el acelerador (R1). Se suma a la del juego sin taparla (la mayor de las dos) */
+    static int prev_circle;
+    static double missile_t;
+    uint16_t pb = (uint16_t)(G.keys | G.buttons | touchpad_buttons());
+    int circle = (pb & PSX_PAD_CIRCLE) != 0;
+    if (G.rumble_extra && G.in_mission && G.running && !G.paused && !G.hold) {
+        if (circle && !prev_circle) missile_t = t + 0.15;
+        int x = 0;
+        if (t < missile_t) x = 190;
+        else if (pb & PSX_PAD_CROSS) x = ((int)(t * 16) & 1) ? 95 : 45;   /* ~8 golpes por segundo */
+        else if (pb & PSX_PAD_R1) x = 40;
+        if (x > m) m = x;
+    }
+    prev_circle = circle;
     if ((m > 0) != (last > 0)) LOG("vibracion: %s (fuerza %d)", m > 0 ? "empieza" : "termina", m);
     if (m != last || (m > 0 && t - last_t > 0.08)) { call_java_int("rumble", m); last = m; last_t = t; }
     /* SELECT + START mantenidos 1,5 s (mando fisico o tactil): al menu de inicio */

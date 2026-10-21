@@ -46,7 +46,7 @@ public class MainActivity extends NativeActivity {
     private static native void nativeSetDisc(int fd);
 
     /** Implementado en game_main.c: opciones del menu de inicio (antes de arrancar el juego). */
-    private static native void nativeSetOptions(boolean showStats, int scale, int filter, int touch);
+    private static native void nativeSetOptions(boolean showStats, int scale, int filter, int touch, boolean rumbleExtra);
 
     /** Implementado en game_main.c: los graficos del mando virtual (ARGB, celdas de touchpad.h). */
     private static native void nativeSetTouchAtlas(int[] argb, int w, int h);
@@ -59,7 +59,8 @@ public class MainActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         nativeSetOptions(p.getBoolean(LauncherActivity.KEY_STATS, true), p.getInt(LauncherActivity.KEY_SCALE, LauncherActivity.DEFAULT_SCALE),
-                         p.getInt(LauncherActivity.KEY_FILTER, 0), p.getInt(LauncherActivity.KEY_TOUCH, 0));
+                         p.getInt(LauncherActivity.KEY_FILTER, 0), p.getInt(LauncherActivity.KEY_TOUCH, 0),
+                         p.getBoolean(LauncherActivity.KEY_RUMBLE, true) && p.getBoolean(LauncherActivity.KEY_RUMBLE_FIRE, false));
         if (p.getInt(LauncherActivity.KEY_TOUCH, 0) != 2) touchAtlas();
         pauseLabel(!"es".equals(p.getString(LauncherActivity.KEY_LANG, "en")));
         rumbleOn = p.getBoolean(LauncherActivity.KEY_RUMBLE, true);
