@@ -3,6 +3,7 @@
  * el mismo que usan los emuladores): bloque 0 = cabecera "MC" (marco 0) y directorio
  * (marcos 1-15, uno por bloque de datos), bloques 1-15 de 8 KB con los archivos. */
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -49,12 +50,19 @@ static void card_format(int port) {
     memcpy(m + 63 * FRAME, m, FRAME);   /* marco de prueba de escritura */
 }
 
+/* (etapa 7, paso 9) a un archivo temporal y despues se renombra: si la app se cierra en mitad de la
+ * escritura (salir al menu, el sistema la mata), la tarjeta de antes sigue entera */
 static void card_flush(int port) {
     if (!C[port].present || !C[port].path[0]) return;
-    FILE *f = fopen(C[port].path, "wb");
+    char tmp[sizeof C[port].path + 8];
+    snprintf(tmp, sizeof tmp, "%s.tmp", C[port].path);
+    FILE *f = fopen(tmp, "wb");
     if (!f) return;
-    fwrite(C[port].img, 1, CARD_SIZE, f);
+    size_t n = fwrite(C[port].img, 1, CARD_SIZE, f);
+    if (fflush(f) != 0 || n != CARD_SIZE) { fclose(f); remove(tmp); return; }
+    fsync(fileno(f));
     fclose(f);
+    rename(tmp, C[port].path);
 }
 
 int psx_card_attach(int port, const char *path) {

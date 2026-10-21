@@ -10,7 +10,12 @@ import android.graphics.Path;
 import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.os.VibratorManager;
+import android.view.InputDevice;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -46,6 +51,9 @@ public class MainActivity extends NativeActivity {
     /** Implementado en game_main.c: los graficos del mando virtual (ARGB, celdas de touchpad.h). */
     private static native void nativeSetTouchAtlas(int[] argb, int w, int h);
 
+    /** Implementado en game_main.c: el rotulo de la pausa al volver a la app. */
+    private static native void nativeSetPauseLabel(int[] argb, int w, int h);
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -53,6 +61,9 @@ public class MainActivity extends NativeActivity {
         nativeSetOptions(p.getBoolean(LauncherActivity.KEY_STATS, true), p.getInt(LauncherActivity.KEY_SCALE, LauncherActivity.DEFAULT_SCALE),
                          p.getInt(LauncherActivity.KEY_FILTER, 0), p.getInt(LauncherActivity.KEY_TOUCH, 0));
         if (p.getInt(LauncherActivity.KEY_TOUCH, 0) != 2) touchAtlas();
+        pauseLabel(!"es".equals(p.getString(LauncherActivity.KEY_LANG, "en")));
+        rumbleOn = p.getBoolean(LauncherActivity.KEY_RUMBLE, true);
+        if (rumbleOn) pickVibrator();
         if (savedInstanceState == null && !openSavedDisc()) {
             pickDisc();
         }
@@ -221,6 +232,59 @@ public class MainActivity extends NativeActivity {
         int[] px = new int[bm.getWidth() * bm.getHeight()];
         bm.getPixels(px, 0, bm.getWidth(), 0, 0, bm.getWidth(), bm.getHeight());
         nativeSetTouchAtlas(px, bm.getWidth(), bm.getHeight());
+        bm.recycle();
+    }
+
+    /* ------------------------------------------------------------- vibracion y pausa (etapa 7, paso 9) */
+
+    private Vibrator vib;
+    private boolean rumbleOn, amp, warned;
+
+    /** El motor del mando fisico si lo tiene; si no, el del aparato (la Retroid lleva uno). */
+    private void pickVibrator() {
+        for (int id : InputDevice.getDeviceIds()) {
+            InputDevice d = InputDevice.getDevice(id);
+            if (d == null || (d.getSources() & InputDevice.SOURCE_GAMEPAD) != InputDevice.SOURCE_GAMEPAD) continue;
+            Vibrator v = Build.VERSION.SDK_INT >= 31 ? d.getVibratorManager().getDefaultVibrator() : d.getVibrator();
+            if (v != null && v.hasVibrator()) { vib = v; Log.i(TAG, "vibracion: el mando " + d.getName()); break; }
+        }
+        if (vib == null) {
+            vib = Build.VERSION.SDK_INT >= 31 ? ((VibratorManager) getSystemService(VIBRATOR_MANAGER_SERVICE)).getDefaultVibrator()
+                                              : (Vibrator) getSystemService(VIBRATOR_SERVICE);
+            if (vib != null && !vib.hasVibrator()) vib = null;
+            Log.i(TAG, "vibracion: " + (vib != null ? "la del aparato" : "ninguna"));
+        }
+        amp = vib != null && vib.hasAmplitudeControl();
+    }
+
+    /** Lo llama el codigo nativo (hilo que presenta): la fuerza que pide el juego, 0-255; cada orden dura 120 ms. */
+    public void rumble(int s) {
+        if (!rumbleOn || vib == null) { if (s > 0 && !warned) { warned = true; Log.i(TAG, "vibracion: desactivada o sin motor"); } return; }
+        try {
+            if (s <= 0) vib.cancel();
+            else if (amp) vib.vibrate(VibrationEffect.createOneShot(120, Math.max(1, Math.min(255, s))));
+            else if (s >= 64) vib.vibrate(VibrationEffect.createOneShot(120, VibrationEffect.DEFAULT_AMPLITUDE));
+        } catch (Exception e) {
+            Log.w(TAG, "vibracion: " + e);
+        }
+    }
+
+    /** El rotulo de la pausa al volver a la app, para 2,25 px por dp (lo escala el nativo). */
+    private void pauseLabel(boolean en) {
+        String t1 = en ? "PAUSED" : "PAUSA", t2 = en ? "Press any button to continue" : "Pulsa cualquier botón para seguir";
+        Paint big = new Paint(Paint.ANTI_ALIAS_FLAG), small = new Paint(Paint.ANTI_ALIAS_FLAG), bg = new Paint(Paint.ANTI_ALIAS_FLAG);
+        big.setColor(0xFFE8EEF8); big.setTypeface(Typeface.DEFAULT_BOLD); big.setTextSize(64); big.setTextAlign(Paint.Align.CENTER);
+        small.setColor(0xFFB8C4D8); small.setTextSize(36); small.setTextAlign(Paint.Align.CENTER);
+        bg.setColor(0xD90B1220);
+        int w = (int) Math.max(big.measureText(t1), small.measureText(t2)) + 120, h = 220;
+        Bitmap bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+        Canvas cv = new Canvas(bm);
+        cv.drawRoundRect(new RectF(0, 0, w, h), 36, 36, bg);
+        cv.drawText(t1, w / 2f, 96, big);
+        cv.drawText(t2, w / 2f, 162, small);
+        int[] px = new int[w * h];
+        bm.getPixels(px, 0, w, 0, 0, w, h);
+        nativeSetPauseLabel(px, w, h);
         bm.recycle();
     }
 }

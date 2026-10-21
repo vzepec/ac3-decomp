@@ -48,6 +48,7 @@ public class LauncherActivity extends Activity {
     static final int DEFAULT_SCALE = 4;   /* 60 fps en la Retroid Pocket Flip 2 (medido) */
     static final String KEY_FILTER = "filter";      /* filtro de texturas: 0 el de la PS1, 1 bilineal */
     static final String KEY_TOUCH = "touch";        /* mando tactil: 0 automatico, 1 siempre, 2 nunca (etapa 7, paso 8) */
+    static final String KEY_RUMBLE = "rumble";      /* vibracion del DualShock (etapa 7, paso 9) */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */
 
@@ -511,6 +512,14 @@ public class LauncherActivity extends Activity {
                t("Auto hides it when you use a physical controller", "Automático lo oculta al usar un mando físico"),
                KEY_TOUCH, 0, new String[] {t("Auto", "Automático"), t("Always", "Siempre"), t("Never", "Nunca")},
                new int[] {0, 1, 2}, new int[] {120, 96, 96});
+
+        android.widget.CheckBox rumble = new android.widget.CheckBox(this);
+        rumble.setText(t("Vibration", "Vibración"));
+        rumble.setTextColor(TEXT);
+        rumble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+        rumble.setChecked(p.getBoolean(KEY_RUMBLE, true));
+        rumble.setOnCheckedChangeListener((v, on) -> p.edit().putBoolean(KEY_RUMBLE, on).commit());
+        box.addView(rumble);
 
         android.widget.CheckBox stats = new android.widget.CheckBox(this);
         stats.setText(t("Show development counters and statistics", "Mostrar contadores y estadísticas de desarrollo"));

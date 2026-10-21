@@ -95,6 +95,8 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 **Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
 
+**Sin publicar (acumulando para la próxima versión):** rendimiento (etapa 8, paso 5) y vibración, pausa al volver y salir al menú (etapa 7, paso 9).
+
 **Mando táctil: primera versión** (`v1.12-alfa`, `docs/12-etapa7.md` paso 8). Ajustarlo con lo que diga el dueño.
 
 **Siguiente, a elegir con el dueño:**

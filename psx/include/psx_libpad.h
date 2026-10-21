@@ -3,8 +3,10 @@
  * del juego lo que recibiria del mando por el puerto serie:
  *   [0] estado (0x00 = hay mando, 0xFF = no), [1] id (0x41 digital, 0x73 analogico),
  *   [2..3] botones activos a nivel bajo, [4..7] analogicos RX, RY, LX, LY.
- * El mando se presenta como un mando estandar ya identificado (PadGetState = 2,
- * PadStateFindCTP1): sin negociacion de DualShock ni vibracion (SIN HACER).
+ * El mando digital (0x41) se presenta como un mando estandar ya identificado (PadGetState = 2,
+ * PadStateFindCTP1). El analogico (0x73), desde el paso 9 de la etapa 7, como un DualShock con
+ * los motores listos (PadStateStable): el juego configura los motores (PadSetActAlign) y escribe su
+ * fuerza en el bufer de PadSetAct; psx_pad_motor la devuelve para la vibracion del anfitrion.
  * Orden de botones (bit 0..15): Select L3 R3 Start Arriba Derecha Abajo Izquierda
  * L2 R2 L1 R1 Triangulo Circulo Cruz Cuadrado. */
 #ifndef PSX_LIBPAD_H
@@ -22,6 +24,8 @@ enum { PSX_PAD_SELECT = 1 << 0, PSX_PAD_L3 = 1 << 1, PSX_PAD_R3 = 1 << 2, PSX_PA
 void psx_pad_connect(int port, int id);
 /* botones activos a nivel ALTO (PSX_PAD_*) y ejes de 0 a 255 (centro 0x80) */
 void psx_pad_set(int port, uint16_t buttons, uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry);
+/* vibracion que pide el juego: fuerza 0-255 (el motor grande; el pequeno, encendido, cuenta 160) */
+int psx_pad_motor(int port);
 
 /* ---- API de libpad que usa el juego ---- */
 void PadInitDirect(uint8_t *pad1, uint8_t *pad2);

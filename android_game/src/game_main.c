@@ -127,11 +127,16 @@ static struct {
     volatile int show_stats;       /* contador y estadisticas en pantalla (opcion del menu de inicio) */
     volatile int scale;            /* resolucion interna de la GPU (etapa 8, paso 4; opcion del menu): 1-4 */
     volatile int filter;           /* filtro de texturas: 0 el de la PS1, 1 bilineal (opcion del menu) */
+    /* etapa 7, paso 9: al volver a la app (tapa, inicio, otra app) el juego sigue en pausa hasta pulsar
+     * algo; SELECT + START mantenidos 1,5 s vuelven al menu de inicio */
+    volatile int hold;
+    double exit_t0;
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
-     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1" (-1: lo normal; modo: el de L3+R3, 1 =
-     * software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con glFinish) */
+     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1 vibrar=N" (-1: lo normal; modo: el de
+     * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
+     * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -142,11 +147,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1;
     if (f) {
         char k[32];
         int v;
@@ -157,12 +162,13 @@ static void dbg_read(void) {
             else if (!strcmp(k, "filtro")) fl = v;
             else if (!strcmp(k, "modo")) md = v;
             else if (!strcmp(k, "gpu")) gp = v;
+            else if (!strcmp(k, "vibrar")) rb = v;
         }
         fclose(f);
     }
     if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
         LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
-    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp;
+    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp; G.dbg_rumble = rb;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
     G.dbg_mode = md;
 }
@@ -183,6 +189,13 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv
 
 /* opciones del menu de inicio (LauncherActivity), antes de arrancar el juego */
 /* graficos del mando virtual (los dibuja MainActivity) */
+/* el rotulo de la pausa al volver a la app (lo dibuja MainActivity) */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetPauseLabel(JNIEnv *env, jclass cls, jintArray px, jint w, jint h) {
+    (void)cls;
+    jint *p = (*env)->GetIntArrayElements(env, px, NULL);
+    if (p) { touchpad_set_label((const uint32_t *)p, w, h); (*env)->ReleaseIntArrayElements(env, px, p, JNI_ABORT); }
+}
+
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetTouchAtlas(JNIEnv *env, jclass cls, jintArray px, jint w, jint h) {
     (void)cls;
     jint *p = (*env)->GetIntArrayElements(env, px, NULL);
@@ -223,7 +236,7 @@ static float g_worker_max;
 static void frame_wait(void) {
     static double next;
     double t = now();
-    while (G.paused && G.running) { usleep(20000); next = 0; }
+    while ((G.paused || G.hold) && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / g_refresh;
     double slack = next - t;
@@ -557,6 +570,14 @@ static uint16_t key_button(int32_t k) {
 static int32_t on_input(struct android_app *app, AInputEvent *e) {
     (void)app;
     int32_t type = AInputEvent_getType(e);
+    if (G.hold) {   /* en pausa tras volver: un boton o un toque la quita (y no llega al juego) */
+        int go = (type == AINPUT_EVENT_TYPE_KEY && AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN && key_button(AKeyEvent_getKeyCode(e))) ||
+                 (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN) &&
+                  (AMotionEvent_getAction(e) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_DOWN);
+        if (go) { G.hold = 0; LOG("pausa: se sigue"); }
+        if (type == AINPUT_EVENT_TYPE_KEY && key_button(AKeyEvent_getKeyCode(e))) return 1;
+        if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN)) return 1;
+    }
     if (touchpad_event(e)) return 1;   /* la pantalla tactil: el mando virtual */
     if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK)) {
         touchpad_physical();   /* (modo automatico: con un mando fisico se oculta) */
@@ -609,7 +630,10 @@ static void on_cmd(struct android_app *app, int32_t cmd) {
         }
         break;
     case APP_CMD_TERM_WINDOW: egl_term(); break;
-    case APP_CMD_PAUSE: G.paused = 1; break;
+    case APP_CMD_PAUSE:
+        G.paused = 1;
+        if (G.running) G.hold = 1;   /* al volver, en pausa hasta que se pulse algo */
+        break;
     case APP_CMD_RESUME: G.paused = 0; break;
     default: break;
     }
@@ -712,6 +736,38 @@ static void ask_disc(void) {
     if (m) (*env)->CallVoidMethod(env, act, m);
     (*env)->DeleteLocalRef(env, cl);
     (*vm)->DetachCurrentThread(vm);
+}
+
+/* etapa 7, paso 9: vibracion y salida al menu, desde el hilo que presenta (una vuelta por refresco) */
+static JNIEnv *g_env;   /* este hilo, enganchado a la JVM una vez */
+static void call_java_int(const char *name, int v) {
+    if (!g_env && (*G.app->activity->vm)->AttachCurrentThread(G.app->activity->vm, &g_env, NULL) != JNI_OK) { g_env = NULL; return; }
+    jobject act = G.app->activity->clazz;
+    jclass cl = (*g_env)->GetObjectClass(g_env, act);
+    jmethodID m = (*g_env)->GetMethodID(g_env, cl, name, "(I)V");
+    if (m) (*g_env)->CallVoidMethod(g_env, act, m, v);
+    (*g_env)->DeleteLocalRef(g_env, cl);
+    if ((*g_env)->ExceptionCheck(g_env)) (*g_env)->ExceptionClear(g_env);
+}
+static void app_extras(double t) {
+    /* vibracion: la fuerza que pide el juego (DualShock, motor grande), al cambiar o cada 80 ms mientras
+     * dure (cada orden de Java vibra 120 ms) */
+    static int last = -1;
+    static double last_t;
+    int m = G.running && !G.paused && !G.hold ? (G.dbg_rumble >= 0 ? G.dbg_rumble : psx_pad_motor(0)) : 0;
+    if ((m > 0) != (last > 0)) LOG("vibracion: %s (fuerza %d)", m > 0 ? "empieza" : "termina", m);
+    if (m != last || (m > 0 && t - last_t > 0.08)) { call_java_int("rumble", m); last = m; last_t = t; }
+    /* SELECT + START mantenidos 1,5 s (mando fisico o tactil): al menu de inicio */
+    uint16_t b = (uint16_t)(G.keys | G.buttons | touchpad_buttons());
+    if ((b & (PSX_PAD_SELECT | PSX_PAD_START)) == (PSX_PAD_SELECT | PSX_PAD_START)) {
+        if (G.exit_t0 == 0) G.exit_t0 = t;
+        else if (t - G.exit_t0 > 1.5) {
+            LOG("SELECT + START: al menu de inicio");
+            call_java_int("rumble", 0);
+            G.exit_t0 = 1e18;   /* una sola vez */
+            ANativeActivity_finish(G.app->activity);
+        }
+    } else if (G.exit_t0 < 1e17) G.exit_t0 = 0;
 }
 
 void android_main(struct android_app *app) {
@@ -961,6 +1017,8 @@ void android_main(struct android_app *app) {
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         touchpad_draw();   /* el mando virtual, encima de todo */
+        if (G.hold) touchpad_draw_label();   /* "pausa: pulsa un boton" */
+        app_extras(t);
         if (gq_on) { glEndQuery(0x88BF); gq_head++; }
         double sa = now();
         eglSwapBuffers(G.dpy, G.surf);

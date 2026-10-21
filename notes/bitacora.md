@@ -5,6 +5,17 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-21 — Vibración del DualShock, pausa al volver, salir al menú
+
+- **Vibración.** El juego la soporta: presentando el mando analógico como
+  DualShock (`PadStateStable`), configura el motor grande y escribe su fuerza
+  (`PSX_PAD_LOG=1` en el PC). La app la pasa al motor del aparato; comprobado
+  con `dumpsys vibrator_manager`.
+- **Pausa al volver a la app y salir al menú** (SELECT + START 1,5 s):
+  probados en la Retroid por adb.
+- **La tarjeta de memoria** se escribe de forma atómica.
+- Detalles: `docs/12-etapa7.md`, paso 9.
+
 ## 2026-10-21 — Rendimiento: un tirón por segundo era la propia medida
 
 - **La 1.12-alfa en la Retroid** (4x con bilineal, vuelo de la primera misión)
