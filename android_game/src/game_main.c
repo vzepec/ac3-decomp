@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -127,10 +128,10 @@ static struct {
     volatile int scale;            /* resolucion interna de la GPU (etapa 8, paso 4; opcion del menu): 1-4 */
     volatile int filter;           /* filtro de texturas: 0 el de la PS1, 1 bilineal (opcion del menu) */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
-     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3" (-1: lo normal; modo: el de L3+R3, 1 = software
-     * a 16:9 con intermedias, fuera del ciclo) */
+     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1" (-1: lo normal; modo: el de L3+R3, 1 =
+     * software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con glFinish) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -141,11 +142,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1;
     if (f) {
         char k[32];
         int v;
@@ -155,12 +156,13 @@ static void dbg_read(void) {
             else if (!strcmp(k, "solo")) o = v;
             else if (!strcmp(k, "filtro")) fl = v;
             else if (!strcmp(k, "modo")) md = v;
+            else if (!strcmp(k, "gpu")) gp = v;
         }
         fclose(f);
     }
     if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
         LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
-    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl;
+    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
     G.dbg_mode = md;
 }
@@ -386,8 +388,12 @@ static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, 
 }
 
 /* nucleos rapidos: los de frecuencia maxima >= 75% de la mayor (en el Snapdragon 865 de la
- * Retroid, los 4 Cortex-A77: cpu4-7). Se aplica al hilo que llama */
-static void pin_fast_cores(void) {
+ * Retroid, los 4 Cortex-A77: cpu4-7). Se aplica al hilo que llama, con la prioridad de "pantalla"
+ * de Android (THREAD_PRIORITY_DISPLAY, -4; etapa 8, paso 5: que otros procesos no le quiten turno) */
+static void pin_fast_cores_nice(int nice);
+static void pin_fast_cores(void) { pin_fast_cores_nice(-4); }
+static void pin_fast_cores_nice(int nice) {
+    setpriority(PRIO_PROCESS, (id_t)gettid(), nice);
     long f[32] = {0}, top = 0;
     for (int i = 0; i < 32; i++) {
         char path[96];
@@ -405,7 +411,8 @@ static void pin_fast_cores(void) {
     for (int i = 0; i < 32; i++)
         if (f[i] * 4 >= top * 3) { CPU_SET(i, &set); n++; }
     int r = sched_setaffinity(0, sizeof set, &set);
-    LOG("hilo fijado a %d nucleos rapidos (%ld MHz): %s", n, top / 1000, r == 0 ? "si" : "no");
+    LOG("hilo fijado a %d nucleos rapidos (%ld MHz): %s; prioridad %d", n, top / 1000, r == 0 ? "si" : "no",
+        getpriority(PRIO_PROCESS, (id_t)gettid()));
 }
 
 static void *game_thread(void *arg) {
@@ -710,6 +717,9 @@ static void ask_disc(void) {
 void android_main(struct android_app *app) {
     G.app = app;
     G.dpy = EGL_NO_DISPLAY;
+    /* el hilo que presenta (este): tambien en los nucleos rapidos, con la prioridad de
+     * THREAD_PRIORITY_URGENT_DISPLAY (-8): una imagen que llega tarde al refresco se ve */
+    pin_fast_cores_nice(-8);
     app->onAppCmd = on_cmd;
     app->onInputEvent = on_input;
     snprintf(G.card_path, sizeof G.card_path, "%s/tarjeta1.mcd", app->activity->internalDataPath);
@@ -837,7 +847,8 @@ void android_main(struct android_app *app) {
         static double c_hw_ms, c_swap_ms;   /* GPU: ms de CPU en el dibujo y en eglSwapBuffers, por imagen */
         /* medicion (paso 3): vueltas de este bucle (una por refresco si va bien), la mas larga, las de
          * mas de 20 ms, imagenes reales saltadas que se dibujan igual, y el tiempo de la GPU de una
-         * imagen por segundo (glFinish) */
+         * imagen por segundo (glFinish; desde el paso 5 de la etapa 8, solo con "gpu=1" en depurar.txt:
+         * el glFinish para a la CPU hasta que la GPU acaba, un pequeno tiron cada segundo) */
         static int c_loops, c_slow, c_skipped;
         static double c_loop_max, c_last_loop, c_gpu_ms = -1;
         static int c_measure;
@@ -877,7 +888,7 @@ void android_main(struct android_app *app) {
                     "llegan tarde: reales %d, intermedias %d; intermedias tiradas %d; hilo de dibujo, el peor %.1f ms",
                     c_loops, c_loop_max, c_slow, c_skipped, c_gpu_ms, g_late_real, g_late_inter, g_drop_inter, g_worker_max);
             g_late_real = g_late_inter = g_drop_inter = 0;
-            c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = 1;
+            c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = G.dbg_gpu == 1;
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
         int hw_drawn = 0;
