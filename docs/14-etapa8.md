@@ -794,3 +794,10 @@ filtrados (`u_filter` 2 = todo, para medir).
   píxeles. No es la causa.
 - Comparador: 0 listas malas (a escala 1, sin filtro).
 
+**Comprobado en la Retroid (1.12.6)**, otra misión con humo de explosiones,
+4x con bilineal, 193 s de juego:
+- ningún segundo por debajo de 57 fps;
+- GPU 5,97 ms de media; el peor segundo, 11,9 ms; la peor vuelta, 20,7 ms
+  (antes, 86 ms).
+- El dueño no notó ningún bajón.
+

@@ -95,7 +95,13 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 **Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
 
-**Sin publicar (acumulando para la próxima versión):** rendimiento (etapa 8, paso 5) y vibración, pausa al volver y salir al menú (etapa 7, paso 9).
+**Sin publicar (acumulando para la próxima versión, ramas `etapa-8-paso-5`, `etapa-7-paso-9` y `etapa-8-paso-6`):**
+- rendimiento sin el tirón de cada segundo;
+- vibración del DualShock (y la extra opcional);
+- pausa al volver y salir al menú;
+- humo y explosiones más ligeros.
+
+**Explosiones a 60 fps:** probadas tres formas, ninguna mejora la prueba de verdad conocida (`SIN RESOLVER`, paso 6 de la etapa 8).
 
 **Mando táctil: primera versión** (`v1.12-alfa`, `docs/12-etapa7.md` paso 8). Ajustarlo con lo que diga el dueño.
 

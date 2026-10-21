@@ -16,6 +16,10 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   lectura de una textura cambiada; ahora solo el tramo que toca a la
   primitiva. Explosión a 4x con bilineal, de 63,0 a 53,2 ms en el PC;
   comparador 0 listas malas.
+- **Sin filtro bilineal en lo semitransparente** (humo, explosiones): en el PC,
+  la explosión de 53 a 44 ms.
+- **En la Retroid:** de 86 ms la peor imagen al atravesar humo a 20,7 ms; ningún
+  segundo por debajo de 57 fps en una misión entera.
 - Ver `docs/14-etapa8.md`, paso 6.
 
 ## 2026-10-21 — Vibración del DualShock, pausa al volver, salir al menú
