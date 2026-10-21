@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <GLES3/gl3.h>
 
 #include "psx_gpu.h"
 #include "psx_hw.h"
@@ -129,11 +131,24 @@ static void shot(const PsxHwList *lp, const uint16_t *bg, int x0, int y0, int w,
     int pers = g_cmp_persist || getenv("AC3_HWCMP_PERSIST");
     if (pers) {   /* (AC3_HWCMP_ONLY o _PERSIST) como la app: imagen conservada a esa escala, en cada lista */
         psx_hw_truecolor(1);
+        static double tsum; static int tn;   /* (paso 6) medida: tiempo de dibujo a escala en el PC */
+        struct timespec t0, t1;
+        glFinish();
+        clock_gettime(CLOCK_MONOTONIC, &t0);
         if (g_cmp_persist) psx_hw_frame_ex(lp, bg, x0, y0, w, h, sc, 1);
         else {
             PsxHwList l2 = *lp;
             l2.main_stale = 1;
             psx_hw_frame_ex(&l2, bg, x0, y0, w, h, sc, num == den);
+        }
+        glFinish();
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        static int done;
+        if (vb >= v1 && vb <= v2) { tsum += (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; tn++; }
+        else if (vb > v2 && tn && !done) {
+            done = 1;
+            printf("tiempo de dibujo a x%d entre los VBlank %d y %d: %.2f ms de media (%d listas)\n", sc, v1, v2, tsum / tn, tn);
+            fflush(stdout);
         }
         psx_hw_truecolor(0);
         if (vb < v1 || vb > v2) return;
@@ -262,6 +277,12 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
         psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
+    if (getenv("AC3_HWCMP_AREA")) {   /* (paso 6) el trabajo de cada lista: pixeles pintados */
+        extern double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch;
+        printf("area VBlank %d %s: pintados %.0f (%.1f pantallas), semitransparentes %.0f, con texturas cambiadas %.0f\n", VSync(-1),
+               num == den ? "real" : "inter", psx_hw_stat_px, psx_hw_stat_px / (w * h), psx_hw_stat_px_semi, psx_hw_stat_px_epoch);
+        psx_hw_stat_px = psx_hw_stat_px_semi = psx_hw_stat_px_epoch = 0;
+    }
     shot(lp, bg, x0, y0, w, h, num, den);
     psx_hw_filter(0);
     if (psx_hw_stat_draws - d0 > g_maxdraws) { g_maxdraws = psx_hw_stat_draws - d0; g_maxdraws_vb = VSync(-1); g_maxdraws_n = lp->n; }

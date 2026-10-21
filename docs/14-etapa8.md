@@ -718,3 +718,61 @@ después, sin parar la CPU. Primera misión en vuelo:
 - Lo que quede serán escenas extremas (explosiones, el sol, muchos enemigos).
   Se verán en el registro si alguien juega con el cable conectado.
 
+## Paso 6: explosiones a 60 fps y el bajón al atravesar humo (rama `etapa-8-paso-6`)
+
+### Sprites de la CPU a 60 fps: probado y no adoptado (`SIN RESOLVER`)
+
+Las explosiones, el humo, las nubes pequeñas y las llamas de los motores son
+sprites que el juego coloca con la CPU: sin vértices de la GTE. En las
+intermedias se quedan donde están en el paso real.
+
+**Intentos** (`psx/src/interp.c`; prueba de verdad conocida
+`AC3_INTERP_TEST=1` en la misión 0 con `GUION_FUEGO`, 374 casos):
+
+| Método | PSNR de la intermedia |
+|---|---|
+| Sin mover los sprites (lo actual) | **27,27 dB** |
+| Punto de la GTE sin uso bajo el sprite (el centro que proyecta el juego) | no aplicable: solo el 11 % lo tiene a ≤ 4 px y casi ninguno se empareja (489 de 307.000) |
+| El mismo sprite del paso anterior (misma clave sin el desplazamiento de dibujo, uno a uno por cercanía) | 27,05 dB |
+| Lo mismo, cerca de donde predice el movimiento de alrededor | 27,17 dB |
+| Moverse como el vértice emparejado más cercano (o la cámara) | 27,17 dB |
+| Marcados pero sin mover (control) | 27,27 dB |
+
+**Hallazgos:**
+- La clave de cada primitiva incluye el desplazamiento de dibujo, que alterna
+  con el doble búfer. Sin quitarlo, ningún sprite tiene pareja en el paso
+  anterior. Con la clave sin desplazamiento, el 86 % tiene uno del mismo tipo
+  a ≤ 8 px.
+- **Mover los sprites empeora la medida con los tres métodos.** Las bolas de
+  fuego y el humo cambian de forma y nacen y mueren en cada paso, así que
+  moverlas no las acerca al paso real del medio.
+- **Se deshizo el cambio.** Queda `SIN RESOLVER`: falta una medida que
+  distinga «más fluido a la vista» de «más fiel al paso real», o un método
+  mejor.
+
+### El bajón al atravesar humo: optimizado
+
+Medido en el PC (`AC3_HWCMP_AREA`): píxeles que pintan las primitivas, con lo
+superpuesto.
+
+| | Pantallas pintadas | Semitransparentes | Con texturas que la lista cambia |
+|---|---|---|---|
+| Vuelo normal | 2,4 | 0,8 | 0,9-1,4 |
+| Explosión del choque (VBlank 3985-4001) | hasta 4,6 | 2,6 | hasta 2,7 |
+
+**Causa:** cada lectura de una textura cambiada recorría el atlas de subidas
+desde la última que tocaba a la primitiva hasta el principio.
+
+**Cambio:** `epoch_of2` da también la primera subida que la toca (bits 25-31
+de `t[0]`), y el shader solo recorre ese tramo.
+
+**Tiempo de dibujo a 4x con bilineal en el PC** (Mesa por software;
+`AC3_HWSHOT` con medida de tiempo):
+
+| | Antes | Después |
+|---|---|---|
+| Vuelo normal | 50,2 ms | 50,5 ms |
+| Explosión | 63,0 ms | 53,2 ms (−16 %) |
+
+Comparador: 0 listas malas.
+

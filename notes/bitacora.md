@@ -5,6 +5,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-21 — Sprites a 60 fps: no adoptado; humo más ligero
+
+- **Sprites de la CPU (explosiones, humo, llamas) en las intermedias:** tres
+  métodos de emparejamiento. La prueba de verdad conocida empeora con todos
+  (27,27 → 27,05-27,17 dB). Se deshizo; `SIN RESOLVER`.
+- **Hallazgo útil:** la clave de primitiva incluye el desplazamiento de
+  dibujo, que alterna con el doble búfer.
+- **Humo y explosiones:** el shader recorría todo el atlas de subidas en cada
+  lectura de una textura cambiada; ahora solo el tramo que toca a la
+  primitiva. Explosión a 4x con bilineal, de 63,0 a 53,2 ms en el PC;
+  comparador 0 listas malas.
+- Ver `docs/14-etapa8.md`, paso 6.
+
 ## 2026-10-21 — Vibración del DualShock, pausa al volver, salir al menú
 
 - **Vibración.** El juego la soporta: presentando el mando analógico como

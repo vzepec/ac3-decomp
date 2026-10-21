@@ -62,7 +62,7 @@ static const char *FS =
     "  else if (abr == 1) o = vec4(c, 0.0); else o = vec4(c * 0.25, 0.0); }\n"
     "uint fetch(int x, int y) {\n"
     "  x &= 1023; y &= 511;\n"
-    "  for (int i = (v_tex.w >> 20) - 1; i >= 0; i--) {   /* la subida mas reciente que la cubre */\n"
+    "  for (int i = (v_tex.w >> 20) - 1, i0 = (v_tex.x >> 25) & 127; i >= i0; i--) {   /* la subida mas reciente que la cubre */\n"
     "    ivec4 r = u_up[i]; int rx = r.x & 0xFFFF, ry = r.x >> 16;\n"
     "    if (x >= rx && y >= ry && x < rx + (r.y & 0xFFFF) && y < ry + (r.y >> 16))\n"
     "      return texelFetch(u_atlas, ivec2((r.z & 0xFFFF) + x - rx, (r.z >> 16) + y - ry), 0).r;\n"
@@ -73,7 +73,7 @@ static const char *FS =
     "  int u = c.x & 255, v = c.y & 255;\n"
     "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
     "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
-    "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
+    "  int tpx = v_tex.x & 0xFFFF, tpy = (v_tex.x >> 16) & 511, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
     "  if (depth == 0) { uint w = fetch(tpx + u / 4, tpy + v); return fetch(cx + int((w >> uint((u & 3) * 4)) & 15u), cy); }\n"
     "  if (depth == 1) { uint w = fetch(tpx + u / 2, tpy + v); return fetch(cx + int((w >> uint((u & 1) * 8)) & 255u), cy); }\n"
     "  return fetch(tpx + u, tpy + v); }\n"
@@ -253,7 +253,10 @@ void psx_hw_shutdown(void) {
 }
 
 int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
-int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */   /* medicion: llamadas por imagen */
+int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */
+/* medicion (paso 6): pixeles de la VRAM que pintan las primitivas (con lo superpuesto), los
+ * semitransparentes y los que leen texturas que la lista cambia (recorren el atlas de subidas) */
+double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch;   /* medicion: llamadas por imagen */
 
 /* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
  * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
@@ -357,25 +360,35 @@ static HwVert *push(int k) {
  * y muchas subidas (explosiones) la GPU de la Retroid tardaba de 30 a 450 ms por imagen a 4x */
 static int read_rect(const PsxHwPrim *p, int r[4]);
 static int clut_rect(const PsxHwPrim *p, int r[4]);
-static int epoch_of(const PsxHwPrim *p) {
+/* (paso 6) y la primera (*first): el shader solo recorre ese tramo. Con mucho humo (texturas que
+ * la lista cambia) cada lectura recorria hasta el principio del atlas */
+static int epoch_of2(const PsxHwPrim *p, int *first) {
+    *first = 0;
     if (!g_epoch) return 0;
-    int r[2][4], n = 0;
+    int r[2][4], n = 0, last = 0;
     if (read_rect(p, r[n])) n++;
     if (clut_rect(p, r[n])) n++;
-    for (int i = g_epoch - 1; i >= 0; i--) {
+    for (int i = 0; i < g_epoch; i++) {
         int x1 = g_up[i][0] & 0xFFFF, y1 = g_up[i][0] >> 16, x2 = x1 + (g_up[i][1] & 0xFFFF) - 1, y2 = y1 + (g_up[i][1] >> 16) - 1;
         for (int k = 0; k < n; k++)
-            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) return i + 1;
+            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) {
+                if (!last) *first = i;
+                last = i + 1;
+                break;
+            }
     }
-    return 0;
+    return last;
 }
+static int epoch_of(const PsxHwPrim *p) { int f; return epoch_of2(p, &f); }
 
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
-    t[0] = p->tp_x | p->tp_y << 16;
+    int first;
+    int ep = epoch_of2(p, &first);
+    t[0] = p->tp_x | p->tp_y << 16 | first << 25;   /* (paso 6) bits 25-31: primera subida a mirar */
     t[1] = p->clut_x | p->clut_y << 16;
     if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | epoch_of(p) << 20;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | ep << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {
@@ -655,6 +668,13 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
         }
         if (fill || (vram && p->ax2 < 0)) state(0, 0, -1, -1, 0, 0, st);
         else state(p->ax1, p->ay1, p->ax2, p->ay2, cls, pass, st);
+        if (k == 0 && (p->kind == PSX_HW_TRI || p->kind == PSX_HW_RECT)) {
+            double ar = p->kind == PSX_HW_RECT ? (double)p->x[1] * p->y[1]
+                        : fabs((double)(p->x[1] - p->x[0]) * (p->y[2] - p->y[0]) - (double)(p->x[2] - p->x[0]) * (p->y[1] - p->y[0])) / 2;
+            psx_hw_stat_px += ar;
+            if (semi) psx_hw_stat_px_semi += ar;
+            if (tex && epoch_of(p)) psx_hw_stat_px_epoch += ar;
+        }
         switch (p->kind) {
         case PSX_HW_TRI: {
             /* (bandera 8: triangulo con textura, el que se filtra) */
