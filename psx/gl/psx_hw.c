@@ -93,7 +93,7 @@ static const char *FS =
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
     "  uint t; vec3 tc;\n"
-    "  bool filt = u_filter != 0 && (flags & 8) != 0;\n"
+    "  bool filt = u_filter != 0 && (flags & 8) != 0 && (u_filter == 2 || !semi);   /* (paso 6) lo semitransparente (humo), sin filtro */\n"
     "  if (filt) {   /* bilineal: los 4 vecinos dentro de la textura del poligono; los transparentes no cuentan.\n"
     "                 * El del pixel (el de la PS1, para el bit 15) es uno de ellos */\n"
     "    vec2 st = uv - 0.5; vec2 f = st - floor(st); ivec2 b = ivec2(floor(st)), near = ivec2(step(0.5, f));\n"
@@ -256,7 +256,7 @@ int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
 int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */
 /* medicion (paso 6): pixeles de la VRAM que pintan las primitivas (con lo superpuesto), los
  * semitransparentes y los que leen texturas que la lista cambia (recorren el atlas de subidas) */
-double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch;   /* medicion: llamadas por imagen */
+double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass;   /* medicion: llamadas por imagen */
 
 /* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
  * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
@@ -674,6 +674,7 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
             psx_hw_stat_px += ar;
             if (semi) psx_hw_stat_px_semi += ar;
             if (tex && epoch_of(p)) psx_hw_stat_px_epoch += ar;
+            if (np == 2) psx_hw_stat_px_2pass += ar;
         }
         switch (p->kind) {
         case PSX_HW_TRI: {

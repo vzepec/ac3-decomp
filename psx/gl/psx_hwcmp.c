@@ -278,10 +278,10 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
     if (getenv("AC3_HWCMP_AREA")) {   /* (paso 6) el trabajo de cada lista: pixeles pintados */
-        extern double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch;
-        printf("area VBlank %d %s: pintados %.0f (%.1f pantallas), semitransparentes %.0f, con texturas cambiadas %.0f\n", VSync(-1),
-               num == den ? "real" : "inter", psx_hw_stat_px, psx_hw_stat_px / (w * h), psx_hw_stat_px_semi, psx_hw_stat_px_epoch);
-        psx_hw_stat_px = psx_hw_stat_px_semi = psx_hw_stat_px_epoch = 0;
+        extern double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass;
+        printf("area VBlank %d %s: pintados %.0f (%.1f pantallas), semitransparentes %.0f, con texturas cambiadas %.0f, en dos pasadas %.0f\n", VSync(-1),
+               num == den ? "real" : "inter", psx_hw_stat_px, psx_hw_stat_px / (w * h), psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass);
+        psx_hw_stat_px = psx_hw_stat_px_semi = psx_hw_stat_px_epoch = psx_hw_stat_px_2pass = 0;
     }
     shot(lp, bg, x0, y0, w, h, num, den);
     psx_hw_filter(0);

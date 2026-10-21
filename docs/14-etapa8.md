@@ -776,3 +776,21 @@ de `t[0]`), y el shader solo recorre ese tramo.
 
 Comparador: 0 listas malas.
 
+**En la Retroid (1.12.5)**, una misión con el registro:
+- GPU 7,1 ms de media;
+- en el segundo de atravesar el humo de una explosión grande, 28 ms de media,
+  con una vuelta de 86 ms (36 fps). Lo demás, sin bajones.
+
+**Segunda mejora:** lo semitransparente (humo, explosiones, nubes) va sin filtro
+bilineal. Es lo que más se superpone y ya es difuso; los modelos opacos siguen
+filtrados (`u_filter` 2 = todo, para medir).
+
+| En el PC, 4x con bilineal | Antes del paso 6 | Atlas por tramos | Y sin filtro en lo semitransparente |
+|---|---|---|---|
+| Vuelo normal | 50,2 ms | 50,5 ms | 48,3 ms |
+| Explosión | 63,0 ms | 53,2 ms | 44,0 ms (−30 %) |
+
+- Dos pasadas (bit de máscara): en la explosión, solo 8.860 de 386.000
+  píxeles. No es la causa.
+- Comparador: 0 listas malas (a escala 1, sin filtro).
+
