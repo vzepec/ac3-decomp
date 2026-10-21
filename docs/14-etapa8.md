@@ -699,3 +699,22 @@ comparador (misma imagen) y con la medida media, sin cazar el bajón.
 | Vuelta más larga (media por segundo) | 21,6 ms | 17,6-18,0 ms |
 | CPU en dibujo / `eglSwapBuffers` | 1,47 / 1,48 ms | 1,10 / 1,10 ms |
 
+**Tiempo real de GPU** (temporizadores de la GPU, `GL_EXT_disjoint_timer_query`,
+desde la 1.12.2 en el registro: «GPU (temporizador)»). Se leen unas vueltas
+después, sin parar la CPU. Primera misión en vuelo:
+
+| Configuración | GPU por vuelta, media | La peor |
+|---|---|---|
+| 1x | 0,61 ms | 0,88 ms |
+| 2x | 1,00 ms | 1,83 ms |
+| 4x | 2,74 ms | 4,04 ms |
+| 4x + bilineal | 5,29 ms | 8,43 ms |
+
+**Conclusiones:**
+- Con 16,7 ms por imagen, la GPU va sobrada en vuelo normal. La antigua
+  medida con `glFinish` (13-20 ms) incluía la espera a las imágenes en cola.
+- Cola de presentación limpia: ni imágenes tarde ni tiradas, hilo de dibujo
+  ≤ 7 ms.
+- Lo que quede serán escenas extremas (explosiones, el sol, muchos enemigos).
+  Se verán en el registro si alguien juega con el cable conectado.
+

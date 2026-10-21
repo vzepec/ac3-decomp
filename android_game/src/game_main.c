@@ -900,6 +900,35 @@ void android_main(struct android_app *app) {
                     int tg[4]; memcpy(tg, rgeo[a], sizeof tg); memcpy(rgeo[a], rgeo[b], sizeof tg); memcpy(rgeo[b], tg, sizeof tg);
                     double td = rdue[a]; rdue[a] = rdue[b]; rdue[b] = td;
                 }
+        /* etapa 8, paso 5: tiempo de GPU de cada vuelta (dibujo y presentacion) con los temporizadores de la
+         * propia GPU (GL_EXT_disjoint_timer_query): se leen unas vueltas despues, sin parar la CPU */
+        static GLuint gq[8];
+        static int gq_head, gq_tail, gq_ok = -1, gq_on;
+        static double gq_sum, gq_max;
+        static int gq_n;
+        if (gq_ok < 0) {
+            const char *ex = (const char *)glGetString(GL_EXTENSIONS);
+            gq_ok = ex && strstr(ex, "GL_EXT_disjoint_timer_query") != NULL;
+            if (gq_ok) glGenQueries(8, gq);
+            LOG("GPU: temporizadores %s", gq_ok ? "si" : "no");
+        }
+        while (gq_ok && gq_tail < gq_head) {
+            GLuint av = 0, ns = 0;
+            glGetQueryObjectuiv(gq[gq_tail & 7], GL_QUERY_RESULT_AVAILABLE, &av);
+            if (!av) break;
+            glGetQueryObjectuiv(gq[gq_tail & 7], GL_QUERY_RESULT, &ns);
+            GLint dis = 0;
+            glGetIntegerv(0x8FBB /* GL_GPU_DISJOINT_EXT */, &dis);
+            if (!dis) { double ms = ns / 1e6; gq_sum += ms; gq_n++; if (ms > gq_max) gq_max = ms; }
+            gq_tail++;
+        }
+        static double gq_t0;
+        if (t - gq_t0 >= 1.0) {
+            if (gq_n && G.running) LOG("GPU (temporizador): %.2f ms por vuelta de media, la peor %.2f ms (%d vueltas)", gq_sum / gq_n, gq_max, gq_n);
+            gq_t0 = t; gq_sum = gq_max = 0; gq_n = 0;
+        }
+        gq_on = gq_ok && gq_head - gq_tail < 8;
+        if (gq_on) glBeginQuery(0x88BF /* GL_TIME_ELAPSED_EXT */, gq[gq_head & 7]);
         /* alta resolucion (etapa 8, paso 4): a mas de 1x, color de 24 bits sin tramado (degradados suaves) */
         static double dbg_t;
         if (t - dbg_t > 1.0) { dbg_t = t; dbg_read(); }
@@ -932,6 +961,7 @@ void android_main(struct android_app *app) {
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         touchpad_draw();   /* el mando virtual, encima de todo */
+        if (gq_on) { glEndQuery(0x88BF); gq_head++; }
         double sa = now();
         eglSwapBuffers(G.dpy, G.surf);
         if (hw_drawn) c_swap_ms += (now() - sa) * 1000;
