@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native us-prep ghidra-us recomp-us recomp-check-us native-us native-us-build
+.PHONY: fin-mision help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native us-prep ghidra-us recomp-us recomp-check-us native-us native-us-build
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -266,6 +266,12 @@ guardado: libre-build
 	@$(PY) tools/guardado.py "$(US)" psx/build/guardado_$$(date +%s)
 guardado-eu: libre-build
 	@$(PY) tools/guardado.py "$(EU)" psx/build/guardado_eu_$$(date +%s) --eu
+
+# una mision cumplida pasa al informe (tools/fin_mision.py; etapa 8, el negro al acabar la Maze).
+# Hace falta una tarjeta con una partida justo antes de la mision: make fin-mision TARJETA=...
+TARJETA ?= data/android/tarjeta/tarjeta1.mcd
+fin-mision: libre-build
+	@$(PY) tools/fin_mision.py "$(US)" "$(TARJETA)" psx/build/fin_mision_$$(date +%s)
 
 # el interprete en C frente al de referencia, en las mismas entradas que el codigo traducido
 mipsi-check: mipsi

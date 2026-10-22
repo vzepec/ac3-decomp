@@ -98,8 +98,10 @@ if [ "$REGION" = libre ]; then
         "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c" "$ROOT/psx/src/mem.c" "$ROOT/psx/src/gte.c" "$ROOT/psx/src/libgte.c" \
         "$ROOT/psx/src/libgpu.c"
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+    $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 else
     $CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+    $CC -O2 $CF -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 fi
 $CC -O2 -fPIC -I"$GLUE" -w -c "$GLUE/android_native_app_glue.c" -o "$B/obj/glue.o"
 [ -s "$B/ace_image.S" ] && $CC -c "$B/ace_image.S" -o "$B/obj/ace_image.o"
@@ -120,6 +122,8 @@ cp "$B/dex/classes.dex" "$B/apk/"
 rm -f "$B/res.zip" && "$BT/aapt2" compile --dir res -o "$B/res.zip"
 CLEAR=
 case "$UPDATE_URL" in http://*) CLEAR='android:usesCleartextTraffic="true"' ;; esac
+# DEPURABLE=1: compilacion de prueba con android:debuggable (run-as: leer la tarjeta de memoria de la app); nunca para publicar
+[ -n "$DEPURABLE" ] && CLEAR="$CLEAR android:debuggable=\"true\""
 # (variantes personales: la autoridad del ApkProvider va con su paquete, para que convivan)
 sed -e "s/android:label=\"AC3 Recomp\"/android:label=\"${LABEL:-AC3 Recomp}\" $CLEAR/" \
     -e "s/android:authorities=\"com.vzepec.ac3game.apk\"/android:authorities=\"${PKG:-com.vzepec.ac3game}.apk\"/" \

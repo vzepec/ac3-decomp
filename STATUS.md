@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-20 (release `v1.12-alfa`: alta resolución y filtro bilineal; se trabaja con la versión americana)
+**Última actualización:** 2026-10-22 (release `v1.12.1-alfa`: arreglo de la pantalla negra al acabar la Maze; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.12-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
+**Etapa 7 — APK libre: publicada** (`v1.12.1-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -93,10 +93,21 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
 `vX.Y-alfa` es la versión que compara el actualizador.
 
+**Pantalla negra al acabar la Maze: arreglada** (`v1.12.1-alfa`, `docs/14-etapa8.md` paso 8;
+`make fin-mision`). La release solo lleva ese arreglo.
+
+**Mejoras acumuladas, sin publicar** (el dueño las quiere probar mejor antes):
+- ramas `etapa-8-paso-5` (rendimiento), `etapa-7-paso-9` (vibración, pausa,
+  salir al menú, tarjeta segura), `etapa-8-paso-6` (humo y explosiones) y
+  `etapa-8-paso-7` (menos temblor de vértices);
+- hay que llevarles el arreglo del paso 8 antes de publicarlas.
+- El HUD sin ensanchar en 16:9 queda aparcado en `etapa-8-hud-ancho`.
+
 **Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
 
+**Mando táctil: primera versión** (`v1.12-alfa`, `docs/12-etapa7.md` paso 8). Ajustarlo con lo que diga el dueño.
+
 **Siguiente, a elegir con el dueño:**
-- precisión de vértices (tipo PGXP), si se ven temblores a 4x;
 - otros filtros de textura (xBR);
 - la estela del misil junto a la cámara: comprobar en otro emulador si la
   consola real también parpadea (`SIN RESOLVER`; la mejora queda para el
