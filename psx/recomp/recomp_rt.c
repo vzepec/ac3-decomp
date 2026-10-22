@@ -1,3 +1,4 @@
+#include <stdlib.h>
 /* Entorno de ejecucion del codigo recompilado (ver recomp_rt.h). */
 #include <setjmp.h>
 #include <stdio.h>
@@ -109,6 +110,28 @@ static unsigned g_nhle;
 void rc_set_hle(const RcFunc *table, unsigned n) { g_hle = table; g_nhle = n; }
 
 void rc_libcall(RCpu *c, uint32_t addr) {
+    static int liblog = -2;   /* depuracion: RC_LIBLOG=VBlank, las llamadas a la libreria desde ahi (direccion, ra, a0-a2);
+                               * RC_LIBLOG_ONLY=dir[,dir...] (hex) solo esas */
+    static uint32_t only[16];
+    static int nonly;
+    if (liblog == -2) {
+        liblog = getenv("RC_LIBLOG") ? atoi(getenv("RC_LIBLOG")) : -1;
+        for (const char *q = getenv("RC_LIBLOG_ONLY"); q && *q && nonly < 16; ) {
+            only[nonly++] = (uint32_t)strtoul(q, NULL, 16);
+            q = strchr(q, ',');
+            if (q) q++;
+        }
+    }
+    if (liblog >= 0) {
+        extern int VSync(int);
+        static int n;
+        int ok = !nonly;
+        for (int k = 0; k < nonly; k++) ok |= only[k] == addr;
+        if (ok && VSync(-1) >= liblog && n < 3000) {
+            n++;
+            fprintf(stderr, "lib: VBlank %d %08x ra %08x a0 %08x a1 %08x a2 %08x\n", VSync(-1), addr, c->r[31], c->r[4], c->r[5], c->r[6]);
+        }
+    }
     if (g_libcall) { g_libcall(c, addr); c->r[0] = 0; return; }
     void (*fn)(RCpu *) = g_hle ? find(g_hle, g_nhle, addr) : 0;
     if (fn) { fn(c); c->r[0] = 0; return; }

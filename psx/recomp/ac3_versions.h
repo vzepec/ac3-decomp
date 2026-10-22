@@ -22,11 +22,15 @@ typedef struct {
     int refresh;            /* 50 (PAL) / 60 (NTSC) */
     const RcFunc *hle;
     const unsigned *nhle;
+    /* variables de la libcd original (psx_cd_set_static): resultado de CdSyncCallback y de
+     * CdReadyCallback, CdlLOC de CdLastPos */
+    uint32_t cd_sync_result, cd_ready_result, cd_lastpos;
 } Ac3Version;
 
 extern const Ac3Version ac3_versions[];
 extern const int ac3_nversions;
-/* la version del disco abierto (psx_cd_open), por su ejecutable de arranque; NULL si ninguna */
+/* la version del disco abierto (psx_cd_open), por su ejecutable de arranque; NULL si ninguna. Pone
+ * tambien las direcciones de la libcd de esa version (psx_cd_set_static) */
 const Ac3Version *ac3_version_detect(void);
 /* pantalla ancha (etapa 6, paso 16): con psx_gte_wide < 1, el cono de vision del terreno se
  * calcula con el ancho de pantalla / psx_gte_wide (si no, faltan casillas en los lados), y los

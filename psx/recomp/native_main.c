@@ -143,6 +143,12 @@ static void pace(void) {
     }
     if (due > t) { ts.tv_sec = (time_t)(due - t); ts.tv_nsec = (long)((due - t - (double)ts.tv_sec) * 1e9); nanosleep(&ts, NULL); }
 }
+#ifdef AC3_LIBRE
+static int g_win, g_mission_frame, g_win_i, g_win_n;
+static int g_win_f[8];
+static void force_win(void);
+static void force_win_log(void);
+#endif
 static void frame_check(void) {
     int v = VSync(-1);
     while (last_vcount < v) {
@@ -155,6 +161,15 @@ static void frame_check(void) {
         }
 #ifdef AC3_LIBRE
         wide_update();
+        if (getenv("AC3_DUMPMEM")) {   /* depuracion: AC3_DUMPMEM=fotograma,dir,bytes,archivo vuelca la RAM */
+            int fr; unsigned ad, ln; char fn[256];
+            if (sscanf(getenv("AC3_DUMPMEM"), "%d,%x,%x,%255s", &fr, &ad, &ln, fn) == 4 && fr == last_vcount) {
+                FILE *df = fopen(fn, "wb");
+                if (df) { fwrite(psx_ptr(ad), 1, ln, df); fclose(df); }
+            }
+        }
+        if (g_win_i < g_win_n && g_mission_frame >= 0 && last_vcount == g_mission_frame + g_win_f[g_win_i]) { force_win(); g_win_i++; }
+        if (g_win_i > 0 && last_vcount % 60 == 0) force_win_log();
 #endif
         uint32_t all = 0;
         for (int i = 0; i < nscript; i++)
@@ -371,6 +386,45 @@ static void parse_script(const char *s) {
 /* AC3_MISSION=N: al entrar en la funcion que arranca la mision, la mision actual del estado de
  * la partida (g_state + 0x390) pasa a ser N; el juego carga entonces mission_records[N] */
 static int g_force_mission = -1;
+static int g_mission_frame = -1;   /* fotograma en que el juego arranco la ultima mision */
+/* AC3_WIN=f:sig:res[,f:sig:res...]: f fotogramas despues de arrancar la mision, lo que hacen las ordenes
+ * 3 y 1 del guion de mision (EU FUN_80053704 / US FUN_800538ec) con la mision en vuelo: nodo + 0x23 = sig
+ * (la parte siguiente), + 0x29 = res (que sigue: 0 la parte siguiente, 1 rama, 2 secuencia...), y pide el
+ * estado 8 ("cumplida") con el motivo del nodo + 0x27, como el juego (EU FUN_80032c80 / US FUN_80032e48:
+ * g_mission + 0x70/0x74 y el bit 0x20000000 de g_render[0]). El paso de vuelo recorre el final con exito y
+ * llama a EU FUN_80037b24 / US FUN_80037cac. Para probar el paso a la siguiente mision sin jugarla
+ * (etapa 8: el final de la Maze) */
+static int g_win = -1;
+static int g_win_f[8], g_win_next[8], g_win_res[8], g_win_n, g_win_i;
+static void force_win(void) {
+    int us = !strcmp(V->name, "US");
+    uint32_t gm = *(uint32_t *)psx_ptr(us ? 0x800BB818u : 0x800BACC0u);
+    uint32_t gr = *(uint32_t *)psx_ptr(us ? 0x800BB81Cu : 0x800BACC4u);
+    uint32_t nd = *(uint32_t *)psx_ptr(us ? 0x800BB87Cu : 0x800BAD24u);
+    uint32_t gs = *(uint32_t *)psx_ptr(V->g_state_ptr);
+    if (!gm || !gr || !nd || !gs) { printf("AC3_WIN: la mision aun no esta en marcha (fotograma %d)\n", last_vcount); return; }
+    uint32_t *r = (uint32_t *)psx_ptr(gr), *m = (uint32_t *)psx_ptr(gm);
+    uint8_t *n = psx_ptr(nd);
+    int i = g_win_i;
+    printf("mision cumplida (forzada) en el fotograma %d: estado %x; nodo 0x23 %d -> %d, 0x29 %d -> %d, 0x27 %d\n",
+           last_vcount, r[1], n[0x23], g_win_next[i], n[0x29], g_win_res[i], n[0x27]);
+    fflush(stdout);
+    n[0x23] = (uint8_t)g_win_next[i];
+    n[0x29] = (uint8_t)g_win_res[i];
+    m[0x70 / 4] = 8; m[0x74 / 4] = n[0x27]; r[0] |= 0x20000000u;
+    *(uint32_t *)psx_ptr(gs) |= 0x10000000u;
+}
+
+static void force_win_log(void) {   /* (AC3_WIN) como sigue la mision tras pedir "cumplida" */
+    int us = !strcmp(V->name, "US");
+    uint32_t gr = *(uint32_t *)psx_ptr(us ? 0x800BB81Cu : 0x800BACC4u), nd = *(uint32_t *)psx_ptr(us ? 0x800BB87Cu : 0x800BAD24u);
+    uint32_t gs = *(uint32_t *)psx_ptr(V->g_state_ptr);
+    if (!gr || !nd || !gs) { printf("  fotograma %d: sin mision\n", last_vcount); return; }
+    const uint32_t *r = (const uint32_t *)psx_ptr(gr);
+    const uint8_t *n = psx_ptr(nd);
+    printf("  fotograma %d: g_render %08x estado %x motivo %x contador %d; g_state[0] %08x; nodo 0x29 %d 0x30 %d 0x31 %d\n",
+           last_vcount, r[0], r[1], r[2], r[3], *(const uint32_t *)psx_ptr(gs), n[0x29], n[0x30], n[0x31]);
+}
 
 /* AC3_COVERAGE=archivo: al terminar, las direcciones de las funciones en las que se entro.
  * AC3_STATES=dir + AC3_STATES_LIST=archivo (direcciones en hex) [+ AC3_STATES_MAX=n]: al entrar en
@@ -415,6 +469,7 @@ static void force_mission(RCpu *c) {
     (void)c;
     uint32_t st = *(uint32_t *)psx_ptr(V->g_state_ptr);
     int16_t *m = (int16_t *)psx_ptr(st + 0x390);
+    g_mission_frame = last_vcount;
     if (g_force_mission < 0) {   /* solo la primera vez: las siguientes las encadena el juego */
         printf("mision: el juego arranca la %d en el fotograma %d\n", *m, last_vcount);
         fflush(stdout);
@@ -437,6 +492,12 @@ static void trace_hook(RCpu *c) {
     n++;
     printf("traza: VBlank %d pc %08x ra %08x a0 %08x a1 %08x a2 %08x a3 %08x\n", last_vcount, c->r[0] == 0 ? 0u : 0u, c->r[31], c->r[4],
            c->r[5], c->r[6], c->r[7]);
+    if (getenv("AC3_TRACE_BYTES") && (c->r[4] & 0x1FFFFFu) < 0x1FFFE0u) {   /* los primeros bytes de a0 (bloques del guion de mision) */
+        const uint8_t *b = psx_ptr(c->r[4]);
+        printf("  a0:");
+        for (int k = 0; k < 24; k++) printf(" %02x", b[k]);
+        printf("\n");
+    }
 }
 
 /* ---- etapa 8 (psx/recomp/ac3_rerender.c): AC3_RR_SELFTEST=vblank comprueba que con t = 1 la lista
@@ -768,8 +829,16 @@ int main(int argc, char **argv) {
         snprintf(buf, sizeof buf, "%s", getenv("AC3_TRACE"));
         for (char *t = strtok(buf, ","); t; t = strtok(NULL, ",")) mipsi_set_hook((uint32_t)strtoul(t, NULL, 16), trace_hook);
     }
-    if (getenv("AC3_MISSION")) {   /* prueba: forzar la mision que carga el juego */
-        g_force_mission = atoi(getenv("AC3_MISSION"));
+    if (getenv("AC3_MISSION") || getenv("AC3_WIN")) {   /* prueba: forzar la mision que carga el juego */
+        g_force_mission = getenv("AC3_MISSION") ? atoi(getenv("AC3_MISSION")) : -1;
+        if (getenv("AC3_WIN")) {
+            g_win = 0;
+            for (const char *q = getenv("AC3_WIN"); q && *q && g_win_n < 8; ) {
+                if (sscanf(q, "%d:%d:%d", &g_win_f[g_win_n], &g_win_next[g_win_n], &g_win_res[g_win_n]) == 3) g_win_n++;
+                q = strchr(q, ',');
+                if (q) q++;
+            }
+        }
         mipsi_set_hook(V->mission_start, force_mission);
     }
 #else
