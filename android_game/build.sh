@@ -122,6 +122,8 @@ cp "$B/dex/classes.dex" "$B/apk/"
 rm -f "$B/res.zip" && "$BT/aapt2" compile --dir res -o "$B/res.zip"
 CLEAR=
 case "$UPDATE_URL" in http://*) CLEAR='android:usesCleartextTraffic="true"' ;; esac
+# DEPURABLE=1: compilacion de prueba con android:debuggable (run-as: leer la tarjeta de memoria de la app); nunca para publicar
+[ -n "$DEPURABLE" ] && CLEAR="$CLEAR android:debuggable=\"true\""
 # (variantes personales: la autoridad del ApkProvider va con su paquete, para que convivan)
 sed -e "s/android:label=\"AC3 Recomp\"/android:label=\"${LABEL:-AC3 Recomp}\" $CLEAR/" \
     -e "s/android:authorities=\"com.vzepec.ac3game.apk\"/android:authorities=\"${PKG:-com.vzepec.ac3game}.apk\"/" \

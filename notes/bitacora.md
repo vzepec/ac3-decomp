@@ -5,6 +5,20 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-22 — Pantalla negra al acabar la Maze: la libcd con direcciones de la europea
+
+- **Fallo:** en la americana, la capa usaba para los búferes propios de libcd
+  (resultado de `CdSync` y de los callbacks, `CdLastPos`) las direcciones de
+  la europea, que allí son variables del juego.
+- **Efecto:** al arrancar la Maze esa variable tiene el bit `0x10`; el gestor
+  del CD lo leía como «tapa abierta» y, al acabar la misión, esperaba el CD
+  para siempre con la pantalla en negro.
+- **Arreglo:** direcciones por versión (`psx_cd_set_static`).
+- **Reproducir:** `make fin-mision TARJETA=<tarjeta con la partida antes de
+  la Maze>`; con `AC3_CD_STATIC_EU=1`, el fallo.
+- Ver `docs/14-etapa8.md`, paso 8. Release `v1.12.1-alfa`, solo con este
+  arreglo.
+
 ## 2026-10-21 — Menos temblor de vértices; el HUD sin ensanchar, aparcado
 
 - **Decimales de la GTE** apuntados por el valor entero y devueltos a los
