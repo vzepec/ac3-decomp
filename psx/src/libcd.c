@@ -8,9 +8,15 @@
 #include "psx_libetc.h"
 #include "psx_mem.h"
 
-#define SYNC_RESULT_ADDR 0x800C5C98u    /* resultado de CdSyncCallback (libcd original, EU) */
-#define READY_RESULT_ADDR 0x800C5CA0u   /* resultado de CdReadyCallback */
-#define LASTPOS_ADDR 0x800B40F4u        /* CdlLOC de CdLastPos */
+/* variables propias de la libcd original en la RAM del juego (las de la europea por defecto; cada
+ * version pone las suyas con psx_cd_set_static). Etapa 8: con las de la europea en la americana, la
+ * capa pisaba variables del juego (y el gestor del CD veia "tapa abierta" al acabar la Maze) */
+static uint32_t SYNC_RESULT_ADDR = 0x800C5C98u;    /* resultado de CdSyncCallback */
+static uint32_t READY_RESULT_ADDR = 0x800C5CA0u;   /* resultado de CdReadyCallback */
+static uint32_t LASTPOS_ADDR = 0x800B40F4u;        /* CdlLOC de CdLastPos */
+void psx_cd_set_static(uint32_t sync_result, uint32_t ready_result, uint32_t lastpos) {
+    SYNC_RESULT_ADDR = sync_result; READY_RESULT_ADDR = ready_result; LASTPOS_ADDR = lastpos;
+}
 #define SUBSTEPS 8                      /* pasos de servicio del CD por fotograma */
 
 static const uint8_t SYNC[12] = {0, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0};

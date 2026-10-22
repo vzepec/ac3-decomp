@@ -2,7 +2,8 @@
  * 6 (docs/11-etapa6.md); de la US: tools/recomp/region.py (data/recomp_us/region.json),
  * validadas con 0 funciones distintas en el comparador. Estado de la partida y arranque de
  * mision: decompilacion de Ghidra (EU FUN_800355f0 / US FUN_800357b8 leen mission_records
- * con el short de g_state + 0x390; docs/11-etapa6.md, paso 11). */
+ * con el short de g_state + 0x390; docs/11-etapa6.md, paso 11). Variables de la libcd: las mismas
+ * instrucciones de la libreria en las dos versiones (tools/recomp/region.py, data_pairs). */
 #include "ac3_versions.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,16 +16,24 @@ extern const unsigned hle_count_eu, hle_count_us;
 
 const Ac3Version ac3_versions[] = {
     {"EU", "\\SCES_020.66;1", 0x80025D08u, 0x800BA9F4u, 0x800BACB0u, 0x800C9DC0u, 0x800C9DC0u, 0x80099DE0u, 0x800AE09Cu,
-     0x80025214u, 0x800BAA04u, 0x800BACD0u, 0x800355F0u, 0x800563C8u, 0x8005E140u, 0x8005FD68u, 0x80092F90u, 50, hle_table_eu, &hle_count_eu},
+     0x80025214u, 0x800BAA04u, 0x800BACD0u, 0x800355F0u, 0x800563C8u, 0x8005E140u, 0x8005FD68u, 0x80092F90u, 50, hle_table_eu, &hle_count_eu,
+     0x800C5C98u, 0x800C5CA0u, 0x800B40F4u},
     {"US", "\\SLUS_009.72;1", 0x80025E5Cu, 0x800BB454u, 0x800BB808u, 0x800CA908u, 0x800CA908u, 0x8009A1B4u, 0x800AE470u,
-     0x80025394u, 0x800BB464u, 0x800BB828u, 0x800357B8u, 0x8005658Cu, 0x8005E3E4u, 0x8006000Cu, 0x80093324u, 60, hle_table_us, &hle_count_us},
+     0x80025394u, 0x800BB464u, 0x800BB828u, 0x800357B8u, 0x8005658Cu, 0x8005E3E4u, 0x8006000Cu, 0x80093324u, 60, hle_table_us, &hle_count_us,
+     0x800C67E0u, 0x800C67E8u, 0x800B4B54u},
 };
 const int ac3_nversions = 2;
 
 const Ac3Version *ac3_version_detect(void) {
     for (int i = 0; i < ac3_nversions; i++) {
         CdlFILE f;
-        if (CdSearchFile(&f, ac3_versions[i].boot_exe)) return &ac3_versions[i];
+        if (CdSearchFile(&f, ac3_versions[i].boot_exe)) {
+            const Ac3Version *v = &ac3_versions[i];
+            /* AC3_CD_STATIC_EU=1 (prueba): las de la europea en cualquier version, el fallo de la Maze */
+            const Ac3Version *c = getenv("AC3_CD_STATIC_EU") ? &ac3_versions[0] : v;
+            psx_cd_set_static(c->cd_sync_result, c->cd_ready_result, c->cd_lastpos);
+            return v;
+        }
     }
     return 0;
 }

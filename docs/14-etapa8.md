@@ -656,3 +656,71 @@ interpolación.**
 - precisión de vértices (tipo PGXP), si se ven temblores;
 - otros filtros (xBR).
 
+## Paso 8: el CD de la versión americana, pantalla negra al acabar la Maze (rama `etapa-8-paso-8`, release v1.12.1-alfa)
+
+**El fallo** (lo encontró el dueño en la Retroid): al cumplir la misión 10, la
+Maze, la imagen se queda en negro y el juego no avanza. El registro de la app
+mostraba 0 fps durante minuto y medio con el hilo del juego al 8 %: el juego
+seguía vivo, esperando.
+
+**Cómo se reprodujo en el PC.** No se puede ganar la Maze con un guion a
+ciegas (hay que seguir al avión espía y luego destruir una fábrica):
+1. **La partida del dueño:** su tarjeta de memoria de la app (leída con una
+   compilación depurable, `DEPURABLE=1 sh android_game/build.sh`; `run-as`)
+   carga justo antes de la Maze.
+2. **Cerrar la misión como lo hace su guion:**
+   - el guion de misión es un código de bytes (EU `FUN_80053704`, US
+     `FUN_800538ec`);
+   - la orden 3 fija la parte siguiente y la orden 1 el resultado;
+   - el juego pide el estado «cumplida» (8) con EU `FUN_80032c80` / US
+     `FUN_80032e48`;
+   - el cierre (EU `FUN_80037b24` / US `FUN_80037cac`) elige el estado
+     siguiente según el nodo: `+0x29 = 9` → `0x800000`, que cambia al modo 3
+     (informe);
+   - `AC3_WIN=fotograma:parte:resultado` en el binario libre hace eso mismo.
+     La Maze tiene dos fases: `600:1:0` («You've discovered a chemical weapons
+     research facility») y `1500:1:9` (salir de la misión).
+3. **Resultado:** la misma pantalla negra que en la Retroid.
+
+**La causa.**
+- El gestor del CD del juego (máquina de estados, EU `0x80029e8c`, US
+  `0x80029ff4`) mira en reposo el último byte de estado del lector:
+  - con el bit `0x10` (tapa abierta) para el motor y espera a ver la tapa
+    abierta para volver a leer el disco;
+  - `CdlStop`, y después `CdlNop` sin fin (US `0x8002ae2c`).
+- Ese byte sale de `CdSync(1, result)`, que en la capa copia el último
+  resultado del búfer propio de libcd.
+- `psx/src/libcd.c` tenía las direcciones de esos búferes **de la versión
+  europea** (`0x800C5C98`, `0x800C5CA0`, `CdLastPos` en `0x800B40F4`). En la
+  americana son variables del juego:
+  - el juego leía como estado del CD lo que valiera esa variable;
+  - la capa la pisaba en cada orden.
+- Al arrancar la Maze esa variable tiene el bit `0x10` → «tapa abierta» → al
+  acabar la misión el juego espera el CD para siempre. En las misiones
+  anteriores no lo tenía.
+
+**El arreglo.**
+- Cada versión pone las direcciones de su libcd (`psx_cd_set_static`, desde
+  `ac3_version_detect`). Las americanas: `0x800C67E0`, `0x800C67E8` y
+  `0x800B4B54`.
+- Se obtuvieron emparejando las mismas instrucciones de la librería en las dos
+  versiones (`tools/recomp/region.py`, `data_pairs`).
+- La europea no cambia.
+- Ninguna otra parte de la capa escribe en la RAM del juego en direcciones
+  fijas (comprobado con `grep` en `psx/src`, `psx/gl` y `android_game/src`).
+
+**Herramienta:** `tools/fin_mision.py` (`make fin-mision TARJETA=...`):
+- carga la partida, cierra la Maze con `AC3_WIN` y mira el brillo de las
+  últimas capturas;
+- con el arreglo: «llega al informe» (DEBRIEFING, brillo 72);
+- con `AC3_CD_STATIC_EU=1` (las direcciones europeas, el fallo): «FALLA»,
+  brillo 0.
+
+**Depuración añadida:**
+- `RC_LIBLOG=VBlank` y `RC_LIBLOG_ONLY=dir,...`: llamadas a la librería con
+  `ra` y argumentos;
+- `AC3_TRACE_BYTES=1`: los primeros bytes de `a0` en `AC3_TRACE`;
+- `AC3_DUMPMEM=fotograma,dir,bytes,archivo`: volcado de la RAM.
+
+**Comprobado por el dueño en la Retroid:** la Maze termina y pasa al informe.
+

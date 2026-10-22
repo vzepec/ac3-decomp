@@ -40,6 +40,10 @@ int psx_cd_read_raw(uint32_t lba, uint8_t *raw);
 void psx_cd_set_xa_sink(void (*fn)(const uint8_t *raw));
 /* comandos pendientes de terminar (sin avanzar el tiempo); devuelve cuantos entrego */
 int psx_cd_service(void);
+/* direcciones de las variables propias de la libcd original en la RAM del juego (resultado de
+ * CdSyncCallback y de CdReadyCallback, CdlLOC de CdLastPos): cambian con la version del juego. Por
+ * defecto, las de la europea */
+void psx_cd_set_static(uint32_t sync_result, uint32_t ready_result, uint32_t lastpos);
 /* contadores para pruebas */
 typedef struct { uint32_t commands, sectors_read, sectors_delivered, xa_sectors, callbacks; } PsxCdStats;
 const PsxCdStats *psx_cd_stats(void);
