@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-21 — Menos temblor de vértices; el HUD sin ensanchar, aparcado
+
+- **Decimales de la GTE** apuntados por el valor entero y devueltos a los
+  triángulos a más de 1x: sin grietas, comparador 0 listas malas a 1x. El
+  dueño lo da por bueno.
+- **El HUD sin ensanchar en 16:9** queda en la rama `etapa-8-hud-ancho`: en la
+  vista de cabina rompía mucho la imagen (decisión del dueño).
+- Ver `docs/14-etapa8.md`, paso 7.
+
 ## 2026-10-21 — Sprites a 60 fps: no adoptado; humo más ligero
 
 - **Sprites de la CPU (explosiones, humo, llamas) en las intermedias:** tres

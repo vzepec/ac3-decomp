@@ -347,6 +347,10 @@ done:
 
 
 static void summary(void) {
+    extern int psx_gpu_subpix_hits, psx_gpu_subpix_miss;
+    if (psx_gpu_subpix_on)
+        printf("hwcmp: decimales de la GTE: %d vertices con ellos, %d sin (%.1f %%)\n", psx_gpu_subpix_hits, psx_gpu_subpix_miss,
+               100.0 * psx_gpu_subpix_hits / (psx_gpu_subpix_hits + psx_gpu_subpix_miss + 1e-9));
     printf("hwcmp: %ld listas comparadas, %ld con bloques malos (%ld bloques); pixeles identicos %.2f %%, casi iguales %.2f %%\n",
            g_lists, g_bad_lists, g_bad_blocks, g_pixels ? 100.0 * g_same / g_pixels : 0.0, g_pixels ? 100.0 * g_close / g_pixels : 0.0);
     printf("hwcmp: de ellas, %ld imagenes intermedias\n", g_inter);
@@ -377,6 +381,7 @@ int psx_hwcmp_start(const char *dir) {
     g_ctx = eglCreateContext(g_dpy, cfg, EGL_NO_CONTEXT, cattr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx) || psx_hw_init()) return -1;
     psx_hw_dither(1);
+    if (getenv("AC3_SUBPIX")) psx_gpu_subpix_on = 1;   /* (paso 7) decimales de la GTE (solo se usan a mas de 1x) */
     eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     psx_draw_list_hook = hook;
     atexit(summary);

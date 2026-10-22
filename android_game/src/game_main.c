@@ -138,7 +138,7 @@ static struct {
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -149,11 +149,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1;
     if (f) {
         char k[32];
         int v;
@@ -165,12 +165,18 @@ static void dbg_read(void) {
             else if (!strcmp(k, "modo")) md = v;
             else if (!strcmp(k, "gpu")) gp = v;
             else if (!strcmp(k, "vibrar")) rb = v;
+            else if (!strcmp(k, "decimales")) sp = v;
+            else if (!strcmp(k, "volcar")) dd = v;
         }
         fclose(f);
     }
     if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
         LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
     G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp; G.dbg_rumble = rb;
+    if (sp != G.dbg_subpix) LOG("depurar: decimales %d", sp);
+    G.dbg_subpix = sp;
+    if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
+    else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
     G.dbg_mode = md;
 }
@@ -1011,12 +1017,22 @@ void android_main(struct android_app *app) {
         int scale = G.dbg_scale >= 1 && G.dbg_scale <= 4 ? G.dbg_scale : G.scale;
         psx_hw_truecolor(G.dbg_true >= 0 ? G.dbg_true : scale > 1);
         psx_hw_filter(G.dbg_filter >= 0 ? G.dbg_filter : G.filter);
+        /* (paso 7) decimales de la GTE a mas de 1x: menos temblor de los vertices */
+        psx_gpu_subpix_on = G.dbg_subpix >= 0 ? G.dbg_subpix : scale > 1;
         for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], scale, 1);
         c_skipped += nr;
         if (hw) {
             if (seq != hw_seq) {
                 double a = now();
                 psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, scale, hw_real);
+                if (G.dbg_dump == -2) {   /* depuracion: la lista dibujada, a <externalDataPath>/lista.bin (PsxHwPrim crudos) */
+                    char path[600];
+                    snprintf(path, sizeof path, "%s/lista.bin", G.app->activity->externalDataPath);
+                    FILE *f = fopen(path, "wb");
+                    if (f) { int32_t hd[4] = {hl.n, (int32_t)sizeof(PsxHwPrim), hw_w, hw_h}; fwrite(hd, 4, 4, f); fwrite(hl.p, sizeof(PsxHwPrim), (size_t)hl.n, f); fclose(f); }
+                    LOG("depurar: lista volcada (%d primitivas, %d bytes cada una)", hl.n, (int)sizeof(PsxHwPrim));
+                    G.dbg_dump = 1;
+                }
                 if (c_measure) { c_measure = 0; double g0 = now(); glFinish(); c_gpu_ms = (now() - a) * 1000; (void)g0; }
                 c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
                 hw_seq = seq;

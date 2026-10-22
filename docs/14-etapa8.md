@@ -801,3 +801,37 @@ filtrados (`u_filter` 2 = todo, para medir).
   (antes, 86 ms).
 - El dueño no notó ningún bajón.
 
+## Paso 7: menos temblor de vértices (rama `etapa-8-paso-7`)
+
+**Cómo funciona** (tipo PGXP; `psx/src/gpu.c`, `gte.c`, `psx/gl/psx_hw.c`):
+- La GTE calcula SX y SY con 16 bits de decimales y el juego guarda el entero
+  en el paquete.
+- RTPS apunta los decimales por el valor entero (`psx_gpu_subpix_store`). La
+  tabla es por hilo y se vacía al terminar cada lista anotada.
+- Al anotar un triángulo se buscan por el valor de cada vértice (`fx`, `fy` en
+  `PsxHwPrim`), y `psx_hw.c` los suma a más de 1x.
+- Es una función del entero: dos polígonos que comparten un vértice reciben
+  los mismos decimales. **Sin grietas.**
+
+**Medido en el PC** (misión 0, `GUION_FUEGO`, `AC3_SUBPIX=1`):
+- encuentran sus decimales el 94,6 % de los vértices de triángulos de las
+  imágenes reales y el 88,8 % de las intermedias (el resto: HUD y sprites);
+- a 1x no cambia nada: comparador 0 listas malas, con imagen conservada y con
+  intermedias.
+
+**Comprobado por el dueño en la Retroid:** «lo de los vértices quedó bien».
+
+**Herramientas:**
+- `decimales=0|1` en el archivo de depuración;
+- `PSX_HW_NOSUBPIX=1` en el PC.
+- Volcado de la lista en pantalla desde la app: `volcar=N` (`lista.bin`, los
+  `PsxHwPrim` crudos).
+
+### El HUD sin ensanchar en 16:9: aparcado (rama `etapa-8-hud-ancho`)
+
+- Agrupaba las piezas del HUD en elementos y estrechaba cada uno alrededor de
+  su centro. Las reglas se afinaron con capturas y volcados de la Retroid:
+  mapa grande, pausa, brújula de la vista de cabina.
+- **El dueño lo aparca:** en la vista de cabina rompía mucho la imagen. Queda
+  entero en su rama para retomarlo (con `psx/test/test_hud.c` y los volcados).
+

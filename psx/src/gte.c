@@ -2,6 +2,7 @@
  * Convenciones: los registros se guardan en crudo (32 bits) y se interpretan al
  * leerlos; cada orden empieza con FLAG = 0 y va acumulando banderas. */
 #include "psx_gte.h"
+#include "psx_gpu.h"
 
 #include <string.h>
 
@@ -203,6 +204,9 @@ static void rtps(PsxGte *g, int n, int shift, int lm, int last) {
     int32_t sx = lm_g(g, tx < -0x8000 ? -0x8000 : tx > 0x7FFF ? 0x7FFF : (int32_t)tx, F_SX2);
     int32_t sy = lm_g(g, ty < -0x8000 ? -0x8000 : ty > 0x7FFF ? 0x7FFF : (int32_t)ty, F_SY2);
     push_sxy(g, sx, sy);
+    /* (etapa 8, paso 7) los decimales de la proyeccion, si no se recorto */
+    if (psx_gpu_subpix_on && tx >= -0x400 && tx < 0x400 && ty >= -0x400 && ty < 0x400)
+        psx_gpu_subpix_store(((uint32_t)(uint16_t)sy << 16) | (uint16_t)sx, (uint32_t)(px & 0xFFFF), (uint32_t)(py & 0xFFFF));
     if (psx_gte_vertex_hook) {   /* interpolacion de imagenes */
         psx_gte_hook_ctx = g;
         uint32_t grp = 2166136261u;   /* el objeto: rotacion (c0-c4) y traslacion (c5-c7) */

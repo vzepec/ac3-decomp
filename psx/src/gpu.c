@@ -105,7 +105,37 @@ static void stale_tex(const PsxHwPrim *p, int nv) {
 }
 
 static void rec_dirty(int x1, int y1, int x2, int y2);
+/* etapa 8, paso 7: decimales de las proyecciones (ver psx_gpu.h). Direccionamiento abierto por el valor
+ * entero; generacion para vaciarla sin borrar */
+int psx_gpu_subpix_on;
+#define SPBITS 17
+typedef struct { uint32_t key, gen; uint8_t fx, fy; } SubPix;
+static _Thread_local SubPix *g_sp;
+static _Thread_local uint32_t g_sp_gen = 1;
+int psx_gpu_subpix_hits, psx_gpu_subpix_miss;   /* medicion */
+void psx_gpu_subpix_store(uint32_t sxy, uint32_t fx16, uint32_t fy16) {
+    if (!g_sp && !(g_sp = calloc((size_t)1 << SPBITS, sizeof *g_sp))) return;
+    uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
+    for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
+        SubPix *e = &g_sp[h];
+        if (e->gen != g_sp_gen) { e->gen = g_sp_gen; e->key = sxy; e->fx = (uint8_t)(fx16 >> 8); e->fy = (uint8_t)(fy16 >> 8); return; }
+        if (e->key == sxy) return;   /* ya esta: el primero manda (la misma respuesta para todos) */
+    }
+}
+static int subpix_get(uint32_t sxy, int *fx, int *fy) {
+    *fx = *fy = 0;
+    if (!g_sp) return 0;
+    uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
+    for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
+        SubPix *e = &g_sp[h];
+        if (e->gen != g_sp_gen) return 0;
+        if (e->key == sxy) { *fx = e->fx; *fy = e->fy; return 1; }
+    }
+    return 0;
+}
+
 void psx_gpu_record(PsxHwList *list, int only) {
+    if (!list) g_sp_gen++;   /* fin de una lista: las proyecciones siguientes son de otra imagen */
     g_rec = list;
     g_rec_only = list && only;
     if (list) list->dirty = list->blit = list->nread = 0;
@@ -177,6 +207,7 @@ static PsxHwPrim *rec_new(PsxGpu *g, int kind, int flags) {
     p->tw_mx = (uint8_t)g->tw_mask_x; p->tw_my = (uint8_t)g->tw_mask_y;
     p->tw_ox = (uint8_t)g->tw_off_x; p->tw_oy = (uint8_t)g->tw_off_y;
     p->ax1 = (int16_t)g->area_x1; p->ay1 = (int16_t)g->area_y1; p->ax2 = (int16_t)g->area_x2; p->ay2 = (int16_t)g->area_y2;
+    p->ox = (int16_t)g->off_x; p->oy = (int16_t)g->off_y;
     return p;
 }
 
@@ -365,7 +396,7 @@ AINLINE void tri_span(PsxGpu *g, const TexCtx *tc, int y, int xl, int xr, const 
 
 /* ---- triangulos ---- */
 
-typedef struct { int x, y, r, g, b, u, v; } Vert;
+typedef struct { int x, y, r, g, b, u, v, fx, fy; } Vert;   /* fx, fy: decimales (1/256 px, paso 7) */
 
 static int64_t edge(const Vert *a, const Vert *b, int px, int py) {
     return (int64_t)(b->x - a->x) * (py - a->y) - (int64_t)(b->y - a->y) * (px - a->x);
@@ -404,6 +435,7 @@ static void triangle(PsxGpu *g, Vert v0, Vert v1, Vert v2, int gouraud, int text
                 p->x[i] = (int16_t)w[i]->x; p->y[i] = (int16_t)w[i]->y;
                 p->r[i] = (uint8_t)w[i]->r; p->g[i] = (uint8_t)w[i]->g; p->b[i] = (uint8_t)w[i]->b;
                 p->u[i] = (uint8_t)w[i]->u; p->v[i] = (uint8_t)w[i]->v;
+                p->fx[i] = (uint8_t)w[i]->fx; p->fy[i] = (uint8_t)w[i]->fy;
             }
             p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
             stale_tex(p, 3);
@@ -546,6 +578,11 @@ static void do_polygon(PsxGpu *g, const uint32_t *c) {
         uint32_t xy = c[k++];
         v[i].x = sx11(xy) + g->off_x;
         v[i].y = sx11(xy >> 16) + g->off_y;
+        v[i].fx = v[i].fy = 0;
+        if (psx_gpu_subpix_on && g_rec) {
+            if (subpix_get(xy, &v[i].fx, &v[i].fy)) psx_gpu_subpix_hits++;
+            else psx_gpu_subpix_miss++;
+        }
         v[i].r = col & 255; v[i].g = (col >> 8) & 255; v[i].b = (col >> 16) & 255;
         v[i].u = v[i].v = 0;
         if (tex) {

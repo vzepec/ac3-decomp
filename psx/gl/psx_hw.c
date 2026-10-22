@@ -603,6 +603,9 @@ static void plan_exact(const PsxHwList *l) {
     }
 }
 
+/* etapa 8, paso 7: decimales de la GTE en los vertices de los triangulos (psx_gpu_subpix_on, ver psx_gpu.h) */
+static int g_subpix = 1;   /* PSX_HW_NOSUBPIX=1: sin ellos (prueba) */
+
 static void apply_upload(const PsxHwPrim *p);
 static void draw_prim_2(const PsxHwPrim *p, int index);
 static void draw_prim(const PsxHwPrim *p, int index) {
@@ -684,7 +687,9 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
             for (int i = 0; i < 3; i++) {
                 int r = p->r[i], g = p->g[i], b = p->b[i];
                 if (!(f & PSX_HWF_GOURAUD)) { r = p->r[0]; g = p->g[0]; b = p->b[0]; }
-                vert(&v[i], p->x[i], p->y[i], p->u[i], p->v[i], r, g, b, t);
+                /* (paso 7) con los decimales de la GTE a mas de 1x: sin saltos de pixel de la PS1 */
+                float sx = g_subpix && g_scale > 1 ? p->fx[i] / 256.0f : 0, sy = g_subpix && g_scale > 1 ? p->fy[i] / 256.0f : 0;
+                vert(&v[i], p->x[i] + sx, p->y[i] + sy, p->u[i], p->v[i], r, g, b, t);
             }
             if (tex && g_scale > 1) set_uvr_tri(p);
             else set_uvr(3);
@@ -1081,6 +1086,9 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glUniform1i(u_atlas, 3);
     if (nup) glUniform4iv(u_up, nup, &g_up[0][0]);
     /* primitivas; las UPLOAD actualizan la textura en su sitio (las adelantadas ya estan) */
+    static int nosp = -1;
+    if (nosp < 0) nosp = getenv("PSX_HW_NOSUBPIX") != NULL;
+    g_subpix = !nosp;
     for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
     flush();
     glDisable(GL_SCISSOR_TEST);

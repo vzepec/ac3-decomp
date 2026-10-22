@@ -100,6 +100,9 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 - vibración del DualShock (y la extra opcional);
 - pausa al volver y salir al menú;
 - humo y explosiones más ligeros.
+- menos temblor de vértices (etapa 8, paso 7).
+
+**Aparcado:** el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`; en la vista de cabina rompía la imagen).
 
 **Explosiones a 60 fps:** probadas tres formas, ninguna mejora la prueba de verdad conocida (`SIN RESOLVER`, paso 6 de la etapa 8).
 
