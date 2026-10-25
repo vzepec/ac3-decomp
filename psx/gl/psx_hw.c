@@ -118,7 +118,7 @@ static const char *FS =
     "  put((c * 8.0 + floor(c / 4.0)) / 255.0, semi && stp, abr);\n"
     "}\n";
 
-static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
+static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_outm, g_stencil;   /* g_outm: el bit 15 de g_out (paso 10) */
 /* atlas de las subidas (paso 3b): sin subidas a mitad de imagen, que en la GPU por baldosas cortan el
  * dibujo (medido en la Retroid: de 54,6 a 59,6 fps al quitarlas) */
 #define NATLAS 128
@@ -238,6 +238,7 @@ void psx_hw_shutdown(void) {
     glDeleteTextures(3, g_atlas);
     for (int i = 0; i < NVTEX; i++) { free(g_shadow[i]); g_shadow[i] = NULL; }
     if (g_out) glDeleteTextures(1, &g_out);
+    if (g_outm) glDeleteTextures(1, &g_outm);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
     glDeleteFramebuffers(1, &g_fbo);
     for (int i = 0; i < NTARGET; i++)
@@ -249,11 +250,11 @@ void psx_hw_shutdown(void) {
     if (g_cprog) { glDeleteProgram(g_cprog); glDeleteVertexArrays(1, &g_cvao); glDeleteBuffers(1, &g_cvbo); glDeleteFramebuffers(1, &g_vfbo); }
     g_cprog = 0;
     free(g_buf);
-    g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_stencil = 0; g_ow = g_oh = 0;
+    g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_outm = 0; g_stencil = 0; g_ow = g_oh = 0;
 }
 
 int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
-int psx_hw_stat_batched;   /* (paso 10) primitivas de dos pasadas dibujadas en grupo */
+int psx_hw_stat_batched, psx_hw_stat_rebuilds;   /* (paso 10) primitivas de dos pasadas dibujadas en grupo */
 int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */
 /* medicion (paso 6): pixeles de la VRAM que pintan las primitivas (con lo superpuesto), los
  * semitransparentes y los que leen texturas que la lista cambia (recorren el atlas de subidas) */
@@ -633,6 +634,12 @@ static void apply_upload(const PsxHwPrim *p) {
                 memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
     }
 }
+/* (paso 10) el stencil, desde el bit 15 del segundo bufer: g_rebuild (por defecto; PSX_HW_PASADAS2=1, las dos
+ * pasadas de antes), g_mdirty (alguna primitiva en una pasada lo dejo sin el bit 15 exacto), g_cur_mask (el
+ * segundo bufer del destino) y g_planning (prim_passes solo consulta: agrupacion) */
+static int g_rebuild = 1, g_mdirty, g_planning;
+static GLuint g_cur_mask;
+static void stencil_from_mask(GLuint mask, int ow, int oh);
 /* pasadas de una primitiva (passes[]): 0 normal, o 1 y 2 (texeles con el bit 15 a 0 y a 1) */
 static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
@@ -659,6 +666,9 @@ static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
     /* la semitransparencia va en el shader (una pasada), salvo la resta (abr 2) con textura: sus
      * texeles opacos con la mezcla comun y los semitransparentes con la resta */
     int sub = semi && p->abr == 2;
+    /* (paso 10) las que no comprueban la mascara, en una pasada: el stencil se rehace desde el bit 15 del
+     * segundo bufer antes de la siguiente que la comprueba (g_mdirty) */
+    if (exact && g_rebuild && !(f & PSX_HWF_MASKCHK) && (vram || !mset)) { exact = 0; if (g_planning == 0) g_mdirty = 1; }
     if ((sub && tex && !psx_hw_onepass) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
     return np;
@@ -666,9 +676,25 @@ static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
 /* (etapa 8, paso 10) con g_only_pass (1 o 2), de una primitiva de dos pasadas solo esa: los grupos de
  * primitivas seguidas que no se solapan van pasada a pasada (ver psx_hw_frame_ex) */
 static int g_only_pass;
+static void rebuild_stencil(void) {
+    flush();
+    stencil_from_mask(g_cur_mask, g_ow, g_oh);
+    /* el estado del dibujo de la lista */
+    glUseProgram(g_prog);
+    glBindVertexArray(g_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    glEnable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glStencilMask(1);
+    g_asc[0] = g_asc[1] = g_asc[2] = g_asc[3] = -1;
+    g_acls = -1; g_ast = -2;
+    g_mdirty = 0;
+    psx_hw_stat_rebuilds++;
+}
 static void draw_prim_2(const PsxHwPrim *p, int index) {
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
     int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
+    if (mchk && g_mdirty && g_cur_mask) rebuild_stencil();
     int32_t t[4];
     int passes[2], np = prim_passes(p, index, passes);
     int vram = p->kind == PSX_HW_VRAM, fill = p->kind == PSX_HW_FILL;
@@ -971,12 +997,22 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        /* (paso 10) y su bit 15, como las imagenes conservadas: el stencil se rehace desde el a mitad de lista */
+        if (g_outm) glDeleteTextures(1, &g_outm);
+        glGenTextures(1, &g_outm);
+        glBindTexture(GL_TEXTURE_2D, g_outm);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         if (!g_stencil) glGenRenderbuffers(1, &g_stencil);
         glBindRenderbuffer(GL_RENDERBUFFER, g_stencil);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, ow, oh);
         glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_out, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, g_outm, 0);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_stencil);
+        static const GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glDrawBuffers(2, bufs);
         g_ow = ow; g_oh = oh;
     }
     g_scale = scale; g_x0 = x0; g_y0 = y0;
@@ -993,8 +1029,16 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
         static const GLenum all[2] = {GL_COLOR_ATTACHMENT0, GL_STENCIL_ATTACHMENT};
         glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 2, all);
         glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        /* (paso 10) y su bit 15 (segundo bufer de cada uno), para rehacer el stencil a mitad de lista */
+        static const GLenum b1[2] = {GL_NONE, GL_COLOR_ATTACHMENT1}, b2[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glReadBuffer(GL_COLOR_ATTACHMENT1);
+        glDrawBuffers(2, b1);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glDrawBuffers(2, b2);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
     }
     g_last_tex = real ? tg->tex : g_out;
+    g_cur_mask = real ? tg->mask : g_outm;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
     if (keep && !psx_hw_no_maskpass) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
@@ -1099,6 +1143,10 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glUniform1i(u_atlas, 3);
     if (nup) glUniform4iv(u_up, nup, &g_up[0][0]);
     /* primitivas; las UPLOAD actualizan la textura en su sitio (las adelantadas ya estan) */
+    static int pas2 = -1;
+    if (pas2 < 0) pas2 = getenv("PSX_HW_PASADAS2") != NULL;
+    g_rebuild = !pas2;
+    g_mdirty = 0;
     static int nosp = -1;
     if (nosp < 0) nosp = getenv("PSX_HW_NOSUBPIX") != NULL;
     g_subpix = !nosp;
@@ -1113,14 +1161,20 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     for (int i = 0; i < l->n;) {
         const PsxHwPrim *p = &l->p[i];
         int pp[2], j = i + 1;
-        if (!nolote && p->kind != PSX_HW_UPLOAD && prim_passes(p, i, pp) == 2) {
+        g_planning = 1;
+        int two = !nolote && p->kind != PSX_HW_UPLOAD && prim_passes(p, i, pp) == 2;
+        g_planning = 0;
+        if (two) {
             static int bx[RUN][4];
             int nb = 0;
             bbox(p, &bx[0][0], &bx[0][1], &bx[0][2], &bx[0][3]);
             nb = 1;
             for (; j < l->n && j - i < RUN; j++) {
                 const PsxHwPrim *q = &l->p[j];
-                if (q->kind == PSX_HW_UPLOAD || prim_passes(q, j, pp) != 2) break;
+                g_planning = 1;
+                int q2 = q->kind != PSX_HW_UPLOAD && prim_passes(q, j, pp) == 2;
+                g_planning = 0;
+                if (!q2) break;
                 int x1, y1, x2, y2, hit = 0;
                 bbox(q, &x1, &y1, &x2, &y2);
                 for (int k = 0; k < nb && !hit; k++) hit = x1 < bx[k][2] && bx[k][0] < x2 && y1 < bx[k][3] && bx[k][1] < y2;
@@ -1146,8 +1200,10 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     /* (paso 5) el stencil no se guarda: ninguna imagen lo lee despues (las conservadas lo rehacen con
      * stencil_from_mask, las intermedias tambien y las que parten de la VRAM lo escriben entero). En la
      * GPU por baldosas, no escribirlo a memoria ahorra 1,2 MB por imagen a 4x */
-    static const GLenum st[1] = {GL_STENCIL_ATTACHMENT};
-    glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, st);
+    static const GLenum st[1] = {GL_STENCIL_ATTACHMENT}, stm[2] = {GL_STENCIL_ATTACHMENT, GL_COLOR_ATTACHMENT1};
+    /* (paso 10) el bit 15 de g_out tampoco: solo sirve dentro de la imagen */
+    if (!real) glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, stm);
+    else glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, st);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (real) tg->valid = 1;
