@@ -32,6 +32,7 @@ sleep 3
 n=$((T * 2)); k=0
 while [ $k -lt $n ]; do k=$((k + 1)); $A exec-out screencap -p > "$OUT/c$k.png"; sleep 0.4; done
 $A logcat -d -s AC3Game:* > "$OUT/log.txt"
+$A shell rm -f $F   # sin dejar ajustes para la siguiente partida (el dueno juega despues con el mismo APK)
 python3 - "$OUT" <<'PY'
 import glob, re, sys
 from PIL import Image
