@@ -255,7 +255,8 @@ static uint8_t to_axis(float v) {
  * tercio de las veces (el registro: 41 de 120 por segundo). El mismo retraso para reales e intermedias:
  * la cadencia no cambia */
 static double present_delay(int den) {
-    return den > 2 && G.disp_hz > 61 ? 1.0 / (double)G.disp_hz : 0.0;
+    (void)den;   /* (tambien con 1 intermedia: en la estela del virus llegaban tarde 30 por segundo en el S24) */
+    return G.disp_hz > 61 && G.dbg_hz != 60 ? 1.0 / (double)G.disp_hz : 0.0;
 }
 
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step);
@@ -407,13 +408,21 @@ static void frame_wait(void) {
         /* subir solo tras 5 ventanas seguidas holgadas: cada cambio altera la cadencia */
         static int good;
         int want = g_nfrac;
-        if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
+        int hi = G.rr_on && G.disp_hz >= 100 && G.dbg_hz != 60;   /* (paso 12) pantalla de 100 Hz o mas */
+        if (hi) {
+            /* (paso 12) con 120 Hz las intermedias las hace el hilo del redibujo, aparte: el reposo del hilo del juego no
+             * dice nada de ellas. Bajar a 1 solo si se saltan mas de 3 pasos de 30; volver a 3 tras 2 ventanas sin
+             * saltar ninguno. Antes, en la estela del virus (el software dibuja tambien la real), 6 pasos saltados lo
+             * bajaban a 60 fps y ya no volvia a subir (Galaxy S24) */
+            if (p.steps >= 5 && p.skipped * 10 > p.steps * 1 && p.skipped > 3) want = 1, good = 0;
+            else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 2) want = 3, good = 0; }
+            else good = 0;
+        } else if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
         else if (avg < 3) want = g_nfrac - 1, good = 0;
         else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) { if (++good >= 5) want = g_nfrac + 1, good = 0; }
         else good = 0;
         /* la nueva: 30 -> 60 fps con una; (paso 12) con pantalla de 100 Hz o mas, 3 (30 -> 120), sin pasar por 2
          * (90 imagenes en 120 refrescos: a saltos) */
-        int hi = G.rr_on && G.disp_hz >= 100 && G.dbg_hz != 60;
         int top = G.rr_on ? (hi ? 3 : 1) : 3;
         want = want < 1 ? 1 : want > top ? top : want;
         if (hi && want == 2) want = g_nfrac == 1 ? 3 : 1;
