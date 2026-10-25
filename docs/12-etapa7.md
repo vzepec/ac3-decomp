@@ -64,6 +64,7 @@ versión (EU/US) ◄── ejecutable de arranque del disco (psx/recomp/ac3_vers
 | 6 | Release alfa en GitHub con el APK libre (`INSTALAR.md`) | ✅ v1.7-alfa; v1.8-alfa (pantalla ancha); v1.9-alfa (interpolación nueva); v1.10-alfa (dibujo por la GPU); v1.11-alfa (menú); v1.12-alfa (alta resolución) |
 | 7 | Menú de inicio, opciones, idioma y actualizador (`LauncherActivity`, `Updater`) | ✅ probado en la Retroid (dueño); v1.11-alfa |
 | 8 | Mando táctil en pantalla (`android_game/src/touchpad.c`) | ✅ v1.12-alfa |
+| 9 | Vibración (DualShock), pausa al volver a la app y salir al menú (SELECT + START) | ✅ probado en la Retroid por adb |
 
 ## Resultados
 
@@ -281,4 +282,64 @@ que es GPL):
 
 **Pendiente:** lo que diga el dueño de tamaños, posiciones, transparencia,
 segundo stick para la cámara y vibración.
+
+## Paso 9: vibración, pausa al volver y salir al menú
+
+**Vibración.**
+- `psx/src/libpad.c` presentaba el mando como uno estándar
+  (`PadStateFindCTP1`) y `PadSetAct` estaba vacía. El juego registraba igual
+  su búfer, pero sin configurar los motores.
+- **Ahora** el analógico (0x73) se presenta como un DualShock con los motores
+  listos (`PadStateStable`, ids 4/7, dos motores). Con `PSX_PAD_LOG=1` se ve
+  lo que hace el juego:
+  1. `PadSetMainMode(0, 1, 2)`: analógico y bloqueado;
+  2. pregunta por los dos motores;
+  3. `PadSetActAlign(01 ff ff ff ff ff)`: el byte 0 del búfer va al motor
+     grande;
+  4. `PadSetAct(…, 1)`.
+- **En la misión** pide fuerzas de 0x54-0x73 (vibración suave continua) y
+  golpes de 0xFF que bajan poco a poco. Visto en el PC con `GUION_FUEGO`
+  (VBlank 3912-4000).
+- **Sin cambios en la imagen:** comparador de la misión 0 con intermedias, 0
+  listas malas.
+- `psx_pad_motor` da la fuerza.
+- **La app** (`app_extras`, hilo que presenta) se la pasa a
+  `MainActivity.rumble`:
+  - usa el motor del mando si lo tiene, si no el del aparato;
+  - órdenes de 120 ms renovadas cada 80 ms, con la amplitud de la fuerza.
+- **Comprobado en la Retroid** con `vibrar=200` en el archivo de depuración:
+  `dumpsys vibrator_manager` registra las órdenes de la app con amplitud 0,78.
+- Opción **Vibración** en el menú; permiso `VIBRATE`.
+
+**Vibración extra (no es del original).**
+- Medido en el PC con `PSX_PAD_LOG`: el juego **no** pide vibración al
+  disparar misiles (○), con la ametralladora (✕) ni al acelerar (R1). Solo la
+  pide con daños, roces con el suelo y choques.
+- Opción del menú, desactivada por defecto, durante la misión (terreno
+  dibujado):
+  - golpe de 150 ms (fuerza 190) al pulsar ○;
+  - traqueteo 95/45 a unos 8 Hz con ✕ mantenida;
+  - temblor de 40 con R1.
+- Se suma a la del juego: vale la mayor de las dos.
+- **Comprobado en la Retroid:** amplitudes 0,75, 0,37 y 0,18 en
+  `dumpsys vibrator_manager`.
+- **Limitación:** en el menú de pausa del juego, ○ y ✕ también vibran.
+
+**Pausa al volver.**
+- Al salir de la app (`APP_CMD_PAUSE`) con el juego en marcha, queda en pausa
+  (`G.hold`) hasta que se pulse un botón o la pantalla. El primer toque no
+  llega al juego.
+- Rótulo «Pausa» dibujado por `MainActivity`, en el idioma del menú.
+- No se usa la pausa del juego: si ya estuviera en pausa, START la quitaría.
+- Probado en la Retroid: inicio → volver → rótulo y VEL 0 % → ✕ sigue.
+
+**Salir al menú.**
+- SELECT + START mantenidos 1,5 s (mando físico o táctil) →
+  `ANativeActivity_finish`.
+- Probado con `adb shell input keycombination -t 2200`.
+
+**Tarjeta de memoria atómica.**
+- `card_flush` escribe a `.tmp`, hace `fsync` y renombra: salir en mitad de una
+  escritura no deja la tarjeta a medias.
+- `tools/psxcheck_card.py`: TODO BIEN.
 

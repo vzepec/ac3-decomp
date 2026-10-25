@@ -947,9 +947,13 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     int keep = tg && stale && tg->valid;   /* se parte de la imagen conservada */
     GLuint dst = real ? tg->fbo : g_fbo;
     if (keep && !real) {
+        /* (paso 5) solo el color: el stencil lo rehace stencil_from_mask justo despues. Y lo que habia
+         * antes en g_out no se carga (en la GPU por baldosas, cada carga lee la imagen entera) */
         glBindFramebuffer(GL_READ_FRAMEBUFFER, tg->fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_fbo);
-        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+        static const GLenum all[2] = {GL_COLOR_ATTACHMENT0, GL_STENCIL_ATTACHMENT};
+        glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 2, all);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
     }
     g_last_tex = real ? tg->tex : g_out;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
@@ -1061,6 +1065,11 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_STENCIL_TEST);
+    /* (paso 5) el stencil no se guarda: ninguna imagen lo lee despues (las conservadas lo rehacen con
+     * stencil_from_mask, las intermedias tambien y las que parten de la VRAM lo escriben entero). En la
+     * GPU por baldosas, no escribirlo a memoria ahorra 1,2 MB por imagen a 4x */
+    static const GLenum st[1] = {GL_STENCIL_ATTACHMENT};
+    glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, st);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (real) tg->valid = 1;

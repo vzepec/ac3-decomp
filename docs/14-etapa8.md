@@ -656,3 +656,65 @@ interpolación.**
 - precisión de vértices (tipo PGXP), si se ven temblores;
 - otros filtros (xBR).
 
+## Paso 5: rendimiento sin buscar bajones (rama `etapa-8-paso-5`)
+
+Petición del dueño: los bajones que quedan son puntuales y difíciles de
+reproducir. Este paso trae mejoras que valen siempre: se comprueban con el
+comparador (misma imagen) y con la medida media, sin cazar el bajón.
+
+**Cambios:**
+1. **Sin `glFinish()` cada segundo.** La medida del tiempo de GPU paraba la
+   CPU hasta que la GPU acababa, una vez por segundo: una vuelta de
+   presentación lenta (≈21,6 ms) por segundo, es decir, una imagen que se
+   quedaba un refresco más. Ahora es opcional (`gpu=1` en el archivo de
+   depuración).
+2. **Prioridad de los hilos.**
+   - El que presenta (`android_main`), fijado a los núcleos rápidos con
+     prioridad −8 (`THREAD_PRIORITY_URGENT_DISPLAY`).
+   - El del juego y los de dibujo, con −4 (`THREAD_PRIORITY_DISPLAY`).
+   - Comprobado con `adb shell ps -T`.
+3. **El stencil no se guarda en memoria al terminar cada imagen**
+   (`glInvalidateFramebuffer`): ninguna imagen lo vuelve a leer. En la GPU por
+   baldosas ahorra escribir 1,2 MB por imagen a 4x.
+4. **La copia de partida de las intermedias, solo el color**, y sin cargar lo
+   que había antes en el destino. El stencil lo rehace `stencil_from_mask`.
+
+**Comprobado en el PC** (misión 0, `GUION_FUEGO`):
+
+| Modo del comparador | Resultado |
+|---|---|
+| `AC3_HWCMP_ONLY` | 0 listas malas |
+| Intermedias | 0 listas malas |
+| `AC3_HWCMP_PERSIST` con intermedias | 538 listas, las mismas de antes del cambio: son los menús, que en ese modo de prueba no son fieles |
+
+**Medido en la Retroid** (`tools/retroid_medir.sh` y
+`tools/logcat_resumen.py`):
+- primera misión, el avión volando solo, 4x con bilineal;
+- la herramienta entra sola en la misión: START, ✕ por los menús y START para
+  saltar el prólogo.
+
+| | v1.12-alfa | Paso 5 |
+|---|---|---|
+| Vueltas de más de 20 ms | 97 en 88 s (1,10 por s) | 9 en 88 s (0,10 por s); 5 en 59 s en otra medida |
+| Vuelta más larga (media por segundo) | 21,6 ms | 17,6-18,0 ms |
+| CPU en dibujo / `eglSwapBuffers` | 1,47 / 1,48 ms | 1,10 / 1,10 ms |
+
+**Tiempo real de GPU** (temporizadores de la GPU, `GL_EXT_disjoint_timer_query`,
+desde la 1.12.2 en el registro: «GPU (temporizador)»). Se leen unas vueltas
+después, sin parar la CPU. Primera misión en vuelo:
+
+| Configuración | GPU por vuelta, media | La peor |
+|---|---|---|
+| 1x | 0,61 ms | 0,88 ms |
+| 2x | 1,00 ms | 1,83 ms |
+| 4x | 2,74 ms | 4,04 ms |
+| 4x + bilineal | 5,29 ms | 8,43 ms |
+
+**Conclusiones:**
+- Con 16,7 ms por imagen, la GPU va sobrada en vuelo normal. La antigua
+  medida con `glFinish` (13-20 ms) incluía la espera a las imágenes en cola.
+- Cola de presentación limpia: ni imágenes tarde ni tiradas, hilo de dibujo
+  ≤ 7 ms.
+- Lo que quede serán escenas extremas (explosiones, el sol, muchos enemigos).
+  Se verán en el registro si alguien juega con el cable conectado.
+

@@ -34,5 +34,9 @@ void touchpad_stick(float *x, float *y, int *active);
 /* dibuja la capa (contexto GLES activo, viewport de toda la ventana) */
 void touchpad_draw(void);
 void touchpad_gl_lost(void);   /* el contexto se perdio: rehacer texturas y programa */
+/* (etapa 7, paso 9) un rotulo centrado en pantalla (el de la pausa al volver a la app): lo dibuja
+ * MainActivity en el idioma del menu */
+void touchpad_set_label(const uint32_t *argb, int w, int h);
+void touchpad_draw_label(void);
 
 #endif
