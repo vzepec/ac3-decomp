@@ -138,7 +138,7 @@ static struct {
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -153,7 +153,7 @@ static struct {
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0;
     if (f) {
         char k[32];
         int v;
@@ -167,6 +167,14 @@ static void dbg_read(void) {
             else if (!strcmp(k, "vibrar")) rb = v;
             else if (!strcmp(k, "decimales")) sp = v;
             else if (!strcmp(k, "volcar")) dd = v;
+            /* (etapa 8, paso 10) pruebas de la pantalla ancha, antes de entrar en la mision: sin la
+             * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
+            else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
+            else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
+            else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
+            else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
+            else if (!strcmp(k, "palanca")) pal = v;  /* el izquierdo fijo en v/100 (vertical) */
+            else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
         }
         fclose(f);
     }
@@ -175,6 +183,7 @@ static void dbg_read(void) {
     G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp; G.dbg_rumble = rb;
     if (sp != G.dbg_subpix) LOG("depurar: decimales %d", sp);
     G.dbg_subpix = sp;
+    G.dbg_cam = cam; G.dbg_pal = pal; G.dbg_alb = alb;
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -459,11 +468,15 @@ static void frame_wait(void) {
     int tact;
     touchpad_stick(&tx, &ty, &tact);
     uint16_t pad = (uint16_t)(G.buttons | G.keys | touchpad_buttons());
+    float ry = G.ry, lx = G.lx, ly = G.ly;
+    if (G.dbg_cam) ry = G.dbg_cam / 100.0f;
+    if (G.dbg_pal) ly = G.dbg_pal / 100.0f;
+    if (G.dbg_alb) lx = G.dbg_alb / 100.0f;
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
-    if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; G.lx = G.ly = 0; }
+    if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }
 #endif
-    psx_pad_set(0, pad, to_axis(tact ? tx : G.lx), to_axis(tact ? ty : G.ly),
-                to_axis(G.rx), to_axis(G.ry));
+    psx_pad_set(0, pad, to_axis(tact ? tx : lx), to_axis(tact ? ty : ly),
+                to_axis(G.rx), to_axis(ry));
     static uint32_t img[640 * 512];
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);

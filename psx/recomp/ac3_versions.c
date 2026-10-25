@@ -47,7 +47,9 @@ static uint16_t g_wide_orig;
 static void wide_enter(RCpu *c) {
     ac3_terrain_count++;
     g_wide_addr = 0;
-    if (psx_gte_wide >= 1.0f || psx_gte_wide <= 0.0f) return;
+    static int nocone = -1;   /* prueba: AC3_WIDE_NOCONO=1, sin ensanchar el cono */
+    if (nocone < 0) nocone = getenv("AC3_WIDE_NOCONO") != NULL;
+    if (nocone || psx_gte_wide >= 1.0f || psx_gte_wide <= 0.0f) return;
     uint32_t a = c->r[4] + 4;
     if ((a & 0x1FFFFFu) >= PSX_RAM_SIZE - 4) return;
     uint16_t *w = (uint16_t *)psx_ptr(a);
@@ -55,7 +57,13 @@ static void wide_enter(RCpu *c) {
     if (getenv("AC3_WIDE_DBG") && said++ < 3) fprintf(stderr, "pantalla ancha: ancho %d, alto %d\n", w[0], w[1]);
     g_wide_addr = a;
     g_wide_orig = *w;
-    *w = (uint16_t)((float)*w / psx_gte_wide + 0.5f);
+    /* (etapa 8, paso 10) un 30 % mas que la proporcion de la pantalla: con solo 1 / psx_gte_wide, con la
+     * camara inclinada unos grados (stick derecho entre 0,65 y 0,70 hacia abajo, mision 18 en la Retroid)
+     * faltaban casillas en los bordes y se veia el fondo negro; con 1,15 quedaban restos, con 1,3 ninguno
+     * (unos 3 puntos mas de CPU del hilo del juego). AC3_WIDE_CONO=f (prueba): otro factor */
+    static float extra = -1;
+    if (extra < 0) extra = getenv("AC3_WIDE_CONO") ? (float)atof(getenv("AC3_WIDE_CONO")) : 1.3f;
+    *w = (uint16_t)((float)*w / psx_gte_wide * extra + 0.5f);
 }
 static void wide_leave(RCpu *c) {
     (void)c;

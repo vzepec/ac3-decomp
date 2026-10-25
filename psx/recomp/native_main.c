@@ -77,7 +77,7 @@ void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
  * para que el juego avance como en el interprete (450.000 instrucciones por fotograma). */
 #define BUDGET_PER_FRAME 25000
 
-static struct { int frame; uint32_t mask; int dur; } script[64];   /* bits 16-23: palancas */
+static struct { int frame; uint32_t mask; int dur, amt; } script[64];   /* bits 16-23: palancas; amt 1-9: palanca a amt/10 (0: a tope) */
 static int nscript, max_frames, every, last_vcount;
 static const char *shots;
 static jmp_buf stop;
@@ -172,14 +172,19 @@ static void frame_check(void) {
         if (g_win_i > 0 && last_vcount % 60 == 0) force_win_log();
 #endif
         uint32_t all = 0;
+        int amt = 0;
         for (int i = 0; i < nscript; i++)
-            if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) all |= script[i].mask;
+            if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) {
+                all |= script[i].mask;
+                if (script[i].amt) amt = script[i].amt;
+            }
         uint16_t mask = (uint16_t)all;
-        /* palancas a tope (con AC3_PAD_ID=73): lizq/lder/larr/laba, rizq/rder/rarr/raba */
+        /* palancas a tope (con AC3_PAD_ID=73): lizq/lder/larr/laba, rizq/rder/rarr/raba; con cifra, a amt/10 */
         uint8_t ax[4] = {0x80, 0x80, 0x80, 0x80};
+        int dv = amt ? amt * 0x80 / 10 : 0x80;
         for (int a = 0; a < 4; a++) {
-            if (all >> (16 + 2 * a) & 1) ax[a] = 0x00;
-            if (all >> (17 + 2 * a) & 1) ax[a] = 0xFF;
+            if (all >> (16 + 2 * a) & 1) ax[a] = (uint8_t)(0x80 - dv);
+            if (all >> (17 + 2 * a) & 1) ax[a] = (uint8_t)(amt ? 0x80 + dv : 0xFF);
         }
         psx_pad_set(0, mask, ax[0], ax[1], ax[2], ax[3]);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
@@ -376,8 +381,13 @@ static void parse_script(const char *s) {
         int f, d;
         if (sscanf(item, "%d:%127[^:]:%d", &f, btns, &d) != 3) continue;
         uint32_t m = 0;
-        for (char *b = strtok_r(btns, "+", &sp2); b; b = strtok_r(NULL, "+", &sp2)) m |= button(b);
-        script[nscript].frame = f; script[nscript].mask = m; script[nscript].dur = d;
+        int amt = 0;
+        for (char *b = strtok_r(btns, "+", &sp2); b; b = strtok_r(NULL, "+", &sp2)) {
+            size_t L = strlen(b);   /* "raba3": la palanca a 3/10 (etapa 8: la camara unos grados abajo) */
+            if (L > 1 && b[L - 1] >= '1' && b[L - 1] <= '9' && button(b) == 0) { amt = b[L - 1] - '0'; b[L - 1] = 0; }
+            m |= button(b);
+        }
+        script[nscript].frame = f; script[nscript].mask = m; script[nscript].dur = d; script[nscript].amt = amt;
         nscript++;
     }
 }
