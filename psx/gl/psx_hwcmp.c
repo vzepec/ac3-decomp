@@ -22,6 +22,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <GLES3/gl3.h>
 
 #include "psx_gpu.h"
 #include "psx_hw.h"
@@ -129,11 +131,24 @@ static void shot(const PsxHwList *lp, const uint16_t *bg, int x0, int y0, int w,
     int pers = g_cmp_persist || getenv("AC3_HWCMP_PERSIST");
     if (pers) {   /* (AC3_HWCMP_ONLY o _PERSIST) como la app: imagen conservada a esa escala, en cada lista */
         psx_hw_truecolor(1);
+        static double tsum; static int tn;   /* (paso 6) medida: tiempo de dibujo a escala en el PC */
+        struct timespec t0, t1;
+        glFinish();
+        clock_gettime(CLOCK_MONOTONIC, &t0);
         if (g_cmp_persist) psx_hw_frame_ex(lp, bg, x0, y0, w, h, sc, 1);
         else {
             PsxHwList l2 = *lp;
             l2.main_stale = 1;
             psx_hw_frame_ex(&l2, bg, x0, y0, w, h, sc, num == den);
+        }
+        glFinish();
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        static int done;
+        if (vb >= v1 && vb <= v2) { tsum += (t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6; tn++; }
+        else if (vb > v2 && tn && !done) {
+            done = 1;
+            printf("tiempo de dibujo a x%d entre los VBlank %d y %d: %.2f ms de media (%d listas)\n", sc, v1, v2, tsum / tn, tn);
+            fflush(stdout);
         }
         psx_hw_truecolor(0);
         if (vb < v1 || vb > v2) return;
@@ -262,6 +277,12 @@ static void compare(const PsxHwList *lp, const uint16_t *bg, const uint16_t *swv
         psx_hw_frame_ex(&l2, bg, x0, y0, w, h, 1, num == den);
     } else psx_hw_frame(lp, bg, x0, y0, w, h, 1);
     psx_hw_read(g_hw);
+    if (getenv("AC3_HWCMP_AREA")) {   /* (paso 6) el trabajo de cada lista: pixeles pintados */
+        extern double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass;
+        printf("area VBlank %d %s: pintados %.0f (%.1f pantallas), semitransparentes %.0f, con texturas cambiadas %.0f, en dos pasadas %.0f\n", VSync(-1),
+               num == den ? "real" : "inter", psx_hw_stat_px, psx_hw_stat_px / (w * h), psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass);
+        psx_hw_stat_px = psx_hw_stat_px_semi = psx_hw_stat_px_epoch = psx_hw_stat_px_2pass = 0;
+    }
     shot(lp, bg, x0, y0, w, h, num, den);
     psx_hw_filter(0);
     if (psx_hw_stat_draws - d0 > g_maxdraws) { g_maxdraws = psx_hw_stat_draws - d0; g_maxdraws_vb = VSync(-1); g_maxdraws_n = lp->n; }
@@ -326,13 +347,20 @@ done:
 
 
 static void summary(void) {
+    extern int psx_gpu_subpix_hits, psx_gpu_subpix_miss;
+    if (psx_gpu_subpix_on)
+        printf("hwcmp: decimales de la GTE: %d vertices con ellos, %d sin (%.1f %%)\n", psx_gpu_subpix_hits, psx_gpu_subpix_miss,
+               100.0 * psx_gpu_subpix_hits / (psx_gpu_subpix_hits + psx_gpu_subpix_miss + 1e-9));
+    extern int psx_gpu_subpix_amb;
+    if (psx_gpu_subpix_on) printf("hwcmp: decimales de la GTE: %d enteros ambiguos (dos vertices distintos), sin decimales\n", psx_gpu_subpix_amb);
     printf("hwcmp: %ld listas comparadas, %ld con bloques malos (%ld bloques); pixeles identicos %.2f %%, casi iguales %.2f %%\n",
            g_lists, g_bad_lists, g_bad_blocks, g_pixels ? 100.0 * g_same / g_pixels : 0.0, g_pixels ? 100.0 * g_close / g_pixels : 0.0);
     printf("hwcmp: de ellas, %ld imagenes intermedias\n", g_inter);
     extern int psx_hw_stat_hoisted, psx_hw_stat_inframe, psx_hw_stat_atlas;
     printf("hwcmp: subidas al atlas %d, adelantadas %d, a mitad de imagen %d\n", psx_hw_stat_atlas, psx_hw_stat_hoisted, psx_hw_stat_inframe);
     extern int psx_hw_stat_draws;
-    extern int psx_hw_stat_cut[4];
+    extern int psx_hw_stat_cut[4], psx_hw_stat_batched, psx_hw_stat_rebuilds;
+    printf("hwcmp: primitivas de dos pasadas dibujadas en grupo: %d; stencil rehecho desde el bit 15: %d veces\n", psx_hw_stat_batched, psx_hw_stat_rebuilds);
     printf("hwcmp: llamadas de dibujo %d (%.0f por lista; la que mas, %d en el VBlank %d con %d primitivas); cortes: recorte %d, mezcla %d, pasada %d, mascara %d\n",
            psx_hw_stat_draws, g_lists ? (double)psx_hw_stat_draws / g_lists : 0.0, g_maxdraws, g_maxdraws_vb, g_maxdraws_n, psx_hw_stat_cut[0],
            psx_hw_stat_cut[1], psx_hw_stat_cut[2], psx_hw_stat_cut[3]);
@@ -356,6 +384,7 @@ int psx_hwcmp_start(const char *dir) {
     g_ctx = eglCreateContext(g_dpy, cfg, EGL_NO_CONTEXT, cattr);
     if (!eglMakeCurrent(g_dpy, g_surf, g_surf, g_ctx) || psx_hw_init()) return -1;
     psx_hw_dither(1);
+    if (getenv("AC3_SUBPIX")) psx_gpu_subpix_on = 1;   /* (paso 7) decimales de la GTE (solo se usan a mas de 1x) */
     eglMakeCurrent(g_dpy, EGL_NO_SURFACE, EGL_NO_SURFACE, EGL_NO_CONTEXT);
     psx_draw_list_hook = hook;
     atexit(summary);

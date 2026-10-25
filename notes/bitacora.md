@@ -5,6 +5,40 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-25 — Release v1.13-alfa; la cámara libre, fuera
+
+- Release `v1.13-alfa` con las mejoras acumuladas (etapa 8, pasos 5-7 y 10;
+  etapa 7, paso 9; el arreglo del CD de la 1.12.1), desde `etapa-8-paso-10`
+  (la 1.12.20-alfa que probó el dueño).
+- **Cámara libre (paso 11):** en la Retroid el dueño no notó ningún cambio y
+  pidió quitarla. Queda en `etapa-8-paso-11`, sin fusionar. En el PC la
+  calibración sí cambiaba el giro; por qué no se notaba en la Retroid queda
+  `SIN RESOLVER` (no se comprobó el registro de la app).
+
+## 2026-10-25 — APK de desarrollo; bordes en 16:9; bajones del virus
+
+- **APK de desarrollo** (`DESARROLLO=1`): lista de las 41 misiones con los
+  nombres leídos del disco (tabla del overlay 1) y entrada directa: la Maze
+  en 10 s en la Retroid.
+- **Bordes en 16:9:** con la cámara inclinada unos grados faltaban casillas
+  del terreno (negro). Cono un 30 % más ancho: de 1.194-3.842 a 0 píxeles
+  negros (misión 18, `camara=70`). En el PC no se reproduce; tras el cambio
+  de las pasadas, el control con el cono de antes salió limpio
+  (`SIN RESOLVER`).
+- **Virus (misión 19):** de 4.400-5.800 llamadas por imagen y 8-16 fps a
+  como mucho 55 llamadas y 60 fps. Piezas sin comprobación de máscara en una
+  pasada; stencil rehecho desde una copia del bit 15 (leer el búfer al que
+  se dibuja falla en la GPU por baldosas: puntos del radar).
+- **Estela del virus:** con la imagen real solo en la GPU, la estela leía la
+  copia atrasada del software (cielo temblando, texturas pegadas). Si la lista
+  lee la imagen como textura, el software también la dibuja: sin fallos y a
+  60 fps en la Retroid (aislado con `modo=3`, `intermedias=0` y `solo=0`).
+- **Temblor de los bordes:** dos vértices en el mismo píxel entero se
+  pisaban los decimales de la GTE; el entero ambiguo va ahora sin decimales
+  (12 % de los vértices en la misión 18). Confirmado en la Retroid.
+- **Reproducir:** `tools/retroid_mision.sh`; en el PC, `PSX_HW_PASADAS2=1`,
+  `PSX_HW_NOLOTE=1`, `AC3_WIDE_CONO=f`.
+
 ## 2026-10-22 — Pantalla negra al acabar la Maze: la libcd con direcciones de la europea
 
 - **Fallo:** en la americana, la capa usaba para los búferes propios de libcd
@@ -18,6 +52,58 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   la Maze>`; con `AC3_CD_STATIC_EU=1`, el fallo.
 - Ver `docs/14-etapa8.md`, paso 8. Release `v1.12.1-alfa`, solo con este
   arreglo.
+
+## 2026-10-21 — Menos temblor de vértices; el HUD sin ensanchar, aparcado
+
+- **Decimales de la GTE** apuntados por el valor entero y devueltos a los
+  triángulos a más de 1x: sin grietas, comparador 0 listas malas a 1x. El
+  dueño lo da por bueno.
+- **El HUD sin ensanchar en 16:9** queda en la rama `etapa-8-hud-ancho`: en la
+  vista de cabina rompía mucho la imagen (decisión del dueño).
+- Ver `docs/14-etapa8.md`, paso 7.
+
+## 2026-10-21 — Sprites a 60 fps: no adoptado; humo más ligero
+
+- **Sprites de la CPU (explosiones, humo, llamas) en las intermedias:** tres
+  métodos de emparejamiento. La prueba de verdad conocida empeora con todos
+  (27,27 → 27,05-27,17 dB). Se deshizo; `SIN RESOLVER`.
+- **Hallazgo útil:** la clave de primitiva incluye el desplazamiento de
+  dibujo, que alterna con el doble búfer.
+- **Humo y explosiones:** el shader recorría todo el atlas de subidas en cada
+  lectura de una textura cambiada; ahora solo el tramo que toca a la
+  primitiva. Explosión a 4x con bilineal, de 63,0 a 53,2 ms en el PC;
+  comparador 0 listas malas.
+- **Sin filtro bilineal en lo semitransparente** (humo, explosiones): en el PC,
+  la explosión de 53 a 44 ms.
+- **En la Retroid:** de 86 ms la peor imagen al atravesar humo a 20,7 ms; ningún
+  segundo por debajo de 57 fps en una misión entera.
+- Ver `docs/14-etapa8.md`, paso 6.
+
+## 2026-10-21 — Vibración del DualShock, pausa al volver, salir al menú
+
+- **Vibración.** El juego la soporta: presentando el mando analógico como
+  DualShock (`PadStateStable`), configura el motor grande y escribe su fuerza
+  (`PSX_PAD_LOG=1` en el PC). La app la pasa al motor del aparato; comprobado
+  con `dumpsys vibrator_manager`.
+- **Pausa al volver a la app y salir al menú** (SELECT + START 1,5 s):
+  probados en la Retroid por adb.
+- **La tarjeta de memoria** se escribe de forma atómica.
+- Detalles: `docs/12-etapa7.md`, paso 9.
+
+## 2026-10-21 — Rendimiento: un tirón por segundo era la propia medida
+
+- **La 1.12-alfa en la Retroid** (4x con bilineal, vuelo de la primera misión)
+  tenía 1,10 vueltas de presentación de más de 20 ms por segundo: una cada
+  segundo.
+- **Causa:** el `glFinish()` que mide el tiempo de GPU una vez por segundo.
+- **Ahora:**
+  - esa medida es opcional;
+  - los hilos van con prioridad de pantalla y fijados a los núcleos rápidos;
+  - el stencil no se guarda entre imágenes.
+- **Resultado:** 0,10 vueltas lentas por segundo; la vuelta más larga, de
+  21,6 a 17,6 ms de media.
+- **Cómo reproducirlo:** `tools/retroid_medir.sh` y `tools/logcat_resumen.py`,
+  sin tocar el aparato. Detalles: `docs/14-etapa8.md`, paso 5.
 
 ## 2026-10-20 — Alta resolución y filtro bilineal (v1.12-alfa)
 

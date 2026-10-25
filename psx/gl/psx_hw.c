@@ -62,7 +62,7 @@ static const char *FS =
     "  else if (abr == 1) o = vec4(c, 0.0); else o = vec4(c * 0.25, 0.0); }\n"
     "uint fetch(int x, int y) {\n"
     "  x &= 1023; y &= 511;\n"
-    "  for (int i = (v_tex.w >> 20) - 1; i >= 0; i--) {   /* la subida mas reciente que la cubre */\n"
+    "  for (int i = (v_tex.w >> 20) - 1, i0 = (v_tex.x >> 25) & 127; i >= i0; i--) {   /* la subida mas reciente que la cubre */\n"
     "    ivec4 r = u_up[i]; int rx = r.x & 0xFFFF, ry = r.x >> 16;\n"
     "    if (x >= rx && y >= ry && x < rx + (r.y & 0xFFFF) && y < ry + (r.y >> 16))\n"
     "      return texelFetch(u_atlas, ivec2((r.z & 0xFFFF) + x - rx, (r.z >> 16) + y - ry), 0).r;\n"
@@ -73,7 +73,7 @@ static const char *FS =
     "  int u = c.x & 255, v = c.y & 255;\n"
     "  int tw = v_tex.w & 0xFFFFF, mx = tw & 31, my = (tw >> 5) & 31, ox = (tw >> 10) & 31, oy = (tw >> 15) & 31;\n"
     "  u = (u & ~(mx * 8)) | ((ox & mx) * 8); v = (v & ~(my * 8)) | ((oy & my) * 8);\n"
-    "  int tpx = v_tex.x & 0xFFFF, tpy = v_tex.x >> 16, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
+    "  int tpx = v_tex.x & 0xFFFF, tpy = (v_tex.x >> 16) & 511, cx = v_tex.y & 0xFFFF, cy = v_tex.y >> 16;\n"
     "  if (depth == 0) { uint w = fetch(tpx + u / 4, tpy + v); return fetch(cx + int((w >> uint((u & 3) * 4)) & 15u), cy); }\n"
     "  if (depth == 1) { uint w = fetch(tpx + u / 2, tpy + v); return fetch(cx + int((w >> uint((u & 1) * 8)) & 255u), cy); }\n"
     "  return fetch(tpx + u, tpy + v); }\n"
@@ -93,7 +93,7 @@ static const char *FS =
     "    vec3 c = floor(clamp(floor(col + 0.001) + dith(flags), 0.0, 255.0) / 8.0);\n"
     "    put((c * 8.0 + floor(c / 4.0)) / 255.0, semi, abr); return; }\n"
     "  uint t; vec3 tc;\n"
-    "  bool filt = u_filter != 0 && (flags & 8) != 0;\n"
+    "  bool filt = u_filter != 0 && (flags & 8) != 0 && (u_filter == 2 || !semi);   /* (paso 6) lo semitransparente (humo), sin filtro */\n"
     "  if (filt) {   /* bilineal: los 4 vecinos dentro de la textura del poligono; los transparentes no cuentan.\n"
     "                 * El del pixel (el de la PS1, para el bit 15) es uno de ellos */\n"
     "    vec2 st = uv - 0.5; vec2 f = st - floor(st); ivec2 b = ivec2(floor(st)), near = ivec2(step(0.5, f));\n"
@@ -118,7 +118,9 @@ static const char *FS =
     "  put((c * 8.0 + floor(c / 4.0)) / 255.0, semi && stp, abr);\n"
     "}\n";
 
-static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_stencil;
+static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_outm, g_stencil;
+static GLuint g_mcopy, g_mcopy_fbo;   /* (paso 10) copia del bit 15 para rehacer el stencil */
+static int g_mcopy_w, g_mcopy_h;   /* g_outm: el bit 15 de g_out (paso 10) */
 /* atlas de las subidas (paso 3b): sin subidas a mitad de imagen, que en la GPU por baldosas cortan el
  * dibujo (medido en la Retroid: de 54,6 a 59,6 fps al quitarlas) */
 #define NATLAS 128
@@ -238,8 +240,12 @@ void psx_hw_shutdown(void) {
     glDeleteTextures(3, g_atlas);
     for (int i = 0; i < NVTEX; i++) { free(g_shadow[i]); g_shadow[i] = NULL; }
     if (g_out) glDeleteTextures(1, &g_out);
+    if (g_outm) glDeleteTextures(1, &g_outm);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
     glDeleteFramebuffers(1, &g_fbo);
+    if (g_mcopy) glDeleteTextures(1, &g_mcopy);
+    if (g_mcopy_fbo) glDeleteFramebuffers(1, &g_mcopy_fbo);
+    g_mcopy = g_mcopy_fbo = 0; g_mcopy_w = g_mcopy_h = 0;
     for (int i = 0; i < NTARGET; i++)
         if (g_tg[i].fbo) {
             glDeleteFramebuffers(1, &g_tg[i].fbo); glDeleteTextures(1, &g_tg[i].tex); glDeleteTextures(1, &g_tg[i].mask);
@@ -249,11 +255,15 @@ void psx_hw_shutdown(void) {
     if (g_cprog) { glDeleteProgram(g_cprog); glDeleteVertexArrays(1, &g_cvao); glDeleteBuffers(1, &g_cvbo); glDeleteFramebuffers(1, &g_vfbo); }
     g_cprog = 0;
     free(g_buf);
-    g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_stencil = 0; g_ow = g_oh = 0;
+    g_buf = NULL; g_cap = g_n = 0; g_out = 0; g_outm = 0; g_stencil = 0; g_ow = g_oh = 0;
 }
 
 int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
-int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */   /* medicion: llamadas por imagen */
+int psx_hw_stat_batched, psx_hw_stat_rebuilds;   /* (paso 10) primitivas de dos pasadas dibujadas en grupo */
+int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */
+/* medicion (paso 6): pixeles de la VRAM que pintan las primitivas (con lo superpuesto), los
+ * semitransparentes y los que leen texturas que la lista cambia (recorren el atlas de subidas) */
+double psx_hw_stat_px, psx_hw_stat_px_semi, psx_hw_stat_px_epoch, psx_hw_stat_px_2pass;   /* medicion: llamadas por imagen */
 
 /* lotes: los vertices de un tramo (entre dos subidas de VRAM) se suben de una vez y las
  * llamadas de dibujo se encolan con su estado; asi una imagen son unas pocas decenas de llamadas
@@ -357,25 +367,35 @@ static HwVert *push(int k) {
  * y muchas subidas (explosiones) la GPU de la Retroid tardaba de 30 a 450 ms por imagen a 4x */
 static int read_rect(const PsxHwPrim *p, int r[4]);
 static int clut_rect(const PsxHwPrim *p, int r[4]);
-static int epoch_of(const PsxHwPrim *p) {
+/* (paso 6) y la primera (*first): el shader solo recorre ese tramo. Con mucho humo (texturas que
+ * la lista cambia) cada lectura recorria hasta el principio del atlas */
+static int epoch_of2(const PsxHwPrim *p, int *first) {
+    *first = 0;
     if (!g_epoch) return 0;
-    int r[2][4], n = 0;
+    int r[2][4], n = 0, last = 0;
     if (read_rect(p, r[n])) n++;
     if (clut_rect(p, r[n])) n++;
-    for (int i = g_epoch - 1; i >= 0; i--) {
+    for (int i = 0; i < g_epoch; i++) {
         int x1 = g_up[i][0] & 0xFFFF, y1 = g_up[i][0] >> 16, x2 = x1 + (g_up[i][1] & 0xFFFF) - 1, y2 = y1 + (g_up[i][1] >> 16) - 1;
         for (int k = 0; k < n; k++)
-            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) return i + 1;
+            if (r[k][2] >= x1 && r[k][0] <= x2 && r[k][3] >= y1 && r[k][1] <= y2) {
+                if (!last) *first = i;
+                last = i + 1;
+                break;
+            }
     }
-    return 0;
+    return last;
 }
+static int epoch_of(const PsxHwPrim *p) { int f; return epoch_of2(p, &f); }
 
 static void tex_of(const PsxHwPrim *p, int flags, int32_t t[4]) {
-    t[0] = p->tp_x | p->tp_y << 16;
+    int first;
+    int ep = epoch_of2(p, &first);
+    t[0] = p->tp_x | p->tp_y << 16 | first << 25;   /* (paso 6) bits 25-31: primera subida a mirar */
     t[1] = p->clut_x | p->clut_y << 16;
     if (p->flags & PSX_HWF_MASKSET) flags |= 32;   /* la primitiva pone el bit 15 */
     t[2] = (p->depth & 15) | flags << 4 | (p->abr & 3) << 12;
-    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | epoch_of(p) << 20;
+    t[3] = p->tw_mx | p->tw_my << 5 | p->tw_ox << 10 | p->tw_oy << 15 | ep << 20;
 }
 
 static void vert(HwVert *v, float x, float y, float u, float vv, int r, int g, int b, const int32_t t[4]) {
@@ -590,6 +610,9 @@ static void plan_exact(const PsxHwList *l) {
     }
 }
 
+/* etapa 8, paso 7: decimales de la GTE en los vertices de los triangulos (psx_gpu_subpix_on, ver psx_gpu.h) */
+static int g_subpix = 1;   /* PSX_HW_NOSUBPIX=1: sin ellos (prueba) */
+
 static void apply_upload(const PsxHwPrim *p);
 static void draw_prim_2(const PsxHwPrim *p, int index);
 static void draw_prim(const PsxHwPrim *p, int index) {
@@ -616,12 +639,21 @@ static void apply_upload(const PsxHwPrim *p) {
                 memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
     }
 }
-static void draw_prim_2(const PsxHwPrim *p, int index) {
-    (void)index;
+/* (paso 10) el stencil, desde el bit 15 del segundo bufer: g_rebuild (por defecto; PSX_HW_PASADAS2=1, las dos
+ * pasadas de antes), g_mdirty (alguna primitiva en una pasada lo dejo sin el bit 15 exacto), g_cur_mask (el
+ * segundo bufer del destino) y g_planning (prim_passes solo consulta: agrupacion) */
+static int g_rebuild = 1, g_mdirty, g_planning;
+static GLuint g_cur_mask, g_cur_fbo;
+/* copia del segundo bufer para leerlo: en una GPU por baldosas (Adreno), leer como textura el bufer al
+ * que se esta dibujando da lo que habia en memoria antes de la imagen (los puntos del radar y del mapa
+ * grande desaparecian o parpadeaban en la Retroid; en el PC no pasa). El blit obliga a volcarlo */
+/* (g_mcopy, g_mcopy_fbo: arriba, con el resto de objetos de GL) */
+static void stencil_from_mask(GLuint mask, int ow, int oh);
+/* pasadas de una primitiva (passes[]): 0 normal, o 1 y 2 (texeles con el bit 15 a 0 y a 1) */
+static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
-    int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
-    int32_t t[4];
-    int passes[2], np = 0;
+    int mset = (f & PSX_HWF_MASKSET) != 0;
+    int np = 0;
     /* bit 15 escrito (como la GPU por software): texel con textura (copias: el de origen) | poner
      * mascara (las copias y los rellenos no la usan). Con stencil, las texturas van en dos pasadas
      * para escribir cada valor */
@@ -643,9 +675,61 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
     /* la semitransparencia va en el shader (una pasada), salvo la resta (abr 2) con textura: sus
      * texeles opacos con la mezcla comun y los semitransparentes con la resta */
     int sub = semi && p->abr == 2;
+    /* (paso 10) las que no comprueban la mascara, en una pasada: el stencil se rehace desde el bit 15 del
+     * segundo bufer antes de la siguiente que la comprueba (g_mdirty) */
+    if (exact && g_rebuild && !(f & PSX_HWF_MASKCHK) && (vram || !mset)) { exact = 0; if (g_planning == 0) g_mdirty = 1; }
     if ((sub && tex && !psx_hw_onepass) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
+    return np;
+}
+/* (etapa 8, paso 10) con g_only_pass (1 o 2), de una primitiva de dos pasadas solo esa: los grupos de
+ * primitivas seguidas que no se solapan van pasada a pasada (ver psx_hw_frame_ex) */
+static int g_only_pass;
+static void rebuild_stencil(void) {
+    flush();
+    if (!g_mcopy_fbo) glGenFramebuffers(1, &g_mcopy_fbo);
+    if (g_mcopy_w != g_ow || g_mcopy_h != g_oh) {
+        if (g_mcopy) glDeleteTextures(1, &g_mcopy);
+        glGenTextures(1, &g_mcopy);
+        glBindTexture(GL_TEXTURE_2D, g_mcopy);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, g_ow, g_oh);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, g_vram);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_mcopy_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_mcopy, 0);
+        g_mcopy_w = g_ow; g_mcopy_h = g_oh;
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_cur_fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_mcopy_fbo);
+    glBlitFramebuffer(0, 0, g_ow, g_oh, 0, 0, g_ow, g_oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_cur_fbo);
+    stencil_from_mask(g_mcopy, g_ow, g_oh);
+    /* el estado del dibujo de la lista */
+    glUseProgram(g_prog);
+    glBindVertexArray(g_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    glEnable(GL_SCISSOR_TEST);
+    glEnable(GL_BLEND);
+    glStencilMask(1);
+    g_asc[0] = g_asc[1] = g_asc[2] = g_asc[3] = -1;
+    g_acls = -1; g_ast = -2;
+    g_mdirty = 0;
+    psx_hw_stat_rebuilds++;
+}
+static void draw_prim_2(const PsxHwPrim *p, int index) {
+    int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
+    int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
+    if (mchk && g_mdirty && g_cur_mask) rebuild_stencil();
+    int32_t t[4];
+    int passes[2], np = prim_passes(p, index, passes);
+    int vram = p->kind == PSX_HW_VRAM, fill = p->kind == PSX_HW_FILL;
+    int sub = semi && p->abr == 2;
     for (int k = 0; k < np; k++) {
+        if (g_only_pass && np == 2 && passes[k] != g_only_pass) continue;
         int pass = passes[k], cls = sub && (!tex || pass == 2) ? 1 : 0;
         int st = -1;
         if (g_track) {
@@ -655,6 +739,14 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
         }
         if (fill || (vram && p->ax2 < 0)) state(0, 0, -1, -1, 0, 0, st);
         else state(p->ax1, p->ay1, p->ax2, p->ay2, cls, pass, st);
+        if ((g_only_pass ? g_only_pass == 1 : k == 0) && (p->kind == PSX_HW_TRI || p->kind == PSX_HW_RECT)) {
+            double ar = p->kind == PSX_HW_RECT ? (double)p->x[1] * p->y[1]
+                        : fabs((double)(p->x[1] - p->x[0]) * (p->y[2] - p->y[0]) - (double)(p->x[2] - p->x[0]) * (p->y[1] - p->y[0])) / 2;
+            psx_hw_stat_px += ar;
+            if (semi) psx_hw_stat_px_semi += ar;
+            if (tex && epoch_of(p)) psx_hw_stat_px_epoch += ar;
+            if (np == 2) psx_hw_stat_px_2pass += ar;
+        }
         switch (p->kind) {
         case PSX_HW_TRI: {
             /* (bandera 8: triangulo con textura, el que se filtra) */
@@ -663,7 +755,9 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
             for (int i = 0; i < 3; i++) {
                 int r = p->r[i], g = p->g[i], b = p->b[i];
                 if (!(f & PSX_HWF_GOURAUD)) { r = p->r[0]; g = p->g[0]; b = p->b[0]; }
-                vert(&v[i], p->x[i], p->y[i], p->u[i], p->v[i], r, g, b, t);
+                /* (paso 7) con los decimales de la GTE a mas de 1x: sin saltos de pixel de la PS1 */
+                float sx = g_subpix && g_scale > 1 ? p->fx[i] / 256.0f : 0, sy = g_subpix && g_scale > 1 ? p->fy[i] / 256.0f : 0;
+                vert(&v[i], p->x[i] + sx, p->y[i] + sy, p->u[i], p->v[i], r, g, b, t);
             }
             if (tex && g_scale > 1) set_uvr_tri(p);
             else set_uvr(3);
@@ -932,12 +1026,22 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        /* (paso 10) y su bit 15, como las imagenes conservadas: el stencil se rehace desde el a mitad de lista */
+        if (g_outm) glDeleteTextures(1, &g_outm);
+        glGenTextures(1, &g_outm);
+        glBindTexture(GL_TEXTURE_2D, g_outm);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, ow, oh);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
         if (!g_stencil) glGenRenderbuffers(1, &g_stencil);
         glBindRenderbuffer(GL_RENDERBUFFER, g_stencil);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_STENCIL_INDEX8, ow, oh);
         glBindFramebuffer(GL_FRAMEBUFFER, g_fbo);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_out, 0);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT1, GL_TEXTURE_2D, g_outm, 0);
         glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_STENCIL_ATTACHMENT, GL_RENDERBUFFER, g_stencil);
+        static const GLenum bufs[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glDrawBuffers(2, bufs);
         g_ow = ow; g_oh = oh;
     }
     g_scale = scale; g_x0 = x0; g_y0 = y0;
@@ -947,11 +1051,24 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     int keep = tg && stale && tg->valid;   /* se parte de la imagen conservada */
     GLuint dst = real ? tg->fbo : g_fbo;
     if (keep && !real) {
+        /* (paso 5) solo el color: el stencil lo rehace stencil_from_mask justo despues. Y lo que habia
+         * antes en g_out no se carga (en la GPU por baldosas, cada carga lee la imagen entera) */
         glBindFramebuffer(GL_READ_FRAMEBUFFER, tg->fbo);
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_fbo);
-        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT | GL_STENCIL_BUFFER_BIT, GL_NEAREST);
+        static const GLenum all[2] = {GL_COLOR_ATTACHMENT0, GL_STENCIL_ATTACHMENT};
+        glInvalidateFramebuffer(GL_DRAW_FRAMEBUFFER, 2, all);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        /* (paso 10) y su bit 15 (segundo bufer de cada uno), para rehacer el stencil a mitad de lista */
+        static const GLenum b1[2] = {GL_NONE, GL_COLOR_ATTACHMENT1}, b2[2] = {GL_COLOR_ATTACHMENT0, GL_COLOR_ATTACHMENT1};
+        glReadBuffer(GL_COLOR_ATTACHMENT1);
+        glDrawBuffers(2, b1);
+        glBlitFramebuffer(0, 0, ow, oh, 0, 0, ow, oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+        glDrawBuffers(2, b2);
+        glReadBuffer(GL_COLOR_ATTACHMENT0);
     }
     g_last_tex = real ? tg->tex : g_out;
+    g_cur_mask = real ? tg->mask : g_outm;
+    g_cur_fbo = dst;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
     if (keep && !psx_hw_no_maskpass) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
@@ -1056,11 +1173,67 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     glUniform1i(u_atlas, 3);
     if (nup) glUniform4iv(u_up, nup, &g_up[0][0]);
     /* primitivas; las UPLOAD actualizan la textura en su sitio (las adelantadas ya estan) */
-    for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
+    static int pas2 = -1;
+    if (pas2 < 0) pas2 = getenv("PSX_HW_PASADAS2") != NULL;
+    g_rebuild = !pas2;
+    g_mdirty = 0;
+    static int nosp = -1;
+    if (nosp < 0) nosp = getenv("PSX_HW_NOSUBPIX") != NULL;
+    g_subpix = !nosp;
+    /* (etapa 8, paso 10) primitivas seguidas de dos pasadas que no se solapan entre si: la pasada 1 de
+     * todas y luego la 2 (ningun pixel lo tocan dos del grupo: el resultado es el mismo). Iban pasada 1,
+     * 2, 1, 2...: dos llamadas por primitiva. El efecto del virus de la mision 19 (miles de primitivas
+     * sobre la zona que comprueba la mascara) daba 4.400-5.200 llamadas y 50-114 ms de GPU por imagen
+     * en la Retroid. PSX_HW_NOLOTE=1: sin agrupar (prueba) */
+    static int nolote = -1;
+    if (nolote < 0) nolote = getenv("PSX_HW_NOLOTE") != NULL;
+    enum { RUN = 64 };
+    for (int i = 0; i < l->n;) {
+        const PsxHwPrim *p = &l->p[i];
+        int pp[2], j = i + 1;
+        g_planning = 1;
+        int two = !nolote && p->kind != PSX_HW_UPLOAD && prim_passes(p, i, pp) == 2;
+        g_planning = 0;
+        if (two) {
+            static int bx[RUN][4];
+            int nb = 0;
+            bbox(p, &bx[0][0], &bx[0][1], &bx[0][2], &bx[0][3]);
+            nb = 1;
+            for (; j < l->n && j - i < RUN; j++) {
+                const PsxHwPrim *q = &l->p[j];
+                g_planning = 1;
+                int q2 = q->kind != PSX_HW_UPLOAD && prim_passes(q, j, pp) == 2;
+                g_planning = 0;
+                if (!q2) break;
+                int x1, y1, x2, y2, hit = 0;
+                bbox(q, &x1, &y1, &x2, &y2);
+                for (int k = 0; k < nb && !hit; k++) hit = x1 < bx[k][2] && bx[k][0] < x2 && y1 < bx[k][3] && bx[k][1] < y2;
+                if (hit) break;
+                bx[nb][0] = x1; bx[nb][1] = y1; bx[nb][2] = x2; bx[nb][3] = y2; nb++;
+            }
+            if (j - i > 1) {
+                for (g_only_pass = 1; g_only_pass <= 2; g_only_pass++)
+                    for (int k = i; k < j; k++) draw_prim_2(&l->p[k], k);
+                g_only_pass = 0;
+                psx_hw_stat_batched += j - i;
+                i = j;
+                continue;
+            }
+        }
+        draw_prim(p, i);
+        i++;
+    }
     flush();
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
     glDisable(GL_STENCIL_TEST);
+    /* (paso 5) el stencil no se guarda: ninguna imagen lo lee despues (las conservadas lo rehacen con
+     * stencil_from_mask, las intermedias tambien y las que parten de la VRAM lo escriben entero). En la
+     * GPU por baldosas, no escribirlo a memoria ahorra 1,2 MB por imagen a 4x */
+    static const GLenum st[1] = {GL_STENCIL_ATTACHMENT}, stm[2] = {GL_STENCIL_ATTACHMENT, GL_COLOR_ATTACHMENT1};
+    /* (paso 10) el bit 15 de g_out tampoco: solo sirve dentro de la imagen */
+    if (!real) glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, stm);
+    else glInvalidateFramebuffer(GL_FRAMEBUFFER, 1, st);
     glBindVertexArray(0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
     if (real) tg->valid = 1;

@@ -30,6 +30,14 @@ case "$REGION" in
     libre) REGIONS=; APK="AC3Recomp-$VERSION.apk"; PKG=; LABEL= ;;
     *) echo "REGION debe ser libre (por defecto), all, eu o us"; exit 1 ;;
 esac
+# DESARROLLO=1 (etapa 8, paso 9): APK de desarrollo, NO se publica. Paquete propio (convive con la app
+# normal) y, tras abrir el disco, la lista de las 41 misiones (nombres leidos del disco) para entrar
+# directamente en una (game_main.c, AC3_DEV)
+DEV_CF=
+if [ -n "$DESARROLLO" ]; then
+    [ "$REGION" = libre ] || { echo "DESARROLLO=1 solo con el APK libre"; exit 1; }
+    APK="AC3Recomp-dev-$VERSION.apk"; PKG=com.vzepec.ac3game.dev; LABEL="AC3 Dev"; DEV_CF=-DAC3_DEV
+fi
 SDK=${ANDROID_HOME:-$HOME/tools/android-sdk}
 NDK=${NDK:-$SDK/ndk/30.0.16248370}
 BT=${BT:-$SDK/build-tools/37.0.0}
@@ -97,7 +105,7 @@ if [ "$REGION" = libre ]; then
         "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" \
         "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c" "$ROOT/psx/src/mem.c" "$ROOT/psx/src/gte.c" "$ROOT/psx/src/libgte.c" \
         "$ROOT/psx/src/libgpu.c"
-    $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
+    $CC -O2 $CF -DAC3_LIBRE $DEV_CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 else
     $CC -O2 $CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"

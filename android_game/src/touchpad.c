@@ -64,14 +64,34 @@ static GLuint g_tex, g_prog, g_vao, g_vbo;
 
 void touchpad_set_mode(int mode) { g_mode = mode; g_visible = mode != 2; }
 
-void touchpad_set_atlas(const uint32_t *argb, int w, int h) {
+/* ARGB sin premultiplicar (Bitmap.getPixels) -> RGBA premultiplicado */
+static uint32_t *premul(const uint32_t *argb, int w, int h) {
     uint32_t *a = malloc((size_t)w * h * 4);
-    if (!a) return;
-    for (int i = 0; i < w * h; i++) {   /* ARGB sin premultiplicar (Bitmap.getPixels) -> RGBA premultiplicado */
+    if (!a) return NULL;
+    for (int i = 0; i < w * h; i++) {
         uint32_t c = argb[i], al = c >> 24;
         uint32_t r = ((c >> 16) & 255) * al / 255, g = ((c >> 8) & 255) * al / 255, b = (c & 255) * al / 255;
         a[i] = r | g << 8 | b << 16 | al << 24;
     }
+    return a;
+}
+
+static uint32_t *g_label;
+static int g_lw, g_lh, g_label_new;
+static GLuint g_ltex;
+
+void touchpad_set_label(const uint32_t *argb, int w, int h) {
+    uint32_t *a = premul(argb, w, h);
+    if (!a) return;
+    pthread_mutex_lock(&g_mu);
+    free(g_label);
+    g_label = a; g_lw = w; g_lh = h; g_label_new = 1;
+    pthread_mutex_unlock(&g_mu);
+}
+
+void touchpad_set_atlas(const uint32_t *argb, int w, int h) {
+    uint32_t *a = premul(argb, w, h);
+    if (!a) return;
     pthread_mutex_lock(&g_mu);
     free(g_atlas);
     g_atlas = a; g_aw = w; g_ah = h; g_atlas_new = 1;
@@ -233,10 +253,30 @@ static GLuint sh(GLenum t, const char *src) {
 }
 
 void touchpad_gl_lost(void) {
-    g_tex = g_prog = g_vao = g_vbo = 0;
+    g_tex = g_prog = g_vao = g_vbo = g_ltex = 0;
     pthread_mutex_lock(&g_mu);
     if (g_atlas) g_atlas_new = 1;
+    if (g_label) g_label_new = 1;
     pthread_mutex_unlock(&g_mu);
+}
+
+static void prog_init(void) {
+    if (g_prog) return;
+    g_prog = glCreateProgram();
+    glAttachShader(g_prog, sh(GL_VERTEX_SHADER, VS));
+    glAttachShader(g_prog, sh(GL_FRAGMENT_SHADER, FS));
+    glLinkProgram(g_prog);
+    glGenVertexArrays(1, &g_vao);
+    glGenBuffers(1, &g_vbo);
+    glBindVertexArray(g_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 24, (void *)0);
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 24, (void *)8);
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 24, (void *)16);
+    glBindVertexArray(0);
 }
 
 static float g_q[(NCTL + 2) * 6 * 6];
@@ -270,23 +310,7 @@ void touchpad_draw(void) {
         g_atlas_new = 0;
     }
     if (!g_tex) { pthread_mutex_unlock(&g_mu); return; }
-    if (!g_prog) {
-        g_prog = glCreateProgram();
-        glAttachShader(g_prog, sh(GL_VERTEX_SHADER, VS));
-        glAttachShader(g_prog, sh(GL_FRAGMENT_SHADER, FS));
-        glLinkProgram(g_prog);
-        glGenVertexArrays(1, &g_vao);
-        glGenBuffers(1, &g_vbo);
-        glBindVertexArray(g_vao);
-        glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
-        glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 24, (void *)0);
-        glEnableVertexAttribArray(1);
-        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 24, (void *)8);
-        glEnableVertexAttribArray(2);
-        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, 24, (void *)16);
-        glBindVertexArray(0);
-    }
+    prog_init();
     g_nq = 0;
     for (int i = 0; i < NCTL; i++) {
         const Ctl *c = &LAYOUT[i];
@@ -318,6 +342,48 @@ void touchpad_draw(void) {
     glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
     glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)g_nq * 36 * sizeof(float), g_q, GL_STREAM_DRAW);
     glDrawArrays(GL_TRIANGLES, 0, g_nq * 6);
+    glBindVertexArray(0);
+    glDisable(GL_BLEND);
+}
+
+void touchpad_draw_label(void) {
+    if (!g_w || !g_h) return;
+    pthread_mutex_lock(&g_mu);
+    if (g_label_new && g_label) {
+        if (!g_ltex) glGenTextures(1, &g_ltex);
+        glBindTexture(GL_TEXTURE_2D, g_ltex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, g_lw, g_lh, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_label);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        g_label_new = 0;
+    }
+    int lw = g_lw, lh = g_lh;
+    pthread_mutex_unlock(&g_mu);
+    if (!g_ltex) return;
+    prog_init();
+    /* centrado, a su tamano en dp (como mucho el 80 % del ancho) */
+    float w = lw * g_dp / 2.25f, h = lh * g_dp / 2.25f;   /* el rotulo se dibuja para 2,25 px por dp */
+    if (w > g_w * 0.8f) { h *= g_w * 0.8f / w; w = g_w * 0.8f; }
+    float x1 = -w / g_w, x2 = w / g_w, y1 = h / g_h, y2 = -h / g_h;
+    float v[6][6] = {{x1, y1, 0, 0, 1, 0}, {x2, y1, 1, 0, 1, 0}, {x1, y2, 0, 1, 1, 0},
+                     {x2, y1, 1, 0, 1, 0}, {x2, y2, 1, 1, 1, 0}, {x1, y2, 0, 1, 1, 0}};
+    glViewport(0, 0, g_w, g_h);
+    glDisable(GL_SCISSOR_TEST);
+    glDisable(GL_STENCIL_TEST);
+    glEnable(GL_BLEND);
+    glBlendEquation(GL_FUNC_ADD);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA);
+    glUseProgram(g_prog);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, g_ltex);
+    glUniform1i(glGetUniformLocation(g_prog, "u_tex"), 0);
+    glBindVertexArray(g_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, g_vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof v, v, GL_STREAM_DRAW);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
     glBindVertexArray(0);
     glDisable(GL_BLEND);
 }

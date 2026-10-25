@@ -105,7 +105,50 @@ static void stale_tex(const PsxHwPrim *p, int nv) {
 }
 
 static void rec_dirty(int x1, int y1, int x2, int y2);
+/* etapa 8, paso 7: decimales de las proyecciones (ver psx_gpu.h). Direccionamiento abierto por el valor
+ * entero; generacion para vaciarla sin borrar */
+int psx_gpu_subpix_on;
+#define SPBITS 17
+typedef struct { uint32_t key, gen; uint8_t fx, fy, amb; } SubPix;   /* amb: dos vertices distintos con ese entero */
+static _Thread_local SubPix *g_sp;
+static _Thread_local uint32_t g_sp_gen = 1;
+int psx_gpu_subpix_hits, psx_gpu_subpix_miss, psx_gpu_subpix_amb;   /* medicion */
+static int g_sp_noamb = -1;   /* prueba: PSX_SUBPIX_NOAMB=1, sin marcar los ambiguos (el primero manda, como antes) */
+void psx_gpu_subpix_store(uint32_t sxy, uint32_t fx16, uint32_t fy16) {
+    if (g_sp_noamb < 0) g_sp_noamb = getenv("PSX_SUBPIX_NOAMB") != NULL;
+    if (!g_sp && !(g_sp = calloc((size_t)1 << SPBITS, sizeof *g_sp))) return;
+    uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
+    for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
+        SubPix *e = &g_sp[h];
+        if (e->gen != g_sp_gen) { e->gen = g_sp_gen; e->key = sxy; e->fx = (uint8_t)(fx16 >> 8); e->fy = (uint8_t)(fy16 >> 8); e->amb = 0; return; }
+        /* ya esta: el mismo vertice da los mismos decimales. Otros decimales son de otro vertice que cae en el
+         * mismo pixel: ese entero queda sin decimales (antes mandaba el primero, que cambia de una imagen a otra:
+         * las texturas de los bordes en 16:9 temblaban en la Retroid, con muchos vertices lejanos juntos; etapa 8,
+         * paso 10). La misma respuesta para todos los que lo usan: sin grietas */
+        if (e->key == sxy) {
+            if (!g_sp_noamb && (e->fx != (uint8_t)(fx16 >> 8) || e->fy != (uint8_t)(fy16 >> 8))) { e->amb = 1; psx_gpu_subpix_amb++; }
+            return;
+        }
+    }
+}
+static int subpix_get(uint32_t sxy, int *fx, int *fy) {
+    *fx = *fy = 0;
+    if (!g_sp) return 0;
+    uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
+    for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
+        SubPix *e = &g_sp[h];
+        if (e->gen != g_sp_gen) return 0;
+        if (e->key == sxy) {
+            if (e->amb) return 0;
+            *fx = e->fx; *fy = e->fy;
+            return 1;
+        }
+    }
+    return 0;
+}
+
 void psx_gpu_record(PsxHwList *list, int only) {
+    if (!list) g_sp_gen++;   /* fin de una lista: las proyecciones siguientes son de otra imagen */
     g_rec = list;
     g_rec_only = list && only;
     if (list) list->dirty = list->blit = list->nread = 0;
@@ -177,6 +220,7 @@ static PsxHwPrim *rec_new(PsxGpu *g, int kind, int flags) {
     p->tw_mx = (uint8_t)g->tw_mask_x; p->tw_my = (uint8_t)g->tw_mask_y;
     p->tw_ox = (uint8_t)g->tw_off_x; p->tw_oy = (uint8_t)g->tw_off_y;
     p->ax1 = (int16_t)g->area_x1; p->ay1 = (int16_t)g->area_y1; p->ax2 = (int16_t)g->area_x2; p->ay2 = (int16_t)g->area_y2;
+    p->ox = (int16_t)g->off_x; p->oy = (int16_t)g->off_y;
     return p;
 }
 
@@ -365,7 +409,7 @@ AINLINE void tri_span(PsxGpu *g, const TexCtx *tc, int y, int xl, int xr, const 
 
 /* ---- triangulos ---- */
 
-typedef struct { int x, y, r, g, b, u, v; } Vert;
+typedef struct { int x, y, r, g, b, u, v, fx, fy; } Vert;   /* fx, fy: decimales (1/256 px, paso 7) */
 
 static int64_t edge(const Vert *a, const Vert *b, int px, int py) {
     return (int64_t)(b->x - a->x) * (py - a->y) - (int64_t)(b->y - a->y) * (px - a->x);
@@ -404,6 +448,7 @@ static void triangle(PsxGpu *g, Vert v0, Vert v1, Vert v2, int gouraud, int text
                 p->x[i] = (int16_t)w[i]->x; p->y[i] = (int16_t)w[i]->y;
                 p->r[i] = (uint8_t)w[i]->r; p->g[i] = (uint8_t)w[i]->g; p->b[i] = (uint8_t)w[i]->b;
                 p->u[i] = (uint8_t)w[i]->u; p->v[i] = (uint8_t)w[i]->v;
+                p->fx[i] = (uint8_t)w[i]->fx; p->fy[i] = (uint8_t)w[i]->fy;
             }
             p->clut_x = (uint16_t)cx; p->clut_y = (uint16_t)cy;
             stale_tex(p, 3);
@@ -546,6 +591,11 @@ static void do_polygon(PsxGpu *g, const uint32_t *c) {
         uint32_t xy = c[k++];
         v[i].x = sx11(xy) + g->off_x;
         v[i].y = sx11(xy >> 16) + g->off_y;
+        v[i].fx = v[i].fy = 0;
+        if (psx_gpu_subpix_on && g_rec) {
+            if (subpix_get(xy, &v[i].fx, &v[i].fy)) psx_gpu_subpix_hits++;
+            else psx_gpu_subpix_miss++;
+        }
         v[i].r = col & 255; v[i].g = (col >> 8) & 255; v[i].b = (col >> 16) & 255;
         v[i].u = v[i].v = 0;
         if (tex) {
@@ -762,6 +812,76 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w) {
         execute(g, g->cmd);
         g->cmd_len = 0;
     }
+}
+
+/* etapa 8, paso 10: si alguna primitiva con textura (poligono o sprite) lee de alguno de los rectangulos
+ * (inclusivos, de la VRAM): la imagen usada como textura. La estela del efecto del virus (mision 19) mezcla
+ * cada imagen con la anterior asi; una intermedia no tiene esa imagen anterior y salian texturas pegadas
+ * y el cielo temblando. tpage: el estado E1 de la GPU al empezar la lista (para los sprites) */
+static int tex_hits(int tpage, int u1, int u2, int v1, int v2, const int (*r)[4], int nr) {
+    int depth = (tpage >> 7) & 3, sh = depth == 0 ? 2 : depth == 1 ? 1 : 0;
+    int x0 = (tpage & 15) * 64, y0 = ((tpage >> 4) & 1) * 256;
+    int x1 = x0 + (u1 >> sh), x2 = x0 + (u2 >> sh), y1 = y0 + v1, y2 = y0 + v2;
+    for (int k = 0; k < nr; k++)
+        if (x2 >= r[k][0] && x1 <= r[k][2] && y2 >= r[k][1] && y1 <= r[k][3]) return 1;
+    return 0;
+}
+int psx_gpu_list_textures_from(uint32_t addr, const uint8_t *ram, const uint8_t *scratch, int tpage, const int (*rects)[4], int nrects) {
+    int guard = 0, need = 0, len = 0, poly = 0;
+    long xfer = 0;
+    uint32_t cmd[16];
+    while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard <= 200000) {
+        const uint32_t *p = (addr & 0xFFFFFC00u) == PSX_SCRATCH_ADDR ? (const uint32_t *)(scratch + (addr & 0x3FC))
+                                                                    : (const uint32_t *)(ram + (addr & (PSX_RAM_SIZE - 4)));
+        uint32_t tag = p[0];
+        int n = tag >> 24;
+        for (int i = 1; i <= n; i++) {
+            uint32_t w = p[i];
+            if (xfer > 0) { xfer--; continue; }
+            if (poly) { if ((w & 0xF000F000u) == 0x50005000u && len >= 2) poly = len = 0; else len++; continue; }
+            if (len == 0) {
+                need = cmd_length(w);
+                if ((w >> 24) >= 0x48 && (w >> 24) < 0x60 && ((w >> 24) & 0x08)) { poly = 1; len = 1; continue; }
+            }
+            if (len < 16) cmd[len] = w;
+            len++;
+            if (len < need) continue;
+            int op = cmd[0] >> 24;
+            if (op >= 0x20 && op < 0x40 && (op & 0x04)) {   /* poligono con textura: la pagina va en el uv del segundo */
+                int nv = (op & 0x08) ? 4 : 3, gour = (op & 0x10) != 0, j = 1, tp = tpage;
+                int u1 = 255, u2 = 0, v1 = 255, v2 = 0;
+                for (int k = 0; k < nv && j < 16; k++) {
+                    if (gour && k > 0) j++;
+                    j++;   /* vertice */
+                    uint32_t uv = cmd[j++];
+                    int u = uv & 0xFF, v = (uv >> 8) & 0xFF;
+                    if (u < u1) u1 = u;
+                    if (u > u2) u2 = u;
+                    if (v < v1) v1 = v;
+                    if (v > v2) v2 = v;
+                    if (k == 1) tp = (int)(uv >> 16);
+                }
+                if (tex_hits(tp, u1, u2, v1, v2, rects, nrects)) return 1;
+            } else if (op >= 0x60 && op < 0x80 && (op & 0x04)) {   /* sprite con textura: la pagina de E1 */
+                int size = (op >> 3) & 3, sw = 1, shh = 1;
+                if (size == 0) { sw = cmd[3] & 0x3FF; shh = (cmd[3] >> 16) & 0x1FF; }
+                else if (size == 2) sw = shh = 8;
+                else if (size == 3) sw = shh = 16;
+                int u = cmd[2] & 0xFF, v = (cmd[2] >> 8) & 0xFF;
+                int u2 = u + sw - 1, v2 = v + shh - 1;
+                if (u2 > 255) u = 0, u2 = 255;
+                if (v2 > 255) v = 0, v2 = 255;
+                if (tex_hits(tpage, u, u2, v, v2, rects, nrects)) return 1;
+            } else if (op == 0xE1) tpage = (int)(cmd[0] & 0x1FF);
+            else if (op >= 0xA0 && op < 0xC0) {
+                long cw = ((cmd[2] - 1) & 1023) + 1, ch = (((cmd[2] >> 16) - 1) & 511) + 1;
+                xfer = (cw * ch + 1) / 2;
+            }
+            len = 0;
+        }
+        addr = 0x80000000u | (tag & 0xFFFFFF);
+    }
+    return 0;
 }
 
 /* etapa 8, paso 2: si la lista copia (VRAM -> VRAM) desde esa zona, sin dibujar nada. El efecto de

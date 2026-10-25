@@ -47,6 +47,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
@@ -126,11 +127,18 @@ static struct {
     volatile int show_stats;       /* contador y estadisticas en pantalla (opcion del menu de inicio) */
     volatile int scale;            /* resolucion interna de la GPU (etapa 8, paso 4; opcion del menu): 1-4 */
     volatile int filter;           /* filtro de texturas: 0 el de la PS1, 1 bilineal (opcion del menu) */
+    /* etapa 7, paso 9: al volver a la app (tapa, inicio, otra app) el juego sigue en pausa hasta pulsar
+     * algo; SELECT + START mantenidos 1,5 s vuelven al menu de inicio */
+    volatile int hold;
+    double exit_t0;
+    volatile int in_mission;       /* el juego dibuja terreno (la mision en vuelo) */
+    volatile int rumble_extra;     /* vibracion extra (no del original) al disparar y acelerar: opcion */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
-     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3" (-1: lo normal; modo: el de L3+R3, 1 = software
-     * a 16:9 con intermedias, fuera del ciclo) */
+     * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1 vibrar=N" (-1: lo normal; modo: el de
+     * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
+     * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -141,11 +149,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1, .dbg_inter = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1;
     if (f) {
         char k[32];
         int v;
@@ -155,12 +163,32 @@ static void dbg_read(void) {
             else if (!strcmp(k, "solo")) o = v;
             else if (!strcmp(k, "filtro")) fl = v;
             else if (!strcmp(k, "modo")) md = v;
+            else if (!strcmp(k, "gpu")) gp = v;
+            else if (!strcmp(k, "vibrar")) rb = v;
+            else if (!strcmp(k, "decimales")) sp = v;
+            else if (!strcmp(k, "volcar")) dd = v;
+            /* (etapa 8, paso 10) pruebas de la pantalla ancha, antes de entrar en la mision: sin la
+             * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
+            else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
+            else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
+            else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */
+            else if (!strcmp(k, "pasadas") && v == 2) setenv("PSX_HW_PASADAS2", "1", 1);   /* (paso 10) el bit 15 en dos pasadas, como antes */
+            else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
+            else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
+            else if (!strcmp(k, "palanca")) pal = v;
+            else if (!strcmp(k, "intermedias")) inter = v;   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
+            else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
         }
         fclose(f);
     }
     if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
         LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
-    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl;
+    G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp; G.dbg_rumble = rb;
+    if (sp != G.dbg_subpix) LOG("depurar: decimales %d", sp);
+    G.dbg_subpix = sp;
+    G.dbg_cam = cam; G.dbg_pal = pal; G.dbg_alb = alb; G.dbg_inter = inter;
+    if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
+    else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
     G.dbg_mode = md;
 }
@@ -181,6 +209,13 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv
 
 /* opciones del menu de inicio (LauncherActivity), antes de arrancar el juego */
 /* graficos del mando virtual (los dibuja MainActivity) */
+/* el rotulo de la pausa al volver a la app (lo dibuja MainActivity) */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetPauseLabel(JNIEnv *env, jclass cls, jintArray px, jint w, jint h) {
+    (void)cls;
+    jint *p = (*env)->GetIntArrayElements(env, px, NULL);
+    if (p) { touchpad_set_label((const uint32_t *)p, w, h); (*env)->ReleaseIntArrayElements(env, px, p, JNI_ABORT); }
+}
+
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetTouchAtlas(JNIEnv *env, jclass cls, jintArray px, jint w, jint h) {
     (void)cls;
     jint *p = (*env)->GetIntArrayElements(env, px, NULL);
@@ -188,12 +223,13 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetTouchAtlas(
 }
 
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNIEnv *env, jclass cls, jboolean stats, jint scale,
-                                                                             jint filter, jint touch) {
+                                                                             jint filter, jint touch, jboolean rumble_extra) {
     (void)env; (void)cls;
     G.show_stats = stats;   /* (el registro de adb logcat sigue igual) */
     G.scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
     G.filter = filter == 1;
     touchpad_set_mode(touch >= 0 && touch <= 2 ? touch : 0);
+    G.rumble_extra = rumble_extra;
     LOG("opciones: contadores %d, resolucion interna x%d, filtro %d, mando tactil %d", stats, G.scale, G.filter, touch);
 }
 
@@ -218,13 +254,126 @@ static int g_nfrac = 3;   /* intermedias por paso (adaptativo) */
 static int g_late_real, g_late_inter, g_drop_inter;   /* medicion: llegan tarde a su hora; intermedias tiradas sin dibujar */
 static float g_worker_max;
 
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+/* ---- etapa 8, paso 9: APK de desarrollo (DESARROLLO=1 sh android_game/build.sh; NO se publica) ----
+ * Tras abrir el disco, la lista de las 41 misiones (MainActivity.chooseMission) con sus nombres, que
+ * se leen del disco del usuario: la tabla de misiones del overlay 1 (entrada 1 de ACE.BPB), registros
+ * de 12 bytes {puntero al nombre, numero de orden 1, 2, 3...} (US 0xDFE4, EU 0xE58C dentro del
+ * overlay; se busca por esa forma). La elegida se carga directamente: el juego recorre solo menus e
+ * informe (los botones del guion de tools/misiones.py, sin esperar al reloj) y, al arrancar la
+ * mision, se cambia por la elegida (como AC3_MISSION en el PC; validado con las 41) */
+static char g_dev_names[41][64];
+static volatile int g_dev_state;          /* 0 nada, 1 lista a la vista, 2 elegida */
+static volatile int g_dev_mission = -1;
+static volatile int g_dev_nav;            /* el juego va solo hacia la mision */
+
+static uint32_t dev_le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+static int dev_read(uint32_t lba, uint32_t off, uint32_t len, uint8_t *out) {
+    uint8_t raw[2352];
+    while (len) {
+        uint32_t o = off % 2048, n = 2048 - o < len ? 2048 - o : len;
+        if (psx_cd_read_raw(lba + off / 2048, raw) < 0) return -1;
+        memcpy(out, raw + 24 + o, n);   /* modo 2, forma 1: datos tras 24 bytes */
+        out += n; off += n; len -= n;
+    }
+    return 0;
+}
+static void dev_names(void) {
+    for (int i = 0; i < 41; i++) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d", i);
+    CdlFILE fh, fb;
+    uint8_t e[8];
+    if (!CdSearchFile(&fh, "\\ACE.BPH;1") || !CdSearchFile(&fb, "\\ACE.BPB;1")) { LOG("desarrollo: sin ACE.BPH/BPB"); return; }
+    if (dev_read((uint32_t)CdPosToInt(&fh.pos), 0x14 + 8, 8, e)) return;   /* indice: cabecera de 0x14, entrada 1 */
+    uint32_t size = (dev_le32(e) & 0xFFFFFFu) * 4, sec = dev_le32(e + 4), base = R->ovl_base;
+    uint8_t *d = size && size < 0x40000 ? malloc(size) : NULL;
+    if (!d || dev_read((uint32_t)CdPosToInt(&fb.pos), sec * 2048, size, d)) { free(d); LOG("desarrollo: no se lee el overlay 1"); return; }
+#define DEV_STR(p) ((p) >= base && (p) - base < size ? (const char *)d + ((p) - base) : NULL)
+    int found = -1;
+    for (uint32_t o = 0; o + 12 * 41 <= size && found < 0; o += 4) {
+        int k = 0;
+        for (; k < 30; k++) {
+            const char *n = DEV_STR(dev_le32(d + o + 12 * k));
+            if (d[o + 12 * k + 4] != k + 1 || !n || !(n[0] >= 'A' && n[0] <= 'Z')) break;
+        }
+        if (k == 30) found = (int)o;
+    }
+    if (found < 0) { free(d); LOG("desarrollo: no esta la tabla de misiones"); return; }
+    for (int i = 0; i < 41; i++) {
+        const uint8_t *r = d + found + 12 * i;
+        const char *n = r[4] == i + 1 ? DEV_STR(dev_le32(r)) : NULL;
+        char nm[40] = "";
+        if (n) for (int j = 0; j < 39 && n[j] >= 32 && n[j] < 127; j++) { nm[j] = n[j]; nm[j + 1] = 0; }
+        int rep = 1;   /* nombres repetidos (Zero Gravity, Electrosphere): (2), (3) */
+        for (int j = 0; j < i && n; j++) if (strstr(g_dev_names[j], nm) && nm[0]) rep++;
+        if (!nm[0]) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  (sin nombre)", i);
+        else if (rep > 1) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  %s (%d)", i, nm, rep);
+        else snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  %s", i, nm);
+    }
+#undef DEV_STR
+    free(d);
+    LOG("desarrollo: tabla de misiones en el overlay 1 + 0x%X", found);
+}
+/* MainActivity.chooseMission(String[]) desde el hilo principal */
+static void dev_show_list(void) {
+    JavaVM *vm = G.app->activity->vm;
+    JNIEnv *env;
+    if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
+    jobject act = G.app->activity->clazz;
+    jclass cl = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetMethodID(env, cl, "chooseMission", "([Ljava/lang/String;)V");
+    jobjectArray arr = (*env)->NewObjectArray(env, 41, (*env)->FindClass(env, "java/lang/String"), NULL);
+    for (int i = 0; i < 41; i++) {
+        jstring js = (*env)->NewStringUTF(env, g_dev_names[i]);
+        (*env)->SetObjectArrayElement(env, arr, i, js);
+        (*env)->DeleteLocalRef(env, js);
+    }
+    if (m) (*env)->CallVoidMethod(env, act, m, arr);
+    (*env)->DeleteLocalRef(env, arr);
+    (*env)->DeleteLocalRef(env, cl);
+    (*vm)->DetachCurrentThread(vm);
+}
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetMission(JNIEnv *env, jclass cls, jint n) {
+    (void)env; (void)cls;
+    g_dev_mission = n;
+    g_dev_nav = 1;
+    g_dev_state = 2;
+}
+/* al arrancar la mision (la primera vez): la elegida en g_state + 0x390, y el mando vuelve al jugador */
+static void dev_force_mission(RCpu *c) {
+    (void)c;
+    if (g_dev_mission < 0) return;
+    uint32_t st = *(uint32_t *)psx_ptr(R->g_state_ptr);
+    int16_t *m = (int16_t *)psx_ptr(st + 0x390);
+    LOG("desarrollo: el juego arranca la mision %d en el VBlank %d; se carga la %d", *m, VSync(-1), g_dev_mission);
+    *m = (int16_t)g_dev_mission;
+    g_dev_mission = -1;
+    g_dev_nav = 0;
+}
+/* botones hacia la mision (el guion de tools/misiones.py: partida nueva, menus e informe), por VBlank */
+static uint16_t dev_buttons(int v) {
+    int eu = R->refresh == 50;
+    if (eu) {   /* menu de idioma; la mision hacia el VBlank 3500 */
+        if (v >= 320 && v < 326) return PSX_PAD_CROSS;
+        if (v >= 1100 && v < 1108) return PSX_PAD_START;
+        if (v >= 1400 && (v - 1400) % 200 < 6) return PSX_PAD_CROSS;
+    } else {
+        if (v >= 300 && v < 308) return PSX_PAD_START;
+        if (v >= 500 && (v - 500) % 200 < 6) return PSX_PAD_CROSS;
+    }
+    return 0;
+}
+#endif
+
 static void frame_wait(void) {
     static double next;
     double t = now();
-    while (G.paused && G.running) { usleep(20000); next = 0; }
+    while ((G.paused || G.hold) && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / g_refresh;
     double slack = next - t;
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (g_dev_nav) { next = t; slack = 0; }   /* hacia la mision elegida: a toda velocidad */
+#endif
     if (slack > 0) usleep((useconds_t)(slack * 1e6));
     /* cada 50 VBlank: uso del hilo del juego y numero de intermedias adaptativo. Se baja si los
      * hilos de dibujo no terminan a tiempo (pasos saltados) o si el hilo del juego va justo; se
@@ -270,6 +419,9 @@ static void frame_wait(void) {
     static int16_t pcm[882 * 2];   /* el mayor: 882 (PAL); 735 en NTSC */
     psx_spu_render(psx_spu(), pcm, g_spf);
     uint32_t wpos = G.ring_w;
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (!g_dev_nav)   /* (acelerado no se oye) */
+#endif
     if (wpos - G.ring_r <= 16384 - (uint32_t)g_spf) {
         for (int i = 0; i < g_spf; i++) {
             G.ring[((wpos + i) & 16383) * 2] = pcm[i * 2];
@@ -279,7 +431,7 @@ static void frame_wait(void) {
     }
     /* L3+R3 cambia G.gfx_mode en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1, hw_applied = -1;
-    G.interp_enabled = G.gfx_mode != 3;
+    G.interp_enabled = G.gfx_mode != 3 && G.dbg_inter != 0;   /* (depurar: intermedias=0) */
 #ifdef AC3_LIBRE
     static int rr_applied = -1;
     int rr = G.gfx_mode != 3;
@@ -307,6 +459,7 @@ static void frame_wait(void) {
     if (ac3_terrain_count != terrain_last) { terrain_last = ac3_terrain_count; terrain_idle = 0; }
     else if (terrain_idle < 1000) terrain_idle++;
     G.wide_now = MODE_WIDE(G.gfx_mode) && terrain_idle < 15;
+    G.in_mission = terrain_idle < 15;
     psx_gte_wide = G.wide_now ? 0.75f : 1.0f;
     /* etapa 8, paso 2: en la mision con la GPU, la imagen real solo la dibuja la GPU (el software
      * solo interpreta la lista): menos trabajo en el hilo del juego */
@@ -317,8 +470,16 @@ static void frame_wait(void) {
     float tx, ty;
     int tact;
     touchpad_stick(&tx, &ty, &tact);
-    psx_pad_set(0, (uint16_t)(G.buttons | G.keys | touchpad_buttons()), to_axis(tact ? tx : G.lx), to_axis(tact ? ty : G.ly),
-                to_axis(G.rx), to_axis(G.ry));
+    uint16_t pad = (uint16_t)(G.buttons | G.keys | touchpad_buttons());
+    float ry = G.ry, lx = G.lx, ly = G.ly;
+    if (G.dbg_cam) ry = G.dbg_cam / 100.0f;
+    if (G.dbg_pal) ly = G.dbg_pal / 100.0f;
+    if (G.dbg_alb) lx = G.dbg_alb / 100.0f;
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }
+#endif
+    psx_pad_set(0, pad, to_axis(tact ? tx : lx), to_axis(tact ? ty : ly),
+                to_axis(G.rx), to_axis(ry));
     static uint32_t img[640 * 512];
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
@@ -386,8 +547,12 @@ static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, 
 }
 
 /* nucleos rapidos: los de frecuencia maxima >= 75% de la mayor (en el Snapdragon 865 de la
- * Retroid, los 4 Cortex-A77: cpu4-7). Se aplica al hilo que llama */
-static void pin_fast_cores(void) {
+ * Retroid, los 4 Cortex-A77: cpu4-7). Se aplica al hilo que llama, con la prioridad de "pantalla"
+ * de Android (THREAD_PRIORITY_DISPLAY, -4; etapa 8, paso 5: que otros procesos no le quiten turno) */
+static void pin_fast_cores_nice(int nice);
+static void pin_fast_cores(void) { pin_fast_cores_nice(-4); }
+static void pin_fast_cores_nice(int nice) {
+    setpriority(PRIO_PROCESS, (id_t)gettid(), nice);
     long f[32] = {0}, top = 0;
     for (int i = 0; i < 32; i++) {
         char path[96];
@@ -405,7 +570,8 @@ static void pin_fast_cores(void) {
     for (int i = 0; i < 32; i++)
         if (f[i] * 4 >= top * 3) { CPU_SET(i, &set); n++; }
     int r = sched_setaffinity(0, sizeof set, &set);
-    LOG("hilo fijado a %d nucleos rapidos (%ld MHz): %s", n, top / 1000, r == 0 ? "si" : "no");
+    LOG("hilo fijado a %d nucleos rapidos (%ld MHz): %s; prioridad %d", n, top / 1000, r == 0 ? "si" : "no",
+        getpriority(PRIO_PROCESS, (id_t)gettid()));
 }
 
 static void *game_thread(void *arg) {
@@ -429,6 +595,9 @@ static void *game_thread(void *arg) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     ac3_wide_install(R);        /* pantalla ancha: el cono de vision del terreno */
+#ifdef AC3_DEV
+    mipsi_set_hook(R->mission_start, dev_force_mission);   /* la mision elegida en la lista */
+#endif
     if (ac3_rr_install(R) || ac3_rr_async_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
 #else
     rc_register(R->funcs, *R->nfuncs);
@@ -550,6 +719,14 @@ static uint16_t key_button(int32_t k) {
 static int32_t on_input(struct android_app *app, AInputEvent *e) {
     (void)app;
     int32_t type = AInputEvent_getType(e);
+    if (G.hold) {   /* en pausa tras volver: un boton o un toque la quita (y no llega al juego) */
+        int go = (type == AINPUT_EVENT_TYPE_KEY && AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN && key_button(AKeyEvent_getKeyCode(e))) ||
+                 (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN) &&
+                  (AMotionEvent_getAction(e) & AMOTION_EVENT_ACTION_MASK) == AMOTION_EVENT_ACTION_DOWN);
+        if (go) { G.hold = 0; LOG("pausa: se sigue"); }
+        if (type == AINPUT_EVENT_TYPE_KEY && key_button(AKeyEvent_getKeyCode(e))) return 1;
+        if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN)) return 1;
+    }
     if (touchpad_event(e)) return 1;   /* la pantalla tactil: el mando virtual */
     if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK)) {
         touchpad_physical();   /* (modo automatico: con un mando fisico se oculta) */
@@ -602,7 +779,10 @@ static void on_cmd(struct android_app *app, int32_t cmd) {
         }
         break;
     case APP_CMD_TERM_WINDOW: egl_term(); break;
-    case APP_CMD_PAUSE: G.paused = 1; break;
+    case APP_CMD_PAUSE:
+        G.paused = 1;
+        if (G.running) G.hold = 1;   /* al volver, en pausa hasta que se pulse algo */
+        break;
     case APP_CMD_RESUME: G.paused = 0; break;
     default: break;
     }
@@ -707,9 +887,73 @@ static void ask_disc(void) {
     (*vm)->DetachCurrentThread(vm);
 }
 
+/* etapa 7, paso 9: vibracion y salida al menu, desde el hilo que presenta (una vuelta por refresco) */
+static JNIEnv *g_env;   /* este hilo, enganchado a la JVM una vez */
+static void call_java_int(const char *name, int v) {
+    if (!g_env && (*G.app->activity->vm)->AttachCurrentThread(G.app->activity->vm, &g_env, NULL) != JNI_OK) { g_env = NULL; return; }
+    jobject act = G.app->activity->clazz;
+    jclass cl = (*g_env)->GetObjectClass(g_env, act);
+    jmethodID m = (*g_env)->GetMethodID(g_env, cl, name, "(I)V");
+    if (m) (*g_env)->CallVoidMethod(g_env, act, m, v);
+    (*g_env)->DeleteLocalRef(g_env, cl);
+    if ((*g_env)->ExceptionCheck(g_env)) (*g_env)->ExceptionClear(g_env);
+}
+static void app_extras(double t) {
+    /* vibracion: la fuerza que pide el juego (DualShock, motor grande), al cambiar o cada 80 ms mientras
+     * dure (cada orden de Java vibra 120 ms) */
+    static int last = -1;
+    static double last_t;
+    int m = G.running && !G.paused && !G.hold ? (G.dbg_rumble >= 0 ? G.dbg_rumble : psx_pad_motor(0)) : 0;
+    /* vibracion extra (opcion, desactivada por defecto; el original solo vibra con danos y choques): en la
+     * mision, un golpe corto al lanzar un misil (O), traqueteo con la ametralladora (X mantenida) y un
+     * temblor leve con el acelerador (R1). Se suma a la del juego sin taparla (la mayor de las dos) */
+    static int prev_circle;
+    static double missile_t;
+    uint16_t pb = (uint16_t)(G.keys | G.buttons | touchpad_buttons());
+    int circle = (pb & PSX_PAD_CIRCLE) != 0;
+    if (G.rumble_extra && G.in_mission && G.running && !G.paused && !G.hold) {
+        if (circle && !prev_circle) missile_t = t + 0.15;
+        int x = 0;
+        if (t < missile_t) x = 190;
+        else if (pb & PSX_PAD_CROSS) x = ((int)(t * 16) & 1) ? 95 : 45;   /* ~8 golpes por segundo */
+        else if (pb & PSX_PAD_R1) x = 40;
+        if (x > m) m = x;
+    }
+    prev_circle = circle;
+    if ((m > 0) != (last > 0)) LOG("vibracion: %s (fuerza %d)", m > 0 ? "empieza" : "termina", m);
+    if (m != last || (m > 0 && t - last_t > 0.08)) { call_java_int("rumble", m); last = m; last_t = t; }
+    /* SELECT + START mantenidos 1,5 s (mando fisico o tactil): al menu de inicio */
+    uint16_t b = (uint16_t)(G.keys | G.buttons | touchpad_buttons());
+    if ((b & (PSX_PAD_SELECT | PSX_PAD_START)) == (PSX_PAD_SELECT | PSX_PAD_START)) {
+        if (G.exit_t0 == 0) G.exit_t0 = t;
+        else if (t - G.exit_t0 > 1.5) {
+            LOG("SELECT + START: al menu de inicio");
+            call_java_int("rumble", 0);
+            G.exit_t0 = 1e18;   /* una sola vez */
+            ANativeActivity_finish(G.app->activity);
+        }
+    } else if (G.exit_t0 < 1e17) G.exit_t0 = 0;
+}
+
+static void start_game(void) {
+    g_refresh = R->refresh;
+    g_spf = 44100 / g_refresh;
+    G.running = 1;
+    audio_start();
+    pthread_attr_t at;   /* pila grande: el codigo traducido anida mucho */
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 64u << 20);
+    pthread_create(&G.game, &at, game_thread, NULL);
+    pthread_attr_destroy(&at);
+    LOG("juego en marcha");
+}
+
 void android_main(struct android_app *app) {
     G.app = app;
     G.dpy = EGL_NO_DISPLAY;
+    /* el hilo que presenta (este): tambien en los nucleos rapidos, con la prioridad de
+     * THREAD_PRIORITY_URGENT_DISPLAY (-8): una imagen que llega tarde al refresco se ve */
+    pin_fast_cores_nice(-8);
     app->onAppCmd = on_cmd;
     app->onInputEvent = on_input;
     snprintf(G.card_path, sizeof G.card_path, "%s/tarjeta1.mcd", app->activity->internalDataPath);
@@ -736,16 +980,11 @@ void android_main(struct android_app *app) {
                 LOG("el disco no es de ninguna version de este APK: se pide otro");
                 ask_disc();
             } else if (ok) {
-                g_refresh = R->refresh;
-                g_spf = 44100 / g_refresh;
-                G.running = 1;
-                audio_start();
-                pthread_attr_t at;   /* pila grande: el codigo traducido anida mucho */
-                pthread_attr_init(&at);
-                pthread_attr_setstacksize(&at, 64u << 20);
-                pthread_create(&G.game, &at, game_thread, NULL);
-                pthread_attr_destroy(&at);
-                LOG("juego en marcha");
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+                if (g_dev_state == 0) { dev_names(); g_dev_state = 1; dev_show_list(); }   /* arranca al elegir */
+#else
+                start_game();
+#endif
             } else {
                 close(fd);
                 LOG("no se puede leer el disco");
@@ -753,6 +992,9 @@ void android_main(struct android_app *app) {
         } else if (fd >= 0) {
             close(fd);
         }
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+        if (g_dev_state == 2 && !G.running) start_game();
+#endif
         /* la imagen que toca, copiada bajo el cerrojo y presentada fuera de el */
         pthread_mutex_lock(&G.lock);
         double t = now();
@@ -837,7 +1079,8 @@ void android_main(struct android_app *app) {
         static double c_hw_ms, c_swap_ms;   /* GPU: ms de CPU en el dibujo y en eglSwapBuffers, por imagen */
         /* medicion (paso 3): vueltas de este bucle (una por refresco si va bien), la mas larga, las de
          * mas de 20 ms, imagenes reales saltadas que se dibujan igual, y el tiempo de la GPU de una
-         * imagen por segundo (glFinish) */
+         * imagen por segundo (glFinish; desde el paso 5 de la etapa 8, solo con "gpu=1" en depurar.txt:
+         * el glFinish para a la CPU hasta que la GPU acaba, un pequeno tiron cada segundo) */
         static int c_loops, c_slow, c_skipped;
         static double c_loop_max, c_last_loop, c_gpu_ms = -1;
         static int c_measure;
@@ -861,6 +1104,10 @@ void android_main(struct android_app *app) {
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, hilo de dibujo 0 %.1f (redibujo %.1f); modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu,
                     G.st_core, G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, G.st_rr_ms, md);
+            {   /* (paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
+                static int fb_last;
+                if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos leen la imagen como textura (el software la dibuja)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
+            }
             extern int psx_hw_stat_draws, psx_hw_stat_uploads;
             if (c_hw_n) {
                 snprintf(line3, sizeof line3, "GL %.1f  SWAP %.1f", c_hw_ms / c_hw_n, c_swap_ms / c_hw_n);
@@ -877,7 +1124,7 @@ void android_main(struct android_app *app) {
                     "llegan tarde: reales %d, intermedias %d; intermedias tiradas %d; hilo de dibujo, el peor %.1f ms",
                     c_loops, c_loop_max, c_slow, c_skipped, c_gpu_ms, g_late_real, g_late_inter, g_drop_inter, g_worker_max);
             g_late_real = g_late_inter = g_drop_inter = 0;
-            c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = 1;
+            c_loops = c_slow = c_skipped = 0; c_loop_max = 0; c_gpu_ms = -1; c_measure = G.dbg_gpu == 1;
             c_t0 = t; c_vb0 = vb; c_new = 0;
         }
         int hw_drawn = 0;
@@ -889,18 +1136,57 @@ void android_main(struct android_app *app) {
                     int tg[4]; memcpy(tg, rgeo[a], sizeof tg); memcpy(rgeo[a], rgeo[b], sizeof tg); memcpy(rgeo[b], tg, sizeof tg);
                     double td = rdue[a]; rdue[a] = rdue[b]; rdue[b] = td;
                 }
+        /* etapa 8, paso 5: tiempo de GPU de cada vuelta (dibujo y presentacion) con los temporizadores de la
+         * propia GPU (GL_EXT_disjoint_timer_query): se leen unas vueltas despues, sin parar la CPU */
+        static GLuint gq[8];
+        static int gq_head, gq_tail, gq_ok = -1, gq_on;
+        static double gq_sum, gq_max;
+        static int gq_n;
+        if (gq_ok < 0) {
+            const char *ex = (const char *)glGetString(GL_EXTENSIONS);
+            gq_ok = ex && strstr(ex, "GL_EXT_disjoint_timer_query") != NULL;
+            if (gq_ok) glGenQueries(8, gq);
+            LOG("GPU: temporizadores %s", gq_ok ? "si" : "no");
+        }
+        while (gq_ok && gq_tail < gq_head) {
+            GLuint av = 0, ns = 0;
+            glGetQueryObjectuiv(gq[gq_tail & 7], GL_QUERY_RESULT_AVAILABLE, &av);
+            if (!av) break;
+            glGetQueryObjectuiv(gq[gq_tail & 7], GL_QUERY_RESULT, &ns);
+            GLint dis = 0;
+            glGetIntegerv(0x8FBB /* GL_GPU_DISJOINT_EXT */, &dis);
+            if (!dis) { double ms = ns / 1e6; gq_sum += ms; gq_n++; if (ms > gq_max) gq_max = ms; }
+            gq_tail++;
+        }
+        static double gq_t0;
+        if (t - gq_t0 >= 1.0) {
+            if (gq_n && G.running) LOG("GPU (temporizador): %.2f ms por vuelta de media, la peor %.2f ms (%d vueltas)", gq_sum / gq_n, gq_max, gq_n);
+            gq_t0 = t; gq_sum = gq_max = 0; gq_n = 0;
+        }
+        gq_on = gq_ok && gq_head - gq_tail < 8;
+        if (gq_on) glBeginQuery(0x88BF /* GL_TIME_ELAPSED_EXT */, gq[gq_head & 7]);
         /* alta resolucion (etapa 8, paso 4): a mas de 1x, color de 24 bits sin tramado (degradados suaves) */
         static double dbg_t;
         if (t - dbg_t > 1.0) { dbg_t = t; dbg_read(); }
         int scale = G.dbg_scale >= 1 && G.dbg_scale <= 4 ? G.dbg_scale : G.scale;
         psx_hw_truecolor(G.dbg_true >= 0 ? G.dbg_true : scale > 1);
         psx_hw_filter(G.dbg_filter >= 0 ? G.dbg_filter : G.filter);
+        /* (paso 7) decimales de la GTE a mas de 1x: menos temblor de los vertices */
+        psx_gpu_subpix_on = G.dbg_subpix >= 0 ? G.dbg_subpix : scale > 1;
         for (int a = 0; a < nr; a++) psx_hw_frame_ex(&rl[a], rbg[a], rgeo[a][0], rgeo[a][1], rgeo[a][2], rgeo[a][3], scale, 1);
         c_skipped += nr;
         if (hw) {
             if (seq != hw_seq) {
                 double a = now();
                 psx_hw_frame_ex(&hl, hbg, hx0, hy0, hw_w, hw_h, scale, hw_real);
+                if (G.dbg_dump == -2) {   /* depuracion: la lista dibujada, a <externalDataPath>/lista.bin (PsxHwPrim crudos) */
+                    char path[600];
+                    snprintf(path, sizeof path, "%s/lista.bin", G.app->activity->externalDataPath);
+                    FILE *f = fopen(path, "wb");
+                    if (f) { int32_t hd[4] = {hl.n, (int32_t)sizeof(PsxHwPrim), hw_w, hw_h}; fwrite(hd, 4, 4, f); fwrite(hl.p, sizeof(PsxHwPrim), (size_t)hl.n, f); fclose(f); }
+                    LOG("depurar: lista volcada (%d primitivas, %d bytes cada una)", hl.n, (int)sizeof(PsxHwPrim));
+                    G.dbg_dump = 1;
+                }
                 if (c_measure) { c_measure = 0; double g0 = now(); glFinish(); c_gpu_ms = (now() - a) * 1000; (void)g0; }
                 c_hw_ms += (now() - a) * 1000; c_hw_n++; hw_drawn = 1;
                 hw_seq = seq;
@@ -921,6 +1207,9 @@ void android_main(struct android_app *app) {
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         touchpad_draw();   /* el mando virtual, encima de todo */
+        if (G.hold) touchpad_draw_label();   /* "pausa: pulsa un boton" */
+        app_extras(t);
+        if (gq_on) { glEndQuery(0x88BF); gq_head++; }
         double sa = now();
         eglSwapBuffers(G.dpy, G.surf);
         if (hw_drawn) c_swap_ms += (now() - sa) * 1000;

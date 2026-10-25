@@ -656,6 +656,185 @@ interpolación.**
 - precisión de vértices (tipo PGXP), si se ven temblores;
 - otros filtros (xBR).
 
+## Paso 5: rendimiento sin buscar bajones (rama `etapa-8-paso-5`)
+
+Petición del dueño: los bajones que quedan son puntuales y difíciles de
+reproducir. Este paso trae mejoras que valen siempre: se comprueban con el
+comparador (misma imagen) y con la medida media, sin cazar el bajón.
+
+**Cambios:**
+1. **Sin `glFinish()` cada segundo.** La medida del tiempo de GPU paraba la
+   CPU hasta que la GPU acababa, una vez por segundo: una vuelta de
+   presentación lenta (≈21,6 ms) por segundo, es decir, una imagen que se
+   quedaba un refresco más. Ahora es opcional (`gpu=1` en el archivo de
+   depuración).
+2. **Prioridad de los hilos.**
+   - El que presenta (`android_main`), fijado a los núcleos rápidos con
+     prioridad −8 (`THREAD_PRIORITY_URGENT_DISPLAY`).
+   - El del juego y los de dibujo, con −4 (`THREAD_PRIORITY_DISPLAY`).
+   - Comprobado con `adb shell ps -T`.
+3. **El stencil no se guarda en memoria al terminar cada imagen**
+   (`glInvalidateFramebuffer`): ninguna imagen lo vuelve a leer. En la GPU por
+   baldosas ahorra escribir 1,2 MB por imagen a 4x.
+4. **La copia de partida de las intermedias, solo el color**, y sin cargar lo
+   que había antes en el destino. El stencil lo rehace `stencil_from_mask`.
+
+**Comprobado en el PC** (misión 0, `GUION_FUEGO`):
+
+| Modo del comparador | Resultado |
+|---|---|
+| `AC3_HWCMP_ONLY` | 0 listas malas |
+| Intermedias | 0 listas malas |
+| `AC3_HWCMP_PERSIST` con intermedias | 538 listas, las mismas de antes del cambio: son los menús, que en ese modo de prueba no son fieles |
+
+**Medido en la Retroid** (`tools/retroid_medir.sh` y
+`tools/logcat_resumen.py`):
+- primera misión, el avión volando solo, 4x con bilineal;
+- la herramienta entra sola en la misión: START, ✕ por los menús y START para
+  saltar el prólogo.
+
+| | v1.12-alfa | Paso 5 |
+|---|---|---|
+| Vueltas de más de 20 ms | 97 en 88 s (1,10 por s) | 9 en 88 s (0,10 por s); 5 en 59 s en otra medida |
+| Vuelta más larga (media por segundo) | 21,6 ms | 17,6-18,0 ms |
+| CPU en dibujo / `eglSwapBuffers` | 1,47 / 1,48 ms | 1,10 / 1,10 ms |
+
+**Tiempo real de GPU** (temporizadores de la GPU, `GL_EXT_disjoint_timer_query`,
+desde la 1.12.2 en el registro: «GPU (temporizador)»). Se leen unas vueltas
+después, sin parar la CPU. Primera misión en vuelo:
+
+| Configuración | GPU por vuelta, media | La peor |
+|---|---|---|
+| 1x | 0,61 ms | 0,88 ms |
+| 2x | 1,00 ms | 1,83 ms |
+| 4x | 2,74 ms | 4,04 ms |
+| 4x + bilineal | 5,29 ms | 8,43 ms |
+
+**Conclusiones:**
+- Con 16,7 ms por imagen, la GPU va sobrada en vuelo normal. La antigua
+  medida con `glFinish` (13-20 ms) incluía la espera a las imágenes en cola.
+- Cola de presentación limpia: ni imágenes tarde ni tiradas, hilo de dibujo
+  ≤ 7 ms.
+- Lo que quede serán escenas extremas (explosiones, el sol, muchos enemigos).
+  Se verán en el registro si alguien juega con el cable conectado.
+
+## Paso 6: explosiones a 60 fps y el bajón al atravesar humo (rama `etapa-8-paso-6`)
+
+### Sprites de la CPU a 60 fps: probado y no adoptado (`SIN RESOLVER`)
+
+Las explosiones, el humo, las nubes pequeñas y las llamas de los motores son
+sprites que el juego coloca con la CPU: sin vértices de la GTE. En las
+intermedias se quedan donde están en el paso real.
+
+**Intentos** (`psx/src/interp.c`; prueba de verdad conocida
+`AC3_INTERP_TEST=1` en la misión 0 con `GUION_FUEGO`, 374 casos):
+
+| Método | PSNR de la intermedia |
+|---|---|
+| Sin mover los sprites (lo actual) | **27,27 dB** |
+| Punto de la GTE sin uso bajo el sprite (el centro que proyecta el juego) | no aplicable: solo el 11 % lo tiene a ≤ 4 px y casi ninguno se empareja (489 de 307.000) |
+| El mismo sprite del paso anterior (misma clave sin el desplazamiento de dibujo, uno a uno por cercanía) | 27,05 dB |
+| Lo mismo, cerca de donde predice el movimiento de alrededor | 27,17 dB |
+| Moverse como el vértice emparejado más cercano (o la cámara) | 27,17 dB |
+| Marcados pero sin mover (control) | 27,27 dB |
+
+**Hallazgos:**
+- La clave de cada primitiva incluye el desplazamiento de dibujo, que alterna
+  con el doble búfer. Sin quitarlo, ningún sprite tiene pareja en el paso
+  anterior. Con la clave sin desplazamiento, el 86 % tiene uno del mismo tipo
+  a ≤ 8 px.
+- **Mover los sprites empeora la medida con los tres métodos.** Las bolas de
+  fuego y el humo cambian de forma y nacen y mueren en cada paso, así que
+  moverlas no las acerca al paso real del medio.
+- **Se deshizo el cambio.** Queda `SIN RESOLVER`: falta una medida que
+  distinga «más fluido a la vista» de «más fiel al paso real», o un método
+  mejor.
+
+### El bajón al atravesar humo: optimizado
+
+Medido en el PC (`AC3_HWCMP_AREA`): píxeles que pintan las primitivas, con lo
+superpuesto.
+
+| | Pantallas pintadas | Semitransparentes | Con texturas que la lista cambia |
+|---|---|---|---|
+| Vuelo normal | 2,4 | 0,8 | 0,9-1,4 |
+| Explosión del choque (VBlank 3985-4001) | hasta 4,6 | 2,6 | hasta 2,7 |
+
+**Causa:** cada lectura de una textura cambiada recorría el atlas de subidas
+desde la última que tocaba a la primitiva hasta el principio.
+
+**Cambio:** `epoch_of2` da también la primera subida que la toca (bits 25-31
+de `t[0]`), y el shader solo recorre ese tramo.
+
+**Tiempo de dibujo a 4x con bilineal en el PC** (Mesa por software;
+`AC3_HWSHOT` con medida de tiempo):
+
+| | Antes | Después |
+|---|---|---|
+| Vuelo normal | 50,2 ms | 50,5 ms |
+| Explosión | 63,0 ms | 53,2 ms (−16 %) |
+
+Comparador: 0 listas malas.
+
+**En la Retroid (1.12.5)**, una misión con el registro:
+- GPU 7,1 ms de media;
+- en el segundo de atravesar el humo de una explosión grande, 28 ms de media,
+  con una vuelta de 86 ms (36 fps). Lo demás, sin bajones.
+
+**Segunda mejora:** lo semitransparente (humo, explosiones, nubes) va sin filtro
+bilineal. Es lo que más se superpone y ya es difuso; los modelos opacos siguen
+filtrados (`u_filter` 2 = todo, para medir).
+
+| En el PC, 4x con bilineal | Antes del paso 6 | Atlas por tramos | Y sin filtro en lo semitransparente |
+|---|---|---|---|
+| Vuelo normal | 50,2 ms | 50,5 ms | 48,3 ms |
+| Explosión | 63,0 ms | 53,2 ms | 44,0 ms (−30 %) |
+
+- Dos pasadas (bit de máscara): en la explosión, solo 8.860 de 386.000
+  píxeles. No es la causa.
+- Comparador: 0 listas malas (a escala 1, sin filtro).
+
+**Comprobado en la Retroid (1.12.6)**, otra misión con humo de explosiones,
+4x con bilineal, 193 s de juego:
+- ningún segundo por debajo de 57 fps;
+- GPU 5,97 ms de media; el peor segundo, 11,9 ms; la peor vuelta, 20,7 ms
+  (antes, 86 ms).
+- El dueño no notó ningún bajón.
+
+## Paso 7: menos temblor de vértices (rama `etapa-8-paso-7`)
+
+**Cómo funciona** (tipo PGXP; `psx/src/gpu.c`, `gte.c`, `psx/gl/psx_hw.c`):
+- La GTE calcula SX y SY con 16 bits de decimales y el juego guarda el entero
+  en el paquete.
+- RTPS apunta los decimales por el valor entero (`psx_gpu_subpix_store`). La
+  tabla es por hilo y se vacía al terminar cada lista anotada.
+- Al anotar un triángulo se buscan por el valor de cada vértice (`fx`, `fy` en
+  `PsxHwPrim`), y `psx_hw.c` los suma a más de 1x.
+- Es una función del entero: dos polígonos que comparten un vértice reciben
+  los mismos decimales. **Sin grietas.**
+
+**Medido en el PC** (misión 0, `GUION_FUEGO`, `AC3_SUBPIX=1`):
+- encuentran sus decimales el 94,6 % de los vértices de triángulos de las
+  imágenes reales y el 88,8 % de las intermedias (el resto: HUD y sprites);
+- a 1x no cambia nada: comparador 0 listas malas, con imagen conservada y con
+  intermedias.
+
+**Comprobado por el dueño en la Retroid:** «lo de los vértices quedó bien».
+
+**Herramientas:**
+- `decimales=0|1` en el archivo de depuración;
+- `PSX_HW_NOSUBPIX=1` en el PC.
+- Volcado de la lista en pantalla desde la app: `volcar=N` (`lista.bin`, los
+  `PsxHwPrim` crudos).
+
+### El HUD sin ensanchar en 16:9: aparcado (rama `etapa-8-hud-ancho`)
+
+- Agrupaba las piezas del HUD en elementos y estrechaba cada uno alrededor de
+  su centro. Las reglas se afinaron con capturas y volcados de la Retroid:
+  mapa grande, pausa, brújula de la vista de cabina.
+- **El dueño lo aparca:** en la vista de cabina rompía mucho la imagen. Queda
+  entero en su rama para retomarlo (con `psx/test/test_hud.c` y los volcados).
+
 ## Paso 8: el CD de la versión americana, pantalla negra al acabar la Maze (rama `etapa-8-paso-8`, release v1.12.1-alfa)
 
 **El fallo** (lo encontró el dueño en la Retroid): al cumplir la misión 10, la
@@ -723,4 +902,169 @@ ciegas (hay que seguir al avión espía y luego destruir una fábrica):
 - `AC3_DUMPMEM=fotograma,dir,bytes,archivo`: volcado de la RAM.
 
 **Comprobado por el dueño en la Retroid:** la Maze termina y pasa al informe.
+
+## Paso 9: APK de desarrollo con lista de misiones (rama `etapa-8-paso-9`)
+
+Para probar cambios en la Retroid sin jugar hasta cada misión. **No se publica.**
+
+- `DESARROLLO=1 sh android_game/build.sh` → `AC3Recomp-dev-<versión>.apk`:
+  - paquete `com.vzepec.ac3game.dev` («AC3 Dev»): convive con la app normal;
+  - sin actualizador.
+- Tras abrir el disco, la lista de las 41 misiones (cruceta y A; B vuelve
+  al menú). Los nombres se leen **del disco del usuario**: la tabla del
+  overlay 1 (entrada 1 de `ACE.BPB`), registros de 12 bytes {puntero al
+  nombre, número de orden 1, 2, 3…}. Está en la US (+0xDFE4) y en la EU
+  (+0xE58C); se busca por su forma.
+  - 0 es «Test Map» (misión de pruebas), 1 «Transport» (la primera de una
+    partida nueva), 10 «Maze»; la 40 no tiene nombre en la tabla.
+- La elegida se carga directamente:
+  - el juego recorre solo menús e informe, con los botones del guion de
+    `tools/misiones.py`, sin esperar al reloj y sin sonido;
+  - al arrancar la misión se cambia por la elegida (como `AC3_MISSION`).
+- **Medido en la Retroid:** la Maze en vuelo a los 10 s de elegirla.
+- Claves nuevas de `depurar.txt` (paso 10): `camara`, `palanca`, `alabeo`
+  (sticks fijos en N/100), `conox`, `cono`, `cielo`, `pasadas`.
+- `tools/retroid_mision.sh`: entra en una misión con este APK, captura,
+  cuenta negros en los bordes y resume el registro.
+
+## Paso 10: terreno en los bordes en 16:9 y bajones del efecto del virus (rama `etapa-8-paso-10`)
+
+### Terreno que faltaba en los bordes
+
+**El fallo** (el dueño, en la Retroid): en 16:9, en los bordes laterales,
+triángulos negros y terreno vacío, con la cámara inclinada unos grados (el
+stick derecho).
+
+**Medido en la Retroid** (misión 18, cámara fija con `camara=N`):
+
+| Cámara | Cono de antes | +15 % | +30 % |
+|---|---|---|---|
+| 0,65 | 2.066 píxeles negros en el borde | 3 | 0 |
+| 0,70 | 1.194-3.842 | 0 | 0 |
+| 0,60 / 0,75 / 0,85 / 1,0 / −0,8 | 0 | 0 | 0 |
+
+- Sin ensanchar el cono (`cono=0`): 12.199 negros. Los triángulos negros
+  son casillas del terreno que el juego descarta.
+- **Arreglo:** el cono del terreno, un 30 % más ancho que la proporción
+  de la pantalla (`AC3_WIDE_CONO=f` para otro factor). Coste: unos 3 puntos
+  de CPU del hilo del juego (23 → 26 %).
+- **`SIN RESOLVER`:**
+  - en el PC no se reproduce, ni con la cámara inclinada (`raba7`) ni con
+    las intermedias;
+  - después del cambio de las pasadas, la prueba de control con el cono de
+    antes salió limpia tres veces seguidas: falta comprobar si el arreglo
+    es el cono.
+
+### Bajones con «VIRUS ALERT» (misión 19)
+
+**Medido en la Retroid** (el registro de la app con el dueño atravesando
+la zona):
+- el juego, al 100 % de velocidad; la GPU, saturada: 4.400-5.800 llamadas
+  de dibujo por imagen (unas 70 en vuelo) y 50-114 ms por vuelta;
+- casi todos los cortes de lote, por pasada y máscara.
+
+**Causa:** el efecto dibuja miles de piezas sobre la zona que más tarde
+comprueba el bit de máscara (el radar). Cada una iba en dos pasadas (los
+téxeles con el bit 15 a 0 y a 1, para dejar el stencil exacto), una tras
+otra: dos llamadas por pieza.
+
+**Arreglo, en dos partes:**
+1. **Agrupar:** las piezas seguidas de dos pasadas que no se solapan, la
+   pasada 1 de todas y luego la 2 (`PSX_HW_NOLOTE=1` sin agrupar). En vuelo,
+   20-22 % menos llamadas; en el virus no basta: sus piezas se solapan.
+2. **Una pasada:** las piezas que no comprueban la máscara van en una
+   pasada. El stencil se rehace desde el bit 15 del segundo búfer (el
+   shader lo escribe en cada píxel) antes de la siguiente que la comprueba
+   (`PSX_HW_PASADAS2=1`, el método anterior):
+   - las intermedias (`g_out`) tienen ahora también ese segundo búfer
+     (`g_outm`), que no se guarda en memoria;
+   - el bit 15 se lee de **una copia** (blit). Leer el búfer al que se está
+     dibujando en la GPU por baldosas de la Retroid da lo de antes de la
+     imagen: los puntos del radar y del mapa grande desaparecían o
+     parpadeaban (el dueño). En el PC no pasa.
+
+**Medido:**
+- **PC**, misiones 0, 10 y 19 con intermedias:
+  - comparador 0 listas malas;
+  - el bit 15 igual que con el método anterior (`AC3_HWCMP_MASKCMP`: las
+    mismas listas con diferencias);
+  - 30-35 % menos llamadas que solo agrupando.
+- **Retroid**, misión 19 atravesando el virus (antes de la copia del bit 15):
+  - como mucho 55 llamadas por imagen (antes 5.847);
+  - GPU de 10 a 17 ms por vuelta; 60 fps en todos los segundos con dibujo.
+  - Con la copia y el arreglo de la estela (abajo): 59-60 fps.
+### Fallos gráficos en la estela del virus (y la Electrosfera)
+
+**El fallo** (el dueño, en la Retroid, con los fps ya arreglados): al
+volverse roja la pantalla, el cielo temblaba y había texturas pegadas o
+encimadas al mover la cámara o el avión.
+
+**Aislado en la Retroid**, probando con `depurar.txt` (el dueño atravesando
+la zona en cada prueba):
+
+| Prueba | Fallos |
+|---|---|
+| Método anterior de pasadas (`pasadas=2`) | sí (y bajones) |
+| Modo original (`modo=3`: software, 4:3, sin intermedias) | **no**: solo la estela del juego |
+| Sin intermedias (`intermedias=0`) | no |
+| Sin intermedias en la estela (detección de abajo) | **sí** |
+| El software también dibuja la imagen real (`solo=0`) | **no** |
+
+**Causa:**
+- El efecto es una estela: cada imagen se mezcla con la anterior, que el
+  juego lee como textura.
+- Desde el paso 2, en la misión la imagen real la dibuja solo la GPU y la
+  copia del software se queda atrasada, así que la estela leía esa copia
+  vieja.
+
+**Arreglo:**
+- `psx_gpu_list_textures_from` detecta las listas con alguna primitiva con
+  textura (polígono o sprite: su página y sus UV) que lee de la imagen de
+  este paso o del anterior.
+- En esos pasos, el software dibuja también la imagen real (en
+  `draw_real`).
+- Las intermedias se mantienen (`PSX_INTERP_FBSKIP=1`, `estela=1`: sin
+  ellas en esos pasos).
+
+**Medido:**
+- **PC:**
+  - en vuelo normal no salta (0 pasos en las misiones 0, 19 y 25);
+  - en la 10, 29 pasos;
+  - en la 37 (la Electrosfera, con estela permanente), casi todos;
+  - comparador igual que antes en la 19 y la 37.
+- **Retroid**, misión 19:
+  - **sin fallos** (el dueño);
+  - en los 13 s de estela, **59-60 fps** con intermedias;
+  - CPU del hilo del juego como mucho 46 %;
+  - como mucho 32 llamadas por imagen;
+  - GPU 17,8 ms en el peor segundo.
+
+### Temblor de las texturas de los bordes (decimales de la GTE)
+
+**El fallo** (el dueño, con el cono ya ensanchado): las texturas de los
+bordes temblaban. Con `decimales=0`, no.
+
+**Causa:** la tabla de decimales del paso 7 va por el valor entero de la
+pantalla. Si dos vértices distintos caían en el mismo píxel, mandaba el
+primero que se apuntaba, y cuál era cambia de una imagen a otra. En 16:9
+pasa mucho con el terreno lejano de los bordes, con los vértices muy juntos.
+
+**Arreglo:** un entero que recibe decimales distintos queda sin decimales
+(en el píxel, como en la PS1). Un mismo vértice da siempre los mismos y
+todos los que usan ese entero reciben lo mismo, así que no hay grietas
+(`PSX_SUBPIX_NOAMB=1`, como antes).
+
+**Medido:**
+- **PC**, misión 18 en 16:9:
+  - el 12 % de los vértices de triángulos caían en un entero ambiguo;
+  - con decimales, del 95,0 % al 83,0 %;
+  - comparador 0 listas malas.
+- **Retroid** (el dueño): los bordes ya no tiemblan y el centro sigue suave.
+
+- **Las 41 misiones** con intermedias, 16:9 y decimales: 6 listas con un
+  bloque malo (misiones 3, 7, 20, 22 y 23) y la 37 con 80 listas por debajo
+  del 99 % (86 % de píxeles idénticos).
+  - Iguales con el método anterior (`PSX_HW_PASADAS2=1 PSX_HW_NOLOTE=1`) y
+    con el cono de antes: **no son de este paso**.
+  - `SIN RESOLVER`: de qué paso vienen.
 

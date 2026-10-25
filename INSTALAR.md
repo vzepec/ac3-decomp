@@ -54,12 +54,25 @@ Se maneja con la cruceta y A (B vuelve atrás). Desde la 1.11-alfa:
 | **Play / Jugar** | Arranca el juego con tu disco |
 | **Update / Actualizar** | Solo aparece si hay una versión nueva (ver abajo) |
 | **Change disc / Cambiar disco** | Elegir otra imagen del disco |
-| **Options / Opciones** | Resolución interna (Original, 2x, 3x, 4x; por defecto 4x), filtro de texturas (Original o Bilineal), mando táctil (Automático, Siempre, Nunca) y mostrar u ocultar el contador y las estadísticas de desarrollo. Todo se guarda |
+| **Options / Opciones** | Resolución interna (Original, 2x, 3x, 4x; por defecto 4x), filtro de texturas (Original o Bilineal), mando táctil (Automático, Siempre, Nunca), vibración (y la extra al disparar) y mostrar u ocultar el contador y las estadísticas de desarrollo. Todo se guarda |
 | **About / Acerca de** | Versión y aviso legal |
 | **Exit / Salir** | Cerrar la app |
 | **EN / ES** (arriba a la derecha) | Idioma del menú: inglés (por defecto) o español; se guarda. El juego va en el idioma de tu disco |
 
-Para volver al menú desde el juego, usa el botón de atrás de Android.
+Para volver al menú desde el juego, **mantén SELECT + START 1,5 segundos**
+(también con el mando táctil), o usa el botón de atrás de Android.
+
+**Pausa al volver:** si sales de la app en mitad del juego (cierras la tapa,
+pulsas inicio o cambias de app), al volver se queda en pausa con el aviso
+«Pausa: pulsa cualquier botón para seguir». Así el avión no sigue volando
+mientras no miras.
+
+**Vibración:** el juego hace vibrar el mando como un DualShock (golpes,
+explosiones, turbulencia). Usa el motor del mando si lo tiene, o el del
+aparato (la Retroid lleva uno). Se puede quitar en Opciones.
+El original solo vibra con impactos, daños y choques. En Opciones hay una
+**vibración extra al disparar y acelerar** (no es del original), desactivada
+por defecto.
 
 ### Actualizaciones
 

@@ -62,6 +62,8 @@ typedef struct {
     uint16_t tp_x, tp_y, clut_x, clut_y;       /* pagina en pixeles de la VRAM (x * 64, y * 256) */
     uint8_t tw_mx, tw_my, tw_ox, tw_oy;        /* ventana de textura (unidades de 8 texeles) */
     int16_t ax1, ay1, ax2, ay2;                /* area de dibujo (inclusiva) */
+    int16_t ox, oy;                            /* desplazamiento de dibujo (E5) al anotarla: separa la escena 3D del HUD */
+    uint8_t fx[3], fy[3];                      /* TRI: decimales de cada vertice (1/256 px) que dio la GTE (etapa 8, paso 7) */
     uint32_t data_off;                         /* UPLOAD: desplazamiento en list->data */
 } PsxHwPrim;
 /* main_*: area principal (la de la imagen, inclusiva), la fija quien llama antes de dibujar */
@@ -78,6 +80,14 @@ typedef struct {
     int16_t read[4][4];                        /* (x1, y1, x2, y2): la GPU las copia a su textura de la VRAM antes */
 } PsxHwList;
 void psx_gpu_record(PsxHwList *list, int only);   /* NULL: sin registro (por hilo) */
+/* etapa 8, paso 7: menos temblor de vertices a alta resolucion (como PGXP). La GTE calcula SX y SY con
+ * 16 bits de decimales y el juego guarda solo el entero en el paquete. Con psx_gpu_subpix_on, cada
+ * proyeccion apunta sus decimales por el valor entero (psx_gpu_subpix_store, desde RTPS) y al anotar un
+ * triangulo se buscan por el valor de cada vertice. Es una funcion del entero: dos poligonos que
+ * comparten un vertice reciben los mismos decimales (sin grietas). La tabla es por hilo y se vacia al
+ * terminar cada lista anotada */
+extern int psx_gpu_subpix_on;
+void psx_gpu_subpix_store(uint32_t sxy, uint32_t fx16, uint32_t fy16);
 void psx_gpu_record_flush(PsxGpu *g);              /* al terminar la lista: lo pendiente */
 /* etapa 8, paso 2. Con only, la imagen (el area de dibujo al empezar la lista) no se dibuja en la
  * VRAM del software: queda solo en la GPU (psx/gl/psx_hw.c la conserva). psx_gpu_draw_list lo
@@ -90,6 +100,9 @@ void psx_gpu_main_mark(int x1, int y1, int x2, int y2, int stale);
 extern long psx_gpu_stale_ev[4];
 /* la lista copia (VRAM -> VRAM) desde ese rectangulo (inclusivo); no dibuja nada */
 int psx_gpu_list_copies_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int x1, int y1, int x2, int y2);
+/* (etapa 8, paso 10) si alguna primitiva con textura lee de alguno de los rectangulos (la imagen como
+ * textura: la estela del virus); tpage, el estado E1 al empezar */
+int psx_gpu_list_textures_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int tpage, const int (*rects)[4], int nrects);
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b);
 
