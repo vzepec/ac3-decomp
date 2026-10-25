@@ -425,8 +425,10 @@ static void frame_wait(void) {
             /* (en el S24, en la estela, 4-9 saltados de vez en cuando con 3: bajaba y subia cada 2-3 s, un vaiven
              * 120 <-> 60 mas visible que algun paso suelto saltado. Solo con carga sostenida (mas de 6 de 30), y para
              * volver, 3 ventanas limpias) */
-            if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0;
-            else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 3) want = 3, good = 0; }
+            static double down_t;   /* cuando bajo por ultima vez */
+            if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0, down_t = tn;
+            else if (p.steps < 5 || (tn - down_t > 10.0 && p.skipped <= 6)) want = 3, good = 0;   /* sin pasos (menus) o lejos de la ultima bajada */
+            else if (p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 3) want = 3, good = 0; }
             else good = 0;
         } else if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
         else if (avg < 3) want = g_nfrac - 1, good = 0;
@@ -483,7 +485,9 @@ static void frame_wait(void) {
         /* el redibujo, en un hilo de dibujo (segunda copia del interprete): el del juego solo deja
          * una instantanea por paso */
         psx_interp_rebuild_async(rr ? ac3_rr_async() : NULL);
-        if (rr && g_nfrac > 1) { g_nfrac = 1; interp_applied = -1; }
+        /* (paso 12) con pantalla de 100 Hz o mas se empieza en 3 (antes, en 1: cada mision empezaba a 60 fps) */
+        int start = G.disp_hz >= 100 && G.dbg_hz != 60 ? 3 : 1;
+        if (rr && g_nfrac != start) { g_nfrac = start; interp_applied = -1; }
     }
 #endif
     if (interp_applied != G.interp_enabled) {
