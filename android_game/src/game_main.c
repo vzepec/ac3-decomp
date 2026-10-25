@@ -254,9 +254,13 @@ static uint8_t to_axis(float v) {
  * hace en fila el hilo del redibujo (16 ms en el S24) y la primera, a 8,3 ms de la real, llegaba tarde un
  * tercio de las veces (el registro: 41 de 120 por segundo). El mismo retraso para reales e intermedias:
  * la cadencia no cambia */
+static volatile double g_fb_until;   /* (paso 12) hasta cuando se considera que dura la estela (la ultima vista + 1 s) */
 static double present_delay(int den) {
     (void)den;   /* (tambien con 1 intermedia: en la estela del virus llegaban tarde 30 por segundo en el S24) */
-    return G.disp_hz > 61 && G.dbg_hz != 60 ? 1.0 / (double)G.disp_hz : 0.0;
+    if (G.disp_hz <= 61 || G.dbg_hz == 60) return 0.0;
+    /* en la estela (el software dibuja tambien la real: el redibujo va al limite), dos refrescos */
+    double fb = g_fb_until;
+    return (fb > 0 && now() < fb ? 2.0 : 1.0) / (double)G.disp_hz;
 }
 
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step);
@@ -385,6 +389,10 @@ static uint16_t dev_buttons(int v) {
 static void frame_wait(void) {
     static double next;
     double t = now();
+    {   /* (paso 12) la estela: un paso que lee la imagen como textura la alarga un segundo (present_delay) */
+        static int fbs;
+        if (psx_interp_feedback != fbs) { fbs = psx_interp_feedback; g_fb_until = t + 1.0; }
+    }
     while ((G.paused || G.hold) && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / g_refresh;
@@ -414,8 +422,11 @@ static void frame_wait(void) {
              * dice nada de ellas. Bajar a 1 solo si se saltan mas de 3 pasos de 30; volver a 3 tras 2 ventanas sin
              * saltar ninguno. Antes, en la estela del virus (el software dibuja tambien la real), 6 pasos saltados lo
              * bajaban a 60 fps y ya no volvia a subir (Galaxy S24) */
-            if (p.steps >= 5 && p.skipped * 10 > p.steps * 1 && p.skipped > 3) want = 1, good = 0;
-            else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 2) want = 3, good = 0; }
+            /* (en el S24, en la estela, 4-9 saltados de vez en cuando con 3: bajaba y subia cada 2-3 s, un vaiven
+             * 120 <-> 60 mas visible que algun paso suelto saltado. Solo con carga sostenida (mas de 6 de 30), y para
+             * volver, 3 ventanas limpias) */
+            if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0;
+            else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 3) want = 3, good = 0; }
             else good = 0;
         } else if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
         else if (avg < 3) want = g_nfrac - 1, good = 0;
