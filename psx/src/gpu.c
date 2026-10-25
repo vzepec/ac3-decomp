@@ -801,6 +801,76 @@ void psx_gpu_gp0(PsxGpu *g, uint32_t w) {
     }
 }
 
+/* etapa 8, paso 10: si alguna primitiva con textura (poligono o sprite) lee de alguno de los rectangulos
+ * (inclusivos, de la VRAM): la imagen usada como textura. La estela del efecto del virus (mision 19) mezcla
+ * cada imagen con la anterior asi; una intermedia no tiene esa imagen anterior y salian texturas pegadas
+ * y el cielo temblando. tpage: el estado E1 de la GPU al empezar la lista (para los sprites) */
+static int tex_hits(int tpage, int u1, int u2, int v1, int v2, const int (*r)[4], int nr) {
+    int depth = (tpage >> 7) & 3, sh = depth == 0 ? 2 : depth == 1 ? 1 : 0;
+    int x0 = (tpage & 15) * 64, y0 = ((tpage >> 4) & 1) * 256;
+    int x1 = x0 + (u1 >> sh), x2 = x0 + (u2 >> sh), y1 = y0 + v1, y2 = y0 + v2;
+    for (int k = 0; k < nr; k++)
+        if (x2 >= r[k][0] && x1 <= r[k][2] && y2 >= r[k][1] && y1 <= r[k][3]) return 1;
+    return 0;
+}
+int psx_gpu_list_textures_from(uint32_t addr, const uint8_t *ram, const uint8_t *scratch, int tpage, const int (*rects)[4], int nrects) {
+    int guard = 0, need = 0, len = 0, poly = 0;
+    long xfer = 0;
+    uint32_t cmd[16];
+    while ((addr & 0xFFFFFF) != 0xFFFFFF && ++guard <= 200000) {
+        const uint32_t *p = (addr & 0xFFFFFC00u) == PSX_SCRATCH_ADDR ? (const uint32_t *)(scratch + (addr & 0x3FC))
+                                                                    : (const uint32_t *)(ram + (addr & (PSX_RAM_SIZE - 4)));
+        uint32_t tag = p[0];
+        int n = tag >> 24;
+        for (int i = 1; i <= n; i++) {
+            uint32_t w = p[i];
+            if (xfer > 0) { xfer--; continue; }
+            if (poly) { if ((w & 0xF000F000u) == 0x50005000u && len >= 2) poly = len = 0; else len++; continue; }
+            if (len == 0) {
+                need = cmd_length(w);
+                if ((w >> 24) >= 0x48 && (w >> 24) < 0x60 && ((w >> 24) & 0x08)) { poly = 1; len = 1; continue; }
+            }
+            if (len < 16) cmd[len] = w;
+            len++;
+            if (len < need) continue;
+            int op = cmd[0] >> 24;
+            if (op >= 0x20 && op < 0x40 && (op & 0x04)) {   /* poligono con textura: la pagina va en el uv del segundo */
+                int nv = (op & 0x08) ? 4 : 3, gour = (op & 0x10) != 0, j = 1, tp = tpage;
+                int u1 = 255, u2 = 0, v1 = 255, v2 = 0;
+                for (int k = 0; k < nv && j < 16; k++) {
+                    if (gour && k > 0) j++;
+                    j++;   /* vertice */
+                    uint32_t uv = cmd[j++];
+                    int u = uv & 0xFF, v = (uv >> 8) & 0xFF;
+                    if (u < u1) u1 = u;
+                    if (u > u2) u2 = u;
+                    if (v < v1) v1 = v;
+                    if (v > v2) v2 = v;
+                    if (k == 1) tp = (int)(uv >> 16);
+                }
+                if (tex_hits(tp, u1, u2, v1, v2, rects, nrects)) return 1;
+            } else if (op >= 0x60 && op < 0x80 && (op & 0x04)) {   /* sprite con textura: la pagina de E1 */
+                int size = (op >> 3) & 3, sw = 1, shh = 1;
+                if (size == 0) { sw = cmd[3] & 0x3FF; shh = (cmd[3] >> 16) & 0x1FF; }
+                else if (size == 2) sw = shh = 8;
+                else if (size == 3) sw = shh = 16;
+                int u = cmd[2] & 0xFF, v = (cmd[2] >> 8) & 0xFF;
+                int u2 = u + sw - 1, v2 = v + shh - 1;
+                if (u2 > 255) u = 0, u2 = 255;
+                if (v2 > 255) v = 0, v2 = 255;
+                if (tex_hits(tpage, u, u2, v, v2, rects, nrects)) return 1;
+            } else if (op == 0xE1) tpage = (int)(cmd[0] & 0x1FF);
+            else if (op >= 0xA0 && op < 0xC0) {
+                long cw = ((cmd[2] - 1) & 1023) + 1, ch = (((cmd[2] >> 16) - 1) & 511) + 1;
+                xfer = (cw * ch + 1) / 2;
+            }
+            len = 0;
+        }
+        addr = 0x80000000u | (tag & 0xFFFFFF);
+    }
+    return 0;
+}
+
 /* etapa 8, paso 2: si la lista copia (VRAM -> VRAM) desde esa zona, sin dibujar nada. El efecto de
  * los motores al acelerar copia un trozo de la imagen que se esta dibujando y lo vuelve a dibujar
  * deformado: esa lista la tiene que dibujar entera el software */

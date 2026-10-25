@@ -608,6 +608,7 @@ static void rr_stats(void) {
     printf("rr: %d pasos redibujados %s (%d sin poder: corte de plano o sin datos), %.2f ms de media por paso\n", psx_interp_rebuild_n,
            g_rr_async ? "en un hilo de dibujo" : "en el hilo del juego", psx_interp_rebuild_fails,
            psx_interp_rebuild_n ? 1000.0 * psx_interp_rebuild_s / psx_interp_rebuild_n : 0.0);
+    printf("rr: %d pasos sin intermedias porque la lista lee la imagen como textura\n", psx_interp_feedback);
     PsxInterpPerf pf;
     psx_interp_perf(&pf, 0);
     if (g_pace_v1 > g_pace_v0 && g_pace_v0 >= 0) {

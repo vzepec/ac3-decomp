@@ -138,7 +138,7 @@ static struct {
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -149,11 +149,11 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1, .dbg_inter = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1;
     if (f) {
         char k[32];
         int v;
@@ -174,7 +174,8 @@ static void dbg_read(void) {
             else if (!strcmp(k, "pasadas") && v == 2) setenv("PSX_HW_PASADAS2", "1", 1);   /* (paso 10) el bit 15 en dos pasadas, como antes */
             else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
             else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
-            else if (!strcmp(k, "palanca")) pal = v;  /* el izquierdo fijo en v/100 (vertical) */
+            else if (!strcmp(k, "palanca")) pal = v;
+            else if (!strcmp(k, "intermedias")) inter = v;   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
             else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
         }
         fclose(f);
@@ -184,7 +185,7 @@ static void dbg_read(void) {
     G.dbg_scale = s; G.dbg_true = t; G.dbg_only = o; G.dbg_filter = fl; G.dbg_gpu = gp; G.dbg_rumble = rb;
     if (sp != G.dbg_subpix) LOG("depurar: decimales %d", sp);
     G.dbg_subpix = sp;
-    G.dbg_cam = cam; G.dbg_pal = pal; G.dbg_alb = alb;
+    G.dbg_cam = cam; G.dbg_pal = pal; G.dbg_alb = alb; G.dbg_inter = inter;
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -429,7 +430,7 @@ static void frame_wait(void) {
     }
     /* L3+R3 cambia G.gfx_mode en el hilo principal; aqui se aplica (hilo del juego) */
     static int interp_applied = 1, hw_applied = -1;
-    G.interp_enabled = G.gfx_mode != 3;
+    G.interp_enabled = G.gfx_mode != 3 && G.dbg_inter != 0;   /* (depurar: intermedias=0) */
 #ifdef AC3_LIBRE
     static int rr_applied = -1;
     int rr = G.gfx_mode != 3;
@@ -1102,6 +1103,10 @@ void android_main(struct android_app *app) {
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, hilo de dibujo 0 %.1f (redibujo %.1f); modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu,
                     G.st_core, G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, G.st_rr_ms, md);
+            {   /* (paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
+                static int fb_last;
+                if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos sin intermedias (la imagen como textura)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
+            }
             extern int psx_hw_stat_draws, psx_hw_stat_uploads;
             if (c_hw_n) {
                 snprintf(line3, sizeof line3, "GL %.1f  SWAP %.1f", c_hw_ms / c_hw_n, c_swap_ms / c_hw_n);

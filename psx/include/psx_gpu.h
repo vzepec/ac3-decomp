@@ -100,6 +100,9 @@ void psx_gpu_main_mark(int x1, int y1, int x2, int y2, int stale);
 extern long psx_gpu_stale_ev[4];
 /* la lista copia (VRAM -> VRAM) desde ese rectangulo (inclusivo); no dibuja nada */
 int psx_gpu_list_copies_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int x1, int y1, int x2, int y2);
+/* (etapa 8, paso 10) si alguna primitiva con textura lee de alguno de los rectangulos (la imagen como
+ * textura: la estela del virus); tpage, el estado E1 al empezar */
+int psx_gpu_list_textures_from(uint32_t ot, const uint8_t *ram, const uint8_t *scratch, int tpage, const int (*rects)[4], int nrects);
 void psx_gpu_store_image(PsxGpu *g, int x, int y, int w, int h, uint16_t *dst);
 void psx_gpu_fill(PsxGpu *g, int x, int y, int w, int h, uint8_t r, uint8_t gr, uint8_t b);
 

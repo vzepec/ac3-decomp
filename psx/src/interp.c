@@ -406,6 +406,7 @@ static const PsxInterpRebuildAsync *g_rra;
 void psx_interp_rebuild(PsxInterpRebuild fn) { g_rebuild = fn; if (fn) g_rra = NULL; }
 void psx_interp_rebuild_async(const PsxInterpRebuildAsync *a) { g_rra = a; if (a) g_rebuild = NULL; }
 int psx_interp_rebuild_fails;   /* pasos en que no se pudo (corte de plano, sin datos) */
+int psx_interp_feedback;        /* (paso 10) pasos sin intermedias: la lista lee la imagen como textura */
 double psx_interp_rebuild_s;   /* tiempo total en el redibujo (medicion) */
 int psx_interp_rebuild_n;
 static int rebuild_phases(uint32_t ot, int den) {
@@ -1200,6 +1201,23 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     /* etapa 8: con el redibujo, el mundo sale exacto aunque el emparejamiento falle; lo movil, quieto */
     int nodyn = 0;
     if (!ok && (g_rebuild || g_rra) && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
+    /* (etapa 8, paso 10) la lista lee como textura la imagen (esta o la del paso anterior): la estela del
+     * virus de la mision 19, que mezcla cada imagen con la anterior. Una intermedia no tiene esa imagen
+     * anterior (texturas pegadas, cielo temblando en la Retroid): ese paso, solo la real, como en la PS1.
+     * PSX_INTERP_NOFB=1: sin esto (para ver el fallo) */
+    {
+        static int nofb = -1;
+        static int prev[4] = {-1, -1, -1, -1};
+        if (nofb < 0) nofb = getenv("PSX_INTERP_NOFB") != NULL;
+        int rects[2][4] = {{g->area_x1, g->area_y1, g->area_x2, g->area_y2}}, nr = 1;
+        if (prev[0] >= 0 && memcmp(prev, rects[0], sizeof prev)) { memcpy(rects[1], prev, sizeof prev); nr = 2; }
+        memcpy(prev, rects[0], sizeof prev);
+        int tp = g->tp_x | g->tp_y << 4 | g->tp_depth << 7;
+        if (!nofb && ok && psx_gpu_list_textures_from(ot, psx_ram, psx_scratch, tp, (const int (*)[4])rects, nr)) {
+            ok = 0;
+            psx_interp_feedback++;
+        }
+    }
     have_prev = 1;
     ncur = 0;
     occ_gen++;
