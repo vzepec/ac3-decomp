@@ -93,6 +93,17 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
 `vX.Y-alfa` es la versión que compara el actualizador.
 
+**APK de desarrollo** (etapa 8, paso 9; no se publica): `DESARROLLO=1 sh android_game/build.sh`, lista de
+misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
+
+**Paso 10 (rama `etapa-8-paso-10`):** terreno en los bordes en 16:9 y bajones del efecto del virus
+(`docs/14-etapa8.md`).
+- **Pendiente:** que el dueño confirme los puntos del radar y del mapa grande con la copia del bit 15, y
+  volver a medir el virus con ella.
+- **`SIN RESOLVER`:**
+  - por qué el fallo de los bordes no sale en el PC;
+  - las 6 listas malas y la misión 37 del comparador (anteriores a este paso).
+
 **Pantalla negra al acabar la Maze: arreglada** (`v1.12.1-alfa`, `docs/14-etapa8.md` paso 8;
 `make fin-mision`). La release solo lleva ese arreglo.
 

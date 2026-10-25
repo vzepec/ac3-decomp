@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-25 — APK de desarrollo; bordes en 16:9; bajones del virus
+
+- **APK de desarrollo** (`DESARROLLO=1`): lista de las 41 misiones con los
+  nombres leídos del disco (tabla del overlay 1) y entrada directa: la Maze
+  en 10 s en la Retroid.
+- **Bordes en 16:9:** con la cámara inclinada unos grados faltaban casillas
+  del terreno (negro). Cono un 30 % más ancho: de 1.194-3.842 a 0 píxeles
+  negros (misión 18, `camara=70`). En el PC no se reproduce; tras el cambio
+  de las pasadas, el control con el cono de antes salió limpio
+  (`SIN RESOLVER`).
+- **Virus (misión 19):** de 4.400-5.800 llamadas por imagen y 8-16 fps a
+  como mucho 55 llamadas y 60 fps. Piezas sin comprobación de máscara en una
+  pasada; stencil rehecho desde una copia del bit 15 (leer el búfer al que
+  se dibuja falla en la GPU por baldosas: puntos del radar).
+- **Reproducir:** `tools/retroid_mision.sh`; en el PC, `PSX_HW_PASADAS2=1`,
+  `PSX_HW_NOLOTE=1`, `AC3_WIDE_CONO=f`.
+
 ## 2026-10-22 — Pantalla negra al acabar la Maze: la libcd con direcciones de la europea
 
 - **Fallo:** en la americana, la capa usaba para los búferes propios de libcd

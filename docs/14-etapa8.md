@@ -903,3 +903,100 @@ ciegas (hay que seguir al avión espía y luego destruir una fábrica):
 
 **Comprobado por el dueño en la Retroid:** la Maze termina y pasa al informe.
 
+## Paso 9: APK de desarrollo con lista de misiones (rama `etapa-8-paso-9`)
+
+Para probar cambios en la Retroid sin jugar hasta cada misión. **No se publica.**
+
+- `DESARROLLO=1 sh android_game/build.sh` → `AC3Recomp-dev-<versión>.apk`:
+  - paquete `com.vzepec.ac3game.dev` («AC3 Dev»): convive con la app normal;
+  - sin actualizador.
+- Tras abrir el disco, la lista de las 41 misiones (cruceta y A; B vuelve
+  al menú). Los nombres se leen **del disco del usuario**: la tabla del
+  overlay 1 (entrada 1 de `ACE.BPB`), registros de 12 bytes {puntero al
+  nombre, número de orden 1, 2, 3…}. Está en la US (+0xDFE4) y en la EU
+  (+0xE58C); se busca por su forma.
+  - 0 es «Test Map» (misión de pruebas), 1 «Transport» (la primera de una
+    partida nueva), 10 «Maze»; la 40 no tiene nombre en la tabla.
+- La elegida se carga directamente:
+  - el juego recorre solo menús e informe, con los botones del guion de
+    `tools/misiones.py`, sin esperar al reloj y sin sonido;
+  - al arrancar la misión se cambia por la elegida (como `AC3_MISSION`).
+- **Medido en la Retroid:** la Maze en vuelo a los 10 s de elegirla.
+- Claves nuevas de `depurar.txt` (paso 10): `camara`, `palanca`, `alabeo`
+  (sticks fijos en N/100), `conox`, `cono`, `cielo`, `pasadas`.
+- `tools/retroid_mision.sh`: entra en una misión con este APK, captura,
+  cuenta negros en los bordes y resume el registro.
+
+## Paso 10: terreno en los bordes en 16:9 y bajones del efecto del virus (rama `etapa-8-paso-10`)
+
+### Terreno que faltaba en los bordes
+
+**El fallo** (el dueño, en la Retroid): en 16:9, en los bordes laterales,
+triángulos negros y terreno vacío, con la cámara inclinada unos grados (el
+stick derecho).
+
+**Medido en la Retroid** (misión 18, cámara fija con `camara=N`):
+
+| Cámara | Cono de antes | +15 % | +30 % |
+|---|---|---|---|
+| 0,65 | 2.066 píxeles negros en el borde | 3 | 0 |
+| 0,70 | 1.194-3.842 | 0 | 0 |
+| 0,60 / 0,75 / 0,85 / 1,0 / −0,8 | 0 | 0 | 0 |
+
+- Sin ensanchar el cono (`cono=0`): 12.199 negros. Los triángulos negros
+  son casillas del terreno que el juego descarta.
+- **Arreglo:** el cono del terreno, un 30 % más ancho que la proporción
+  de la pantalla (`AC3_WIDE_CONO=f` para otro factor). Coste: unos 3 puntos
+  de CPU del hilo del juego (23 → 26 %).
+- **`SIN RESOLVER`:**
+  - en el PC no se reproduce, ni con la cámara inclinada (`raba7`) ni con
+    las intermedias;
+  - después del cambio de las pasadas, la prueba de control con el cono de
+    antes salió limpia tres veces seguidas: falta comprobar si el arreglo
+    es el cono.
+
+### Bajones con «VIRUS ALERT» (misión 19)
+
+**Medido en la Retroid** (el registro de la app con el dueño atravesando
+la zona):
+- el juego, al 100 % de velocidad; la GPU, saturada: 4.400-5.800 llamadas
+  de dibujo por imagen (unas 70 en vuelo) y 50-114 ms por vuelta;
+- casi todos los cortes de lote, por pasada y máscara.
+
+**Causa:** el efecto dibuja miles de piezas sobre la zona que más tarde
+comprueba el bit de máscara (el radar). Cada una iba en dos pasadas (los
+téxeles con el bit 15 a 0 y a 1, para dejar el stencil exacto), una tras
+otra: dos llamadas por pieza.
+
+**Arreglo, en dos partes:**
+1. **Agrupar:** las piezas seguidas de dos pasadas que no se solapan, la
+   pasada 1 de todas y luego la 2 (`PSX_HW_NOLOTE=1` sin agrupar). En vuelo,
+   20-22 % menos llamadas; en el virus no basta: sus piezas se solapan.
+2. **Una pasada:** las piezas que no comprueban la máscara van en una
+   pasada. El stencil se rehace desde el bit 15 del segundo búfer (el
+   shader lo escribe en cada píxel) antes de la siguiente que la comprueba
+   (`PSX_HW_PASADAS2=1`, el método anterior):
+   - las intermedias (`g_out`) tienen ahora también ese segundo búfer
+     (`g_outm`), que no se guarda en memoria;
+   - el bit 15 se lee de **una copia** (blit). Leer el búfer al que se está
+     dibujando en la GPU por baldosas de la Retroid da lo de antes de la
+     imagen: los puntos del radar y del mapa grande desaparecían o
+     parpadeaban (el dueño). En el PC no pasa.
+
+**Medido:**
+- **PC**, misiones 0, 10 y 19 con intermedias:
+  - comparador 0 listas malas;
+  - el bit 15 igual que con el método anterior (`AC3_HWCMP_MASKCMP`: las
+    mismas listas con diferencias);
+  - 30-35 % menos llamadas que solo agrupando.
+- **Retroid**, misión 19 atravesando el virus (antes de la copia del bit 15):
+  - como mucho 55 llamadas por imagen (antes 5.847);
+  - GPU de 10 a 17 ms por vuelta; 60 fps en todos los segundos con dibujo.
+  - Con la copia: pendiente de medir.
+- **Las 41 misiones** con intermedias, 16:9 y decimales: 6 listas con un
+  bloque malo (misiones 3, 7, 20, 22 y 23) y la 37 con 80 listas por debajo
+  del 99 % (86 % de píxeles idénticos).
+  - Iguales con el método anterior (`PSX_HW_PASADAS2=1 PSX_HW_NOLOTE=1`) y
+    con el cono de antes: **no son de este paso**.
+  - `SIN RESOLVER`: de qué paso vienen.
+
