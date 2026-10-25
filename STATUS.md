@@ -113,6 +113,10 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
 **Pantalla negra al acabar la Maze: arreglada** (`v1.12.1-alfa`, `docs/14-etapa8.md` paso 8;
 `make fin-mision`). La release solo lleva ese arreglo.
 
+**Pantallas de 120 Hz (paso 12, rama `etapa-8-paso-12`):** hecho y medido en un Galaxy S24 (115-118 fps);
+versión de prueba `1.13.1-alfa`, pendiente de que el dueño la juegue en el S24 y de comprobar que la Retroid
+sigue igual.
+
 **Aparcado, sin publicar:**
 - el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`);
 - la cámara libre (paso 11, rama `etapa-8-paso-11`): en la Retroid el dueño no notó ningún cambio y pidió

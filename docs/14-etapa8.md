@@ -1068,3 +1068,36 @@ todos los que usan ese entero reciben lo mismo, así que no hay grietas
     con el cono de antes: **no son de este paso**.
   - `SIN RESOLVER`: de qué paso vienen.
 
+## Paso 12: pantallas de 120 Hz (rama `etapa-8-paso-12`)
+
+**Lo que pidió el dueño:** soporte para pantallas de 120 Hz. La Retroid Pocket
+Flip 2 solo tiene 60 Hz (un modo); se probó en un **Galaxy S24** (SM-S921B,
+Exynos 2400 con GPU Xclipse, Android 16, 120 Hz adaptativo). La app ya
+funcionaba en él sin cambios.
+
+**Cambios:**
+- `MainActivity.pickRefreshRate`: la frecuencia más alta de la pantalla (con
+  la misma resolución), pedida para la ventana (`preferredRefreshRate`) y
+  pasada al código nativo (`nativeSetDisplayHz`).
+- La superficie, a esa frecuencia: `ANativeWindow_setFrameRate`
+  (Android 11+, cargada con `dlopen`/`dlsym` porque la mínima es la 26).
+- Con 100 Hz o más y el redibujo: **3 intermedias por paso** (30 → 120), sin
+  pasar por 2 (90 imágenes en 120 refrescos irían a saltos). El hilo del
+  redibujo ya hacía las fases en fila.
+- Con 3 intermedias, toda la presentación **un refresco más tarde**
+  (8,3 ms), igual para reales e intermedias.
+  - Sin eso, la primera intermedia (a 8,3 ms de la real) llegaba tarde: 41
+    de 120 por segundo.
+  - Las tres juntas tardan 16 ms en el S24.
+- Depuración: `hz=60` en `depurar.txt` (como una pantalla de 60 Hz).
+- En pantallas de 60 Hz no cambia nada.
+
+**Medido en el S24** (misión 18, 4x con bilineal):
+- **115-118 fps**, 3 intermedias por paso;
+- hilo del juego al 39 %;
+- GPU 5,4 ms de media y 8,5 la peor vuelta;
+- intermedias tardías, de 41 a 2-12 por segundo;
+- vuelta más larga del presentador, 10,5-12,6 ms.
+
+Versión de prueba `1.13.1-alfa`.
+

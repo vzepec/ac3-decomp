@@ -5,6 +5,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-25 — Pantallas de 120 Hz (Galaxy S24)
+
+- Con pantalla de 100 Hz o más: la frecuencia alta para la ventana y la
+  superficie, 3 intermedias por paso y la presentación un refresco más tarde.
+- Galaxy S24 (GPU Xclipse): 115-118 fps a 4x con bilineal, GPU 5,4 ms de
+  media.
+- En la Retroid (60 Hz) no cambia nada.
+- Ver `docs/14-etapa8.md`, paso 12.
+
 ## 2026-10-25 — Release v1.13-alfa; la cámara libre, fuera
 
 - Release `v1.13-alfa` con las mejoras acumuladas (etapa 8, pasos 5-7 y 10;
