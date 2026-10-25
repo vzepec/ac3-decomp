@@ -173,6 +173,7 @@ static void dbg_read(void) {
              * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
             else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
             else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
+            else if (!strcmp(k, "rrserie") && v == 1) setenv("PSX_INTERP_RRSERIE", "1", 1);   /* (paso 12) las fases en serie, como antes */
             else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */
             else if (!strcmp(k, "pasadas") && v == 2) setenv("PSX_HW_PASADAS2", "1", 1);   /* (paso 10) el bit 15 en dos pasadas, como antes */
             else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
