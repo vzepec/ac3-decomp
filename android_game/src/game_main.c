@@ -40,6 +40,7 @@
 #include <android/log.h>
 #include <android/window.h>
 #include <android_native_app_glue.h>
+#include <dlfcn.h>
 #include <jni.h>
 #include <math.h>
 #include <pthread.h>
@@ -132,13 +133,14 @@ static struct {
     volatile int hold;
     double exit_t0;
     volatile int in_mission;       /* el juego dibuja terreno (la mision en vuelo) */
-    volatile int rumble_extra;     /* vibracion extra (no del original) al disparar y acelerar: opcion */
+    volatile int rumble_extra;
+    volatile int disp_hz;          /* (etapa 8, paso 12) la frecuencia mas alta de la pantalla; depurar: hz=60 */     /* vibracion extra (no del original) al disparar y acelerar: opcion */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
      * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1 vibrar=N" (-1: lo normal; modo: el de
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -176,7 +178,8 @@ static void dbg_read(void) {
             else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
             else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
             else if (!strcmp(k, "palanca")) pal = v;
-            else if (!strcmp(k, "intermedias")) inter = v;   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
+            else if (!strcmp(k, "intermedias")) inter = v;
+            else if (!strcmp(k, "hz")) G.dbg_hz = v;   /* (paso 12) 60: como en una pantalla de 60 Hz */   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
             else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
         }
         fclose(f);
@@ -200,6 +203,12 @@ static double now(void) {
 }
 
 /* ------------------------------------------------------------------ disco (selector) */
+
+/* (etapa 8, paso 12) la frecuencia mas alta de la pantalla (MainActivity.pickRefreshRate) */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisplayHz(JNIEnv *env, jclass cls, jint hz) {
+    (void)env; (void)cls;
+    G.disp_hz = hz;
+}
 
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv *env, jclass cls, jint fd) {
     (void)env; (void)cls;
@@ -241,6 +250,14 @@ static uint8_t to_axis(float v) {
 }
 
 /* antes de cada VBlank: ritmo real (50 Hz PAL, 60 Hz NTSC), mando e imagen para la pantalla */
+/* (etapa 8, paso 12) con 3 intermedias por paso (pantalla de 120 Hz), todo un refresco mas tarde: las tres las
+ * hace en fila el hilo del redibujo (16 ms en el S24) y la primera, a 8,3 ms de la real, llegaba tarde un
+ * tercio de las veces (el registro: 41 de 120 por segundo). El mismo retraso para reales e intermedias:
+ * la cadencia no cambia */
+static double present_delay(int den) {
+    return den > 2 && G.disp_hz > 61 ? 1.0 / (double)G.disp_hz : 0.0;
+}
+
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step);
 static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
                     int vb, double t_step);
@@ -394,7 +411,12 @@ static void frame_wait(void) {
         else if (avg < 3) want = g_nfrac - 1, good = 0;
         else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) { if (++good >= 5) want = g_nfrac + 1, good = 0; }
         else good = 0;
-        want = want < 1 ? 1 : want > (G.rr_on ? 1 : 3) ? (G.rr_on ? 1 : 3) : want;   /* la nueva: 30 -> 60 fps con una */
+        /* la nueva: 30 -> 60 fps con una; (paso 12) con pantalla de 100 Hz o mas, 3 (30 -> 120), sin pasar por 2
+         * (90 imagenes en 120 refrescos: a saltos) */
+        int hi = G.rr_on && G.disp_hz >= 100 && G.dbg_hz != 60;
+        int top = G.rr_on ? (hi ? 3 : 1) : 3;
+        want = want < 1 ? 1 : want > top ? top : want;
+        if (hi && want == 2) want = g_nfrac == 1 ? 3 : 1;
         if (want != g_nfrac && G.interp_enabled) {
             g_nfrac = want;
             psx_interp_config(g_nfrac, 2, interp_sink);
@@ -496,7 +518,7 @@ static void tick(void) { psx_vblank(); }
  * intermedias): hora de salida = hora del paso + fase */
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step) {
     if (w * h > 640 * 512) return;
-    double due = t_step + (double)num / den * vb / (double)g_refresh;
+    double due = t_step + (double)num / den * vb / (double)g_refresh + present_delay(den);
     pthread_mutex_lock(&G.lock);
     int k = 0;   /* la ranura libre o la mas antigua */
     for (int i = 0; i < 8; i++) {
@@ -514,7 +536,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
 static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
                     int vb, double t_step) {
     (void)sw;
-    double due = t_step + (double)num / den * vb / (double)g_refresh;
+    double due = t_step + (double)num / den * vb / (double)g_refresh + present_delay(den);
     pthread_mutex_lock(&G.lock);
     int k = 0;
     for (int i = 0; i < 8; i++) {
@@ -671,6 +693,12 @@ static void egl_init(void) {
     G.ctx = eglCreateContext(G.dpy, cfg, EGL_NO_CONTEXT, cattr);
     eglMakeCurrent(G.dpy, G.surf, G.surf, G.ctx);
     eglSwapInterval(G.dpy, 1);
+    /* (paso 12) la superficie, a la frecuencia alta (Android 11+: ANativeWindow_setFrameRate, por dlsym) */
+    if (G.disp_hz > 61) {
+        void *lib = dlopen("libandroid.so", RTLD_NOW);
+        int (*setfr)(ANativeWindow *, float, int8_t) = lib ? (int (*)(ANativeWindow *, float, int8_t))dlsym(lib, "ANativeWindow_setFrameRate") : NULL;
+        LOG("pantalla: %d Hz pedidos a la superficie: %s", G.disp_hz, setfr ? (setfr(G.app->window, (float)G.disp_hz, 0) == 0 ? "si" : "fallo") : "no (Android < 11)");
+    }
     eglQuerySurface(G.dpy, G.surf, EGL_WIDTH, &G.w);
     eglQuerySurface(G.dpy, G.surf, EGL_HEIGHT, &G.h);
     psx_present_init();

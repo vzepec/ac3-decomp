@@ -16,7 +16,9 @@ import android.os.Bundle;
 import android.os.VibrationEffect;
 import android.os.Vibrator;
 import android.os.VibratorManager;
+import android.view.Display;
 import android.view.InputDevice;
+import android.view.WindowManager;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
 
@@ -55,6 +57,32 @@ public class MainActivity extends NativeActivity {
     /** Implementado en game_main.c: el rotulo de la pausa al volver a la app. */
     private static native void nativeSetPauseLabel(int[] argb, int w, int h);
 
+    /** Implementado en game_main.c: la frecuencia de la pantalla (Hz) que se pidio para el juego. */
+    private static native void nativeSetDisplayHz(int hz);
+
+    /** (etapa 8, paso 12) la frecuencia mas alta de la pantalla (p. ej. 120 Hz), para la ventana del juego: con
+     *  ella el codigo nativo fabrica 3 imagenes intermedias por paso (30 -> 120) en vez de 1 (30 -> 60). */
+    private void pickRefreshRate() {
+        float best = 60f;
+        try {
+            Display d = getWindowManager().getDefaultDisplay();
+            Display.Mode cur = d.getMode();
+            for (Display.Mode m : d.getSupportedModes()) {
+                if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+                if (m.getRefreshRate() > best) best = m.getRefreshRate();
+            }
+            if (best > 61f) {
+                WindowManager.LayoutParams lp = getWindow().getAttributes();
+                lp.preferredRefreshRate = best;
+                getWindow().setAttributes(lp);
+            }
+            Log.i(TAG, "pantalla: " + d.getRefreshRate() + " Hz ahora, la mas alta " + best + " Hz");
+        } catch (Exception e) {
+            Log.w(TAG, "no se pudo mirar la frecuencia de la pantalla: " + e);
+        }
+        nativeSetDisplayHz(Math.round(best));
+    }
+
     /** Implementado en game_main.c (solo en el APK de desarrollo): la mision elegida en la lista. */
     private static native void nativeSetMission(int n);
 
@@ -84,6 +112,7 @@ public class MainActivity extends NativeActivity {
                          p.getBoolean(LauncherActivity.KEY_RUMBLE, true) && p.getBoolean(LauncherActivity.KEY_RUMBLE_FIRE, false));
         if (p.getInt(LauncherActivity.KEY_TOUCH, 0) != 2) touchAtlas();
         pauseLabel(!"es".equals(p.getString(LauncherActivity.KEY_LANG, "en")));
+        pickRefreshRate();
         rumbleOn = p.getBoolean(LauncherActivity.KEY_RUMBLE, true);
         if (rumbleOn) pickVibrator();
         if (savedInstanceState == null && !openSavedDisc()) {
