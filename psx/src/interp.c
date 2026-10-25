@@ -248,6 +248,7 @@ static int g_hwfull, g_hwmain;
 void psx_interp_hw(PsxInterpHwSink sink, int full) { g_hwsink = sink; g_hwfull = full; }
 void psx_interp_hw_main(int on) { g_hwmain = on; }
 static int g_real_only;   /* la imagen real de este paso solo se dibujo en la GPU */
+static int g_fb_step;     /* (paso 10) la lista de este paso lee la imagen como textura */
 static int g_real_nread;
 static int16_t g_real_read[4][4];
 
@@ -283,7 +284,9 @@ static void draw_real(PsxGpu *g, uint32_t ot, int num, int den, int vb) {
     /* etapa 8, paso 2: con g_hwmain, el software no dibuja la imagen (solo lo de fuera); la GPU
      * parte de su propia copia si el software ya no la tenia al dia */
     L.main_stale = psx_gpu_main_stale(g->area_x1, g->area_y1, g->area_x2, g->area_y2);
-    g_real_only = g_hwmain && !g_hwfull &&
+    /* (paso 10) tampoco si lee la imagen como textura (la estela del virus): la leeria de la copia del
+     * software, atrasada (texturas pegadas y cielo temblando en la Retroid; con el software al dia, no) */
+    g_real_only = g_hwmain && !g_hwfull && !g_fb_step &&
                   !psx_gpu_list_copies_from(ot, psx_ram, psx_scratch, g->area_x1, g->area_y1, g->area_x2, g->area_y2);
     double r0 = tnow();
     psx_gpu_record(&L, g_real_only);
@@ -1202,20 +1205,23 @@ int psx_interp_draw(void *gpu, uint32_t ot) {
     int nodyn = 0;
     if (!ok && (g_rebuild || g_rra) && have_prev && interval >= g_min_vb && J.nthreads > 0) { ok = 1; nodyn = 1; }
     /* (etapa 8, paso 10) la lista lee como textura la imagen (esta o la del paso anterior): la estela del
-     * virus de la mision 19, que mezcla cada imagen con la anterior. Una intermedia no tiene esa imagen
-     * anterior (texturas pegadas, cielo temblando en la Retroid): ese paso, solo la real, como en la PS1.
-     * PSX_INTERP_NOFB=1: sin esto (para ver el fallo) */
+     * virus de la mision 19 y la Electrosfera (37), que mezclan cada imagen con la anterior. Entonces el
+     * software dibuja la imagen real (draw_real: g_fb_step), para que la lea al dia: con la de la GPU sola,
+     * texturas pegadas y el cielo temblando en la Retroid. PSX_INTERP_FBSKIP=1: ademas, ese paso sin
+     * intermedias; PSX_INTERP_NOFB=1: nada de esto (para ver el fallo) */
     {
-        static int nofb = -1;
+        static int nofb = -1, skip = -1;
         static int prev[4] = {-1, -1, -1, -1};
         if (nofb < 0) nofb = getenv("PSX_INTERP_NOFB") != NULL;
+        if (skip < 0) skip = getenv("PSX_INTERP_FBSKIP") != NULL;
         int rects[2][4] = {{g->area_x1, g->area_y1, g->area_x2, g->area_y2}}, nr = 1;
         if (prev[0] >= 0 && memcmp(prev, rects[0], sizeof prev)) { memcpy(rects[1], prev, sizeof prev); nr = 2; }
         memcpy(prev, rects[0], sizeof prev);
         int tp = g->tp_x | g->tp_y << 4 | g->tp_depth << 7;
-        if (!nofb && ok && psx_gpu_list_textures_from(ot, psx_ram, psx_scratch, tp, (const int (*)[4])rects, nr)) {
-            ok = 0;
+        g_fb_step = !nofb && psx_gpu_list_textures_from(ot, psx_ram, psx_scratch, tp, (const int (*)[4])rects, nr);
+        if (g_fb_step) {
             psx_interp_feedback++;
+            if (skip) ok = 0;
         }
     }
     have_prev = 1;

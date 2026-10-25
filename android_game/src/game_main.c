@@ -171,6 +171,7 @@ static void dbg_read(void) {
              * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
             else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
             else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
+            else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */
             else if (!strcmp(k, "pasadas") && v == 2) setenv("PSX_HW_PASADAS2", "1", 1);   /* (paso 10) el bit 15 en dos pasadas, como antes */
             else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
             else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
@@ -1105,7 +1106,7 @@ void android_main(struct android_app *app) {
                     G.st_core, G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, G.st_rr_ms, md);
             {   /* (paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
                 static int fb_last;
-                if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos sin intermedias (la imagen como textura)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
+                if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos leen la imagen como textura (el software la dibuja)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
             }
             extern int psx_hw_stat_draws, psx_hw_stat_uploads;
             if (c_hw_n) {
