@@ -5,6 +5,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-25 — Release v1.13-alfa; la cámara libre, fuera
+
+- Release `v1.13-alfa` con las mejoras acumuladas (etapa 8, pasos 5-7 y 10;
+  etapa 7, paso 9; el arreglo del CD de la 1.12.1), desde `etapa-8-paso-10`
+  (la 1.12.20-alfa que probó el dueño).
+- **Cámara libre (paso 11):** en la Retroid el dueño no notó ningún cambio y
+  pidió quitarla. Queda en `etapa-8-paso-11`, sin fusionar. En el PC la
+  calibración sí cambiaba el giro; por qué no se notaba en la Retroid queda
+  `SIN RESOLVER` (no se comprobó el registro de la app).
+
 ## 2026-10-25 — APK de desarrollo; bordes en 16:9; bajones del virus
 
 - **APK de desarrollo** (`DESARROLLO=1`): lista de las 41 misiones con los

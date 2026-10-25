@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-22 (release `v1.12.1-alfa`: arreglo de la pantalla negra al acabar la Maze; se trabaja con la versión americana)
+**Última actualización:** 2026-10-25 (release `v1.13-alfa`: rendimiento, vibración, pausa al volver, humo, vértices, bordes en 16:9 y el virus de Bug Hunt; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.12.1-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
+**Etapa 7 — APK libre: publicada** (`v1.13-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -104,8 +104,8 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
   - los puntos del radar y del mapa grande, bien.
   - los bordes en 16:9 sin temblor (decimales de la GTE: un entero ambiguo, sin decimales) y el centro
     suave.
-- **Siguiente:** decidir con el dueño si las mejoras acumuladas (pasos 5-7 y 10, etapa 7 paso 9) van a una
-  versión de prueba normal o a la próxima release.
+- **Publicado en la `v1.13-alfa`** con las mejoras acumuladas (pasos 5-7 y 10, etapa 7 paso 9), tras
+  probar el dueño la 1.12.20-alfa.
 - **`SIN RESOLVER`:**
   - por qué el fallo de los bordes no sale en el PC;
   - las 6 listas malas y la misión 37 del comparador (anteriores a este paso).
@@ -113,12 +113,10 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
 **Pantalla negra al acabar la Maze: arreglada** (`v1.12.1-alfa`, `docs/14-etapa8.md` paso 8;
 `make fin-mision`). La release solo lleva ese arreglo.
 
-**Mejoras acumuladas, sin publicar** (el dueño las quiere probar mejor antes):
-- ramas `etapa-8-paso-5` (rendimiento), `etapa-7-paso-9` (vibración, pausa,
-  salir al menú, tarjeta segura), `etapa-8-paso-6` (humo y explosiones) y
-  `etapa-8-paso-7` (menos temblor de vértices);
-- `etapa-8-paso-7` (que las reúne todas) ya lleva el arreglo del paso 8.
-- El HUD sin ensanchar en 16:9 queda aparcado en `etapa-8-hud-ancho`.
+**Aparcado, sin publicar:**
+- el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`);
+- la cámara libre (paso 11, rama `etapa-8-paso-11`): en la Retroid el dueño no notó ningún cambio y pidió
+  quitarla; no está en la `v1.13-alfa` (`SIN RESOLVER` por qué no se notaba).
 
 **Alta resolución: hecha** (`v1.12-alfa`, `docs/14-etapa8.md` paso 4).
 
