@@ -1,5 +1,6 @@
 package com.vzepec.ac3game;
 
+import android.app.AlertDialog;
 import android.app.NativeActivity;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -53,6 +54,26 @@ public class MainActivity extends NativeActivity {
 
     /** Implementado en game_main.c: el rotulo de la pausa al volver a la app. */
     private static native void nativeSetPauseLabel(int[] argb, int w, int h);
+
+    /** Implementado en game_main.c (solo en el APK de desarrollo): la mision elegida en la lista. */
+    private static native void nativeSetMission(int n);
+
+    /** APK de desarrollo (etapa 8, paso 9; DESARROLLO=1 en build.sh, no se publica): la lista de las
+     *  misiones, con los nombres que el codigo nativo lee del disco. La elegida se carga directamente.
+     *  La llama el codigo nativo (JNI) al abrir el disco. Con un mando: cruceta y A; B vuelve al menu. */
+    public void chooseMission(final String[] names) {
+        runOnUiThread(() -> {
+            AlertDialog d = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("Misión / Mission")
+                    .setItems(names, (dlg, i) -> {
+                        Log.i(TAG, "desarrollo: mision elegida " + names[i]);
+                        nativeSetMission(i);
+                    })
+                    .setOnCancelListener(dlg -> finish())
+                    .create();
+            d.show();
+        });
+    }
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {

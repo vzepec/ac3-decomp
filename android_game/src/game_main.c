@@ -242,6 +242,116 @@ static int g_nfrac = 3;   /* intermedias por paso (adaptativo) */
 static int g_late_real, g_late_inter, g_drop_inter;   /* medicion: llegan tarde a su hora; intermedias tiradas sin dibujar */
 static float g_worker_max;
 
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+/* ---- etapa 8, paso 9: APK de desarrollo (DESARROLLO=1 sh android_game/build.sh; NO se publica) ----
+ * Tras abrir el disco, la lista de las 41 misiones (MainActivity.chooseMission) con sus nombres, que
+ * se leen del disco del usuario: la tabla de misiones del overlay 1 (entrada 1 de ACE.BPB), registros
+ * de 12 bytes {puntero al nombre, numero de orden 1, 2, 3...} (US 0xDFE4, EU 0xE58C dentro del
+ * overlay; se busca por esa forma). La elegida se carga directamente: el juego recorre solo menus e
+ * informe (los botones del guion de tools/misiones.py, sin esperar al reloj) y, al arrancar la
+ * mision, se cambia por la elegida (como AC3_MISSION en el PC; validado con las 41) */
+static char g_dev_names[41][64];
+static volatile int g_dev_state;          /* 0 nada, 1 lista a la vista, 2 elegida */
+static volatile int g_dev_mission = -1;
+static volatile int g_dev_nav;            /* el juego va solo hacia la mision */
+
+static uint32_t dev_le32(const uint8_t *p) { return p[0] | p[1] << 8 | p[2] << 16 | (uint32_t)p[3] << 24; }
+static int dev_read(uint32_t lba, uint32_t off, uint32_t len, uint8_t *out) {
+    uint8_t raw[2352];
+    while (len) {
+        uint32_t o = off % 2048, n = 2048 - o < len ? 2048 - o : len;
+        if (psx_cd_read_raw(lba + off / 2048, raw) < 0) return -1;
+        memcpy(out, raw + 24 + o, n);   /* modo 2, forma 1: datos tras 24 bytes */
+        out += n; off += n; len -= n;
+    }
+    return 0;
+}
+static void dev_names(void) {
+    for (int i = 0; i < 41; i++) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d", i);
+    CdlFILE fh, fb;
+    uint8_t e[8];
+    if (!CdSearchFile(&fh, "\\ACE.BPH;1") || !CdSearchFile(&fb, "\\ACE.BPB;1")) { LOG("desarrollo: sin ACE.BPH/BPB"); return; }
+    if (dev_read((uint32_t)CdPosToInt(&fh.pos), 0x14 + 8, 8, e)) return;   /* indice: cabecera de 0x14, entrada 1 */
+    uint32_t size = (dev_le32(e) & 0xFFFFFFu) * 4, sec = dev_le32(e + 4), base = R->ovl_base;
+    uint8_t *d = size && size < 0x40000 ? malloc(size) : NULL;
+    if (!d || dev_read((uint32_t)CdPosToInt(&fb.pos), sec * 2048, size, d)) { free(d); LOG("desarrollo: no se lee el overlay 1"); return; }
+#define DEV_STR(p) ((p) >= base && (p) - base < size ? (const char *)d + ((p) - base) : NULL)
+    int found = -1;
+    for (uint32_t o = 0; o + 12 * 41 <= size && found < 0; o += 4) {
+        int k = 0;
+        for (; k < 30; k++) {
+            const char *n = DEV_STR(dev_le32(d + o + 12 * k));
+            if (d[o + 12 * k + 4] != k + 1 || !n || !(n[0] >= 'A' && n[0] <= 'Z')) break;
+        }
+        if (k == 30) found = (int)o;
+    }
+    if (found < 0) { free(d); LOG("desarrollo: no esta la tabla de misiones"); return; }
+    for (int i = 0; i < 41; i++) {
+        const uint8_t *r = d + found + 12 * i;
+        const char *n = r[4] == i + 1 ? DEV_STR(dev_le32(r)) : NULL;
+        char nm[40] = "";
+        if (n) for (int j = 0; j < 39 && n[j] >= 32 && n[j] < 127; j++) { nm[j] = n[j]; nm[j + 1] = 0; }
+        int rep = 1;   /* nombres repetidos (Zero Gravity, Electrosphere): (2), (3) */
+        for (int j = 0; j < i && n; j++) if (strstr(g_dev_names[j], nm) && nm[0]) rep++;
+        if (!nm[0]) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  (sin nombre)", i);
+        else if (rep > 1) snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  %s (%d)", i, nm, rep);
+        else snprintf(g_dev_names[i], sizeof g_dev_names[i], "%02d  %s", i, nm);
+    }
+#undef DEV_STR
+    free(d);
+    LOG("desarrollo: tabla de misiones en el overlay 1 + 0x%X", found);
+}
+/* MainActivity.chooseMission(String[]) desde el hilo principal */
+static void dev_show_list(void) {
+    JavaVM *vm = G.app->activity->vm;
+    JNIEnv *env;
+    if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
+    jobject act = G.app->activity->clazz;
+    jclass cl = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetMethodID(env, cl, "chooseMission", "([Ljava/lang/String;)V");
+    jobjectArray arr = (*env)->NewObjectArray(env, 41, (*env)->FindClass(env, "java/lang/String"), NULL);
+    for (int i = 0; i < 41; i++) {
+        jstring js = (*env)->NewStringUTF(env, g_dev_names[i]);
+        (*env)->SetObjectArrayElement(env, arr, i, js);
+        (*env)->DeleteLocalRef(env, js);
+    }
+    if (m) (*env)->CallVoidMethod(env, act, m, arr);
+    (*env)->DeleteLocalRef(env, arr);
+    (*env)->DeleteLocalRef(env, cl);
+    (*vm)->DetachCurrentThread(vm);
+}
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetMission(JNIEnv *env, jclass cls, jint n) {
+    (void)env; (void)cls;
+    g_dev_mission = n;
+    g_dev_nav = 1;
+    g_dev_state = 2;
+}
+/* al arrancar la mision (la primera vez): la elegida en g_state + 0x390, y el mando vuelve al jugador */
+static void dev_force_mission(RCpu *c) {
+    (void)c;
+    if (g_dev_mission < 0) return;
+    uint32_t st = *(uint32_t *)psx_ptr(R->g_state_ptr);
+    int16_t *m = (int16_t *)psx_ptr(st + 0x390);
+    LOG("desarrollo: el juego arranca la mision %d en el VBlank %d; se carga la %d", *m, VSync(-1), g_dev_mission);
+    *m = (int16_t)g_dev_mission;
+    g_dev_mission = -1;
+    g_dev_nav = 0;
+}
+/* botones hacia la mision (el guion de tools/misiones.py: partida nueva, menus e informe), por VBlank */
+static uint16_t dev_buttons(int v) {
+    int eu = R->refresh == 50;
+    if (eu) {   /* menu de idioma; la mision hacia el VBlank 3500 */
+        if (v >= 320 && v < 326) return PSX_PAD_CROSS;
+        if (v >= 1100 && v < 1108) return PSX_PAD_START;
+        if (v >= 1400 && (v - 1400) % 200 < 6) return PSX_PAD_CROSS;
+    } else {
+        if (v >= 300 && v < 308) return PSX_PAD_START;
+        if (v >= 500 && (v - 500) % 200 < 6) return PSX_PAD_CROSS;
+    }
+    return 0;
+}
+#endif
+
 static void frame_wait(void) {
     static double next;
     double t = now();
@@ -249,6 +359,9 @@ static void frame_wait(void) {
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / g_refresh;
     double slack = next - t;
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (g_dev_nav) { next = t; slack = 0; }   /* hacia la mision elegida: a toda velocidad */
+#endif
     if (slack > 0) usleep((useconds_t)(slack * 1e6));
     /* cada 50 VBlank: uso del hilo del juego y numero de intermedias adaptativo. Se baja si los
      * hilos de dibujo no terminan a tiempo (pasos saltados) o si el hilo del juego va justo; se
@@ -294,6 +407,9 @@ static void frame_wait(void) {
     static int16_t pcm[882 * 2];   /* el mayor: 882 (PAL); 735 en NTSC */
     psx_spu_render(psx_spu(), pcm, g_spf);
     uint32_t wpos = G.ring_w;
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (!g_dev_nav)   /* (acelerado no se oye) */
+#endif
     if (wpos - G.ring_r <= 16384 - (uint32_t)g_spf) {
         for (int i = 0; i < g_spf; i++) {
             G.ring[((wpos + i) & 16383) * 2] = pcm[i * 2];
@@ -342,7 +458,11 @@ static void frame_wait(void) {
     float tx, ty;
     int tact;
     touchpad_stick(&tx, &ty, &tact);
-    psx_pad_set(0, (uint16_t)(G.buttons | G.keys | touchpad_buttons()), to_axis(tact ? tx : G.lx), to_axis(tact ? ty : G.ly),
+    uint16_t pad = (uint16_t)(G.buttons | G.keys | touchpad_buttons());
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; G.lx = G.ly = 0; }
+#endif
+    psx_pad_set(0, pad, to_axis(tact ? tx : G.lx), to_axis(tact ? ty : G.ly),
                 to_axis(G.rx), to_axis(G.ry));
     static uint32_t img[640 * 512];
     int w, h;
@@ -459,6 +579,9 @@ static void *game_thread(void *arg) {
 #ifdef AC3_LIBRE
     rc_set_interpreter(mipsi_call);
     ac3_wide_install(R);        /* pantalla ancha: el cono de vision del terreno */
+#ifdef AC3_DEV
+    mipsi_set_hook(R->mission_start, dev_force_mission);   /* la mision elegida en la lista */
+#endif
     if (ac3_rr_install(R) || ac3_rr_async_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
 #else
     rc_register(R->funcs, *R->nfuncs);
@@ -796,6 +919,19 @@ static void app_extras(double t) {
     } else if (G.exit_t0 < 1e17) G.exit_t0 = 0;
 }
 
+static void start_game(void) {
+    g_refresh = R->refresh;
+    g_spf = 44100 / g_refresh;
+    G.running = 1;
+    audio_start();
+    pthread_attr_t at;   /* pila grande: el codigo traducido anida mucho */
+    pthread_attr_init(&at);
+    pthread_attr_setstacksize(&at, 64u << 20);
+    pthread_create(&G.game, &at, game_thread, NULL);
+    pthread_attr_destroy(&at);
+    LOG("juego en marcha");
+}
+
 void android_main(struct android_app *app) {
     G.app = app;
     G.dpy = EGL_NO_DISPLAY;
@@ -828,16 +964,11 @@ void android_main(struct android_app *app) {
                 LOG("el disco no es de ninguna version de este APK: se pide otro");
                 ask_disc();
             } else if (ok) {
-                g_refresh = R->refresh;
-                g_spf = 44100 / g_refresh;
-                G.running = 1;
-                audio_start();
-                pthread_attr_t at;   /* pila grande: el codigo traducido anida mucho */
-                pthread_attr_init(&at);
-                pthread_attr_setstacksize(&at, 64u << 20);
-                pthread_create(&G.game, &at, game_thread, NULL);
-                pthread_attr_destroy(&at);
-                LOG("juego en marcha");
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+                if (g_dev_state == 0) { dev_names(); g_dev_state = 1; dev_show_list(); }   /* arranca al elegir */
+#else
+                start_game();
+#endif
             } else {
                 close(fd);
                 LOG("no se puede leer el disco");
@@ -845,6 +976,9 @@ void android_main(struct android_app *app) {
         } else if (fd >= 0) {
             close(fd);
         }
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+        if (g_dev_state == 2 && !G.running) start_game();
+#endif
         /* la imagen que toca, copiada bajo el cerrojo y presentada fuera de el */
         pthread_mutex_lock(&G.lock);
         double t = now();
