@@ -4,13 +4,15 @@
      Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3game"
-    android:versionCode="79"
-    android:versionName="1.12.1-alfa">
+    android:versionCode="82"
+    android:versionName="1.13-alfa">
 
     <!-- actualizador del menu (etapa 7, paso 7): consultar las releases de GitHub y descargar el
          APK nuevo; Android pide confirmacion para instalarlo y solo acepta la misma firma -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- vibracion del DualShock en el motor del aparato o del mando (etapa 7, paso 9) -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.gamepad" android:required="false" />

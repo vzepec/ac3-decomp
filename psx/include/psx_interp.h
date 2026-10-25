@@ -89,6 +89,8 @@ extern int psx_interp_on;
  * j/0 (j = 1..S) y no sirven de referencia, para comparar la intermedia t = 1/2 de k y k+S+1
  * con el paso real del medio (S impar; S = 3 simula movimientos el doble de rapidos) */
 extern int psx_interp_skip_test;
+/* (etapa 8, paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
+extern int psx_interp_feedback;
 int psx_interp_next_is_ref(void);   /* con la prueba, si el paso que viene es de referencia */   /* atajo para la GTE */
 
 #endif
