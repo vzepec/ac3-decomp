@@ -1039,6 +1039,28 @@ la zona en cada prueba):
   - como mucho 32 llamadas por imagen;
   - GPU 17,8 ms en el peor segundo.
 
+### Temblor de las texturas de los bordes (decimales de la GTE)
+
+**El fallo** (el dueño, con el cono ya ensanchado): las texturas de los
+bordes temblaban. Con `decimales=0`, no.
+
+**Causa:** la tabla de decimales del paso 7 va por el valor entero de la
+pantalla. Si dos vértices distintos caían en el mismo píxel, mandaba el
+primero que se apuntaba, y cuál era cambia de una imagen a otra. En 16:9
+pasa mucho con el terreno lejano de los bordes, con los vértices muy juntos.
+
+**Arreglo:** un entero que recibe decimales distintos queda sin decimales
+(en el píxel, como en la PS1). Un mismo vértice da siempre los mismos y
+todos los que usan ese entero reciben lo mismo, así que no hay grietas
+(`PSX_SUBPIX_NOAMB=1`, como antes).
+
+**Medido:**
+- **PC**, misión 18 en 16:9:
+  - el 12 % de los vértices de triángulos caían en un entero ambiguo;
+  - con decimales, del 95,0 % al 83,0 %;
+  - comparador 0 listas malas.
+- **Retroid** (el dueño): los bordes ya no tiemblan y el centro sigue suave.
+
 - **Las 41 misiones** con intermedias, 16:9 y decimales: 6 listas con un
   bloque malo (misiones 3, 7, 20, 22 y 23) y la 37 con 80 listas por debajo
   del 99 % (86 % de píxeles idénticos).

@@ -102,7 +102,10 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
   - el virus a 59-60 fps y sin fallos gráficos (la estela: el software dibuja la imagen real cuando la
     lista la lee como textura);
   - los puntos del radar y del mapa grande, bien.
-- **Pendiente:** el temblor de las texturas de los bordes en 16:9 (probar con `decimales=0`).
+  - los bordes en 16:9 sin temblor (decimales de la GTE: un entero ambiguo, sin decimales) y el centro
+    suave.
+- **Siguiente:** decidir con el dueño si las mejoras acumuladas (pasos 5-7 y 10, etapa 7 paso 9) van a una
+  versión de prueba normal o a la próxima release.
 - **`SIN RESOLVER`:**
   - por qué el fallo de los bordes no sale en el PC;
   - las 6 listas malas y la misión 37 del comparador (anteriores a este paso).

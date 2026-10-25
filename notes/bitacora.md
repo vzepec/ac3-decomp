@@ -23,6 +23,9 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   copia atrasada del software (cielo temblando, texturas pegadas). Si la lista
   lee la imagen como textura, el software también la dibuja: sin fallos y a
   60 fps en la Retroid (aislado con `modo=3`, `intermedias=0` y `solo=0`).
+- **Temblor de los bordes:** dos vértices en el mismo píxel entero se
+  pisaban los decimales de la GTE; el entero ambiguo va ahora sin decimales
+  (12 % de los vértices en la misión 18). Confirmado en la Retroid.
 - **Reproducir:** `tools/retroid_mision.sh`; en el PC, `PSX_HW_PASADAS2=1`,
   `PSX_HW_NOLOTE=1`, `AC3_WIDE_CONO=f`.
 
