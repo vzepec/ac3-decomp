@@ -392,13 +392,6 @@ static void frame_wait(void) {
     {   /* (paso 12) la estela: un paso que lee la imagen como textura la alarga un segundo (present_delay) */
         static int fbs;
         if (psx_interp_feedback != fbs) { fbs = psx_interp_feedback; g_fb_until = t + 1.0; }
-        /* a 100 Hz o mas, en la estela, 1 intermedia (60 fps) desde el primer paso: con 3, el hilo del redibujo iba al
-         * limite y en cuanto el juego cargaba mas se saltaban 7-9 pasos por segundo (tirones; Galaxy S24) */
-        if (G.rr_on && G.disp_hz >= 100 && G.dbg_hz != 60 && G.interp_enabled && t < g_fb_until && g_nfrac != 1) {
-            g_nfrac = 1;
-            psx_interp_config(1, 2, interp_sink);
-            LOG("imagenes intermedias por paso: 1 (estela)");
-        }
     }
     while ((G.paused || G.hold) && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
@@ -433,8 +426,7 @@ static void frame_wait(void) {
              * 120 <-> 60 mas visible que algun paso suelto saltado. Solo con carga sostenida (mas de 6 de 30), y para
              * volver, 3 ventanas limpias) */
             static double down_t;   /* cuando bajo por ultima vez */
-            if (tn < g_fb_until) want = 1, good = 0;   /* (la estela: ver frame_wait) */
-            else if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0, down_t = tn;
+            if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0, down_t = tn;
             else if (p.steps < 5 || (tn - down_t > 10.0 && p.skipped <= 6)) want = 3, good = 0;   /* sin pasos (menus) o lejos de la ultima bajada */
             else if (p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 3) want = 3, good = 0; }
             else good = 0;
