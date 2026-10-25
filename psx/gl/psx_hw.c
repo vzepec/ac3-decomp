@@ -118,7 +118,9 @@ static const char *FS =
     "  put((c * 8.0 + floor(c / 4.0)) / 255.0, semi && stp, abr);\n"
     "}\n";
 
-static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_outm, g_stencil;   /* g_outm: el bit 15 de g_out (paso 10) */
+static GLuint g_prog, g_vao, g_vbo, g_vram, g_fbo, g_out, g_outm, g_stencil;
+static GLuint g_mcopy, g_mcopy_fbo;   /* (paso 10) copia del bit 15 para rehacer el stencil */
+static int g_mcopy_w, g_mcopy_h;   /* g_outm: el bit 15 de g_out (paso 10) */
 /* atlas de las subidas (paso 3b): sin subidas a mitad de imagen, que en la GPU por baldosas cortan el
  * dibujo (medido en la Retroid: de 54,6 a 59,6 fps al quitarlas) */
 #define NATLAS 128
@@ -241,6 +243,9 @@ void psx_hw_shutdown(void) {
     if (g_outm) glDeleteTextures(1, &g_outm);
     if (g_stencil) glDeleteRenderbuffers(1, &g_stencil);
     glDeleteFramebuffers(1, &g_fbo);
+    if (g_mcopy) glDeleteTextures(1, &g_mcopy);
+    if (g_mcopy_fbo) glDeleteFramebuffers(1, &g_mcopy_fbo);
+    g_mcopy = g_mcopy_fbo = 0; g_mcopy_w = g_mcopy_h = 0;
     for (int i = 0; i < NTARGET; i++)
         if (g_tg[i].fbo) {
             glDeleteFramebuffers(1, &g_tg[i].fbo); glDeleteTextures(1, &g_tg[i].tex); glDeleteTextures(1, &g_tg[i].mask);
@@ -638,7 +643,11 @@ static void apply_upload(const PsxHwPrim *p) {
  * pasadas de antes), g_mdirty (alguna primitiva en una pasada lo dejo sin el bit 15 exacto), g_cur_mask (el
  * segundo bufer del destino) y g_planning (prim_passes solo consulta: agrupacion) */
 static int g_rebuild = 1, g_mdirty, g_planning;
-static GLuint g_cur_mask;
+static GLuint g_cur_mask, g_cur_fbo;
+/* copia del segundo bufer para leerlo: en una GPU por baldosas (Adreno), leer como textura el bufer al
+ * que se esta dibujando da lo que habia en memoria antes de la imagen (los puntos del radar y del mapa
+ * grande desaparecian o parpadeaban en la Retroid; en el PC no pasa). El blit obliga a volcarlo */
+/* (g_mcopy, g_mcopy_fbo: arriba, con el resto de objetos de GL) */
 static void stencil_from_mask(GLuint mask, int ow, int oh);
 /* pasadas de una primitiva (passes[]): 0 normal, o 1 y 2 (texeles con el bit 15 a 0 y a 1) */
 static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
@@ -678,7 +687,27 @@ static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
 static int g_only_pass;
 static void rebuild_stencil(void) {
     flush();
-    stencil_from_mask(g_cur_mask, g_ow, g_oh);
+    if (!g_mcopy_fbo) glGenFramebuffers(1, &g_mcopy_fbo);
+    if (g_mcopy_w != g_ow || g_mcopy_h != g_oh) {
+        if (g_mcopy) glDeleteTextures(1, &g_mcopy);
+        glGenTextures(1, &g_mcopy);
+        glBindTexture(GL_TEXTURE_2D, g_mcopy);
+        glTexStorage2D(GL_TEXTURE_2D, 1, GL_RGBA8, g_ow, g_oh);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glBindTexture(GL_TEXTURE_2D, g_vram);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_mcopy_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_mcopy, 0);
+        g_mcopy_w = g_ow; g_mcopy_h = g_oh;
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_cur_fbo);
+    glReadBuffer(GL_COLOR_ATTACHMENT1);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_mcopy_fbo);
+    glBlitFramebuffer(0, 0, g_ow, g_oh, 0, 0, g_ow, g_oh, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glReadBuffer(GL_COLOR_ATTACHMENT0);
+    glBindFramebuffer(GL_FRAMEBUFFER, g_cur_fbo);
+    stencil_from_mask(g_mcopy, g_ow, g_oh);
     /* el estado del dibujo de la lista */
     glUseProgram(g_prog);
     glBindVertexArray(g_vao);
@@ -1039,6 +1068,7 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     }
     g_last_tex = real ? tg->tex : g_out;
     g_cur_mask = real ? tg->mask : g_outm;
+    g_cur_fbo = dst;
     glBindFramebuffer(GL_FRAMEBUFFER, dst);
     if (keep && !psx_hw_no_maskpass) stencil_from_mask(tg->mask, ow, oh);   /* el bit 15 exacto de la imagen de partida */
     glViewport(0, 0, ow, oh);
