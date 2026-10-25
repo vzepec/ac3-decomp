@@ -357,7 +357,8 @@ static void summary(void) {
     extern int psx_hw_stat_hoisted, psx_hw_stat_inframe, psx_hw_stat_atlas;
     printf("hwcmp: subidas al atlas %d, adelantadas %d, a mitad de imagen %d\n", psx_hw_stat_atlas, psx_hw_stat_hoisted, psx_hw_stat_inframe);
     extern int psx_hw_stat_draws;
-    extern int psx_hw_stat_cut[4];
+    extern int psx_hw_stat_cut[4], psx_hw_stat_batched;
+    printf("hwcmp: primitivas de dos pasadas dibujadas en grupo: %d\n", psx_hw_stat_batched);
     printf("hwcmp: llamadas de dibujo %d (%.0f por lista; la que mas, %d en el VBlank %d con %d primitivas); cortes: recorte %d, mezcla %d, pasada %d, mascara %d\n",
            psx_hw_stat_draws, g_lists ? (double)psx_hw_stat_draws / g_lists : 0.0, g_maxdraws, g_maxdraws_vb, g_maxdraws_n, psx_hw_stat_cut[0],
            psx_hw_stat_cut[1], psx_hw_stat_cut[2], psx_hw_stat_cut[3]);

@@ -253,6 +253,7 @@ void psx_hw_shutdown(void) {
 }
 
 int psx_hw_stat_draws, psx_hw_stat_uploads, psx_hw_stat_verts;
+int psx_hw_stat_batched;   /* (paso 10) primitivas de dos pasadas dibujadas en grupo */
 int psx_hw_stat_cut[4];   /* cortes de lote: recorte, mezcla, pasada, mascara */
 /* medicion (paso 6): pixeles de la VRAM que pintan las primitivas (con lo superpuesto), los
  * semitransparentes y los que leen texturas que la lista cambia (recorren el atlas de subidas) */
@@ -632,12 +633,11 @@ static void apply_upload(const PsxHwPrim *p) {
                 memcpy(sh + (p->y[0] + y) * 1024 + p->x[0], g_list->data + p->data_off + y * p->x[1], (size_t)p->x[1] * 2);
     }
 }
-static void draw_prim_2(const PsxHwPrim *p, int index) {
-    (void)index;
+/* pasadas de una primitiva (passes[]): 0 normal, o 1 y 2 (texeles con el bit 15 a 0 y a 1) */
+static int prim_passes(const PsxHwPrim *p, int index, int passes[2]) {
     int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
-    int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
-    int32_t t[4];
-    int passes[2], np = 0;
+    int mset = (f & PSX_HWF_MASKSET) != 0;
+    int np = 0;
     /* bit 15 escrito (como la GPU por software): texel con textura (copias: el de origen) | poner
      * mascara (las copias y los rellenos no la usan). Con stencil, las texturas van en dos pasadas
      * para escribir cada valor */
@@ -661,7 +661,20 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
     int sub = semi && p->abr == 2;
     if ((sub && tex && !psx_hw_onepass) || (exact && (vram || !mset))) { passes[np++] = 1; passes[np++] = 2; }
     else passes[np++] = 0;
+    return np;
+}
+/* (etapa 8, paso 10) con g_only_pass (1 o 2), de una primitiva de dos pasadas solo esa: los grupos de
+ * primitivas seguidas que no se solapan van pasada a pasada (ver psx_hw_frame_ex) */
+static int g_only_pass;
+static void draw_prim_2(const PsxHwPrim *p, int index) {
+    int f = p->flags, semi = (f & PSX_HWF_SEMI) != 0, tex = (f & PSX_HWF_TEX) != 0;
+    int mset = (f & PSX_HWF_MASKSET) != 0, mchk = (f & PSX_HWF_MASKCHK) != 0;
+    int32_t t[4];
+    int passes[2], np = prim_passes(p, index, passes);
+    int vram = p->kind == PSX_HW_VRAM, fill = p->kind == PSX_HW_FILL;
+    int sub = semi && p->abr == 2;
     for (int k = 0; k < np; k++) {
+        if (g_only_pass && np == 2 && passes[k] != g_only_pass) continue;
         int pass = passes[k], cls = sub && (!tex || pass == 2) ? 1 : 0;
         int st = -1;
         if (g_track) {
@@ -671,7 +684,7 @@ static void draw_prim_2(const PsxHwPrim *p, int index) {
         }
         if (fill || (vram && p->ax2 < 0)) state(0, 0, -1, -1, 0, 0, st);
         else state(p->ax1, p->ay1, p->ax2, p->ay2, cls, pass, st);
-        if (k == 0 && (p->kind == PSX_HW_TRI || p->kind == PSX_HW_RECT)) {
+        if ((g_only_pass ? g_only_pass == 1 : k == 0) && (p->kind == PSX_HW_TRI || p->kind == PSX_HW_RECT)) {
             double ar = p->kind == PSX_HW_RECT ? (double)p->x[1] * p->y[1]
                         : fabs((double)(p->x[1] - p->x[0]) * (p->y[2] - p->y[0]) - (double)(p->x[2] - p->x[0]) * (p->y[1] - p->y[0])) / 2;
             psx_hw_stat_px += ar;
@@ -1089,7 +1102,43 @@ static void frame(const PsxHwList *l, const uint16_t *bg, int x0, int y0, int w,
     static int nosp = -1;
     if (nosp < 0) nosp = getenv("PSX_HW_NOSUBPIX") != NULL;
     g_subpix = !nosp;
-    for (int i = 0; i < l->n; i++) draw_prim(&l->p[i], i);
+    /* (etapa 8, paso 10) primitivas seguidas de dos pasadas que no se solapan entre si: la pasada 1 de
+     * todas y luego la 2 (ningun pixel lo tocan dos del grupo: el resultado es el mismo). Iban pasada 1,
+     * 2, 1, 2...: dos llamadas por primitiva. El efecto del virus de la mision 19 (miles de primitivas
+     * sobre la zona que comprueba la mascara) daba 4.400-5.200 llamadas y 50-114 ms de GPU por imagen
+     * en la Retroid. PSX_HW_NOLOTE=1: sin agrupar (prueba) */
+    static int nolote = -1;
+    if (nolote < 0) nolote = getenv("PSX_HW_NOLOTE") != NULL;
+    enum { RUN = 64 };
+    for (int i = 0; i < l->n;) {
+        const PsxHwPrim *p = &l->p[i];
+        int pp[2], j = i + 1;
+        if (!nolote && p->kind != PSX_HW_UPLOAD && prim_passes(p, i, pp) == 2) {
+            static int bx[RUN][4];
+            int nb = 0;
+            bbox(p, &bx[0][0], &bx[0][1], &bx[0][2], &bx[0][3]);
+            nb = 1;
+            for (; j < l->n && j - i < RUN; j++) {
+                const PsxHwPrim *q = &l->p[j];
+                if (q->kind == PSX_HW_UPLOAD || prim_passes(q, j, pp) != 2) break;
+                int x1, y1, x2, y2, hit = 0;
+                bbox(q, &x1, &y1, &x2, &y2);
+                for (int k = 0; k < nb && !hit; k++) hit = x1 < bx[k][2] && bx[k][0] < x2 && y1 < bx[k][3] && bx[k][1] < y2;
+                if (hit) break;
+                bx[nb][0] = x1; bx[nb][1] = y1; bx[nb][2] = x2; bx[nb][3] = y2; nb++;
+            }
+            if (j - i > 1) {
+                for (g_only_pass = 1; g_only_pass <= 2; g_only_pass++)
+                    for (int k = i; k < j; k++) draw_prim_2(&l->p[k], k);
+                g_only_pass = 0;
+                psx_hw_stat_batched += j - i;
+                i = j;
+                continue;
+            }
+        }
+        draw_prim(p, i);
+        i++;
+    }
     flush();
     glDisable(GL_SCISSOR_TEST);
     glDisable(GL_BLEND);
