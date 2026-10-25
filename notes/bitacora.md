@@ -19,6 +19,10 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   como mucho 55 llamadas y 60 fps. Piezas sin comprobación de máscara en una
   pasada; stencil rehecho desde una copia del bit 15 (leer el búfer al que
   se dibuja falla en la GPU por baldosas: puntos del radar).
+- **Estela del virus:** con la imagen real solo en la GPU, la estela leía la
+  copia atrasada del software (cielo temblando, texturas pegadas). Si la lista
+  lee la imagen como textura, el software también la dibuja: sin fallos y a
+  60 fps en la Retroid (aislado con `modo=3`, `intermedias=0` y `solo=0`).
 - **Reproducir:** `tools/retroid_mision.sh`; en el PC, `PSX_HW_PASADAS2=1`,
   `PSX_HW_NOLOTE=1`, `AC3_WIDE_CONO=f`.
 

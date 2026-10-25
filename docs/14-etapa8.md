@@ -992,7 +992,53 @@ otra: dos llamadas por pieza.
 - **Retroid**, misión 19 atravesando el virus (antes de la copia del bit 15):
   - como mucho 55 llamadas por imagen (antes 5.847);
   - GPU de 10 a 17 ms por vuelta; 60 fps en todos los segundos con dibujo.
-  - Con la copia: pendiente de medir.
+  - Con la copia y el arreglo de la estela (abajo): 59-60 fps.
+### Fallos gráficos en la estela del virus (y la Electrosfera)
+
+**El fallo** (el dueño, en la Retroid, con los fps ya arreglados): al
+volverse roja la pantalla, el cielo temblaba y había texturas pegadas o
+encimadas al mover la cámara o el avión.
+
+**Aislado en la Retroid**, probando con `depurar.txt` (el dueño atravesando
+la zona en cada prueba):
+
+| Prueba | Fallos |
+|---|---|
+| Método anterior de pasadas (`pasadas=2`) | sí (y bajones) |
+| Modo original (`modo=3`: software, 4:3, sin intermedias) | **no**: solo la estela del juego |
+| Sin intermedias (`intermedias=0`) | no |
+| Sin intermedias en la estela (detección de abajo) | **sí** |
+| El software también dibuja la imagen real (`solo=0`) | **no** |
+
+**Causa:**
+- El efecto es una estela: cada imagen se mezcla con la anterior, que el
+  juego lee como textura.
+- Desde el paso 2, en la misión la imagen real la dibuja solo la GPU y la
+  copia del software se queda atrasada, así que la estela leía esa copia
+  vieja.
+
+**Arreglo:**
+- `psx_gpu_list_textures_from` detecta las listas con alguna primitiva con
+  textura (polígono o sprite: su página y sus UV) que lee de la imagen de
+  este paso o del anterior.
+- En esos pasos, el software dibuja también la imagen real (en
+  `draw_real`).
+- Las intermedias se mantienen (`PSX_INTERP_FBSKIP=1`, `estela=1`: sin
+  ellas en esos pasos).
+
+**Medido:**
+- **PC:**
+  - en vuelo normal no salta (0 pasos en las misiones 0, 19 y 25);
+  - en la 10, 29 pasos;
+  - en la 37 (la Electrosfera, con estela permanente), casi todos;
+  - comparador igual que antes en la 19 y la 37.
+- **Retroid**, misión 19:
+  - **sin fallos** (el dueño);
+  - en los 13 s de estela, **59-60 fps** con intermedias;
+  - CPU del hilo del juego como mucho 46 %;
+  - como mucho 32 llamadas por imagen;
+  - GPU 17,8 ms en el peor segundo.
+
 - **Las 41 misiones** con intermedias, 16:9 y decimales: 6 listas con un
   bloque malo (misiones 3, 7, 20, 22 y 23) y la 37 con 80 listas por debajo
   del 99 % (86 % de píxeles idénticos).

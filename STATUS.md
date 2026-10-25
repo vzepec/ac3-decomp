@@ -98,8 +98,11 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
 
 **Paso 10 (rama `etapa-8-paso-10`):** terreno en los bordes en 16:9 y bajones del efecto del virus
 (`docs/14-etapa8.md`).
-- **Pendiente:** que el dueño confirme los puntos del radar y del mapa grande con la copia del bit 15, y
-  volver a medir el virus con ella.
+- **Hecho y confirmado por el dueño en la Retroid:**
+  - el virus a 59-60 fps y sin fallos gráficos (la estela: el software dibuja la imagen real cuando la
+    lista la lee como textura);
+  - los puntos del radar y del mapa grande, bien.
+- **Pendiente:** el temblor de las texturas de los bordes en 16:9 (probar con `decimales=0`).
 - **`SIN RESOLVER`:**
   - por qué el fallo de los bordes no sale en el PC;
   - las 6 listas malas y la misión 37 del comparador (anteriores a este paso).
