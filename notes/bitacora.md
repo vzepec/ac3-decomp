@@ -5,6 +5,27 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-26 — El avión a 120 Hz: tembloroso y, al acelerar, pequeño y sin textura; release v1.13.2-alfa
+
+- **Temblor permanente:** con el reparto de las fases del paso 12, los hilos
+  1 y 2 anotaban las intermedias sin los decimales de la GTE del redibujo
+  (la tabla era del hilo). Ahora hay una tabla por fase.
+- **Al acelerar** (una de cada cuatro imágenes, el avión pequeño y sin
+  textura): el dibujo estático elige el modelo del avión que sigue la cámara
+  (`g_render+0x3C4`) por su distancia a ella (`FUN_80065f68`). La cámara se
+  interpolaba y el avión no: a mucha velocidad, en la primera fase quedaba
+  3/4 de paso por delante y salía el modelo lejano. Ahora, en vuelo, se mueve
+  lo mismo que la cámara interpolada (interpolarlo sin más devuelve la estela
+  doble del misil del paso 3b).
+- Reproducido en el S24 sin el dueño: `depurar.txt` con `botones=` y
+  `pulsar=`, y `tools/movil_grabar.sh` (2 s de pantalla a 120 imágenes por
+  segundo).
+- Reproducir en el PC: misión 0, `select` y `r1` mantenido 20 s,
+  `AC3_HWSHOT=4,4000,4016,dir AC3_RR=1 AC3_INTERP=3 AC3_WIDE=1`, con y sin
+  `AC3_RR_NOSIGUE=1` (`_i1-4` con el avión pequeño). Vigía en el redibujo:
+  `AC3_WATCHREAD=80134F70 AC3_WATCHREAD_FROM=4000 AC3_WATCHREAD_RR=1`. Ver
+  `docs/14-etapa8.md`, paso 13.
+
 ## 2026-10-25 — Temblor del cielo en la misión 19: el redibujo no cabía; release v1.13.1-alfa
 
 - En la misión 19 el mundo estático ocupa hasta 71 KB de primitivas y tras

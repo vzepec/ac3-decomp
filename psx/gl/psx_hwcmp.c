@@ -156,7 +156,8 @@ static void shot(const PsxHwList *lp, const uint16_t *bg, int x0, int y0, int w,
     }
     if (vb < v1 || vb > v2) return;
     char path[600];
-    const char *tag = num == den ? "" : "_i";
+    char tag[24] = "";
+    if (num != den) snprintf(tag, sizeof tag, "_i%d-%d", num, den);   /* (cada fase, con su nombre) */
     snprintf(path, sizeof path, "%s/s%05d%s_x1.ppm", dir, vb, tag);
     ppm(path, g_hw, w, h);
     if (!pers) {
