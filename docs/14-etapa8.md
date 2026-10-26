@@ -1183,6 +1183,8 @@ Publicado en la **`v1.13.1-alfa`**.
 
 ## Paso 13: el avión a 120 Hz (rama `etapa-8-paso-13`)
 
+Publicado en la **`v1.13.2-alfa`**.
+
 ### El avión temblaba siempre: decimales de la GTE en las fases repartidas
 
 - **Informe del dueño** (S24, `v1.13.1-alfa`): a 120 Hz el modelo del avión

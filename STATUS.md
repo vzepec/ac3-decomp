@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-26 (paso 13: el avión a 120 Hz, sin temblor ni modelo lejano al acelerar, confirmado en el S24; pendiente de publicar como `v1.13.2-alfa`. Publicada: `v1.13.1-alfa`; se trabaja con la versión americana)
+**Última actualización:** 2026-10-26 (paso 13: el avión a 120 Hz, sin temblor ni modelo lejano al acelerar; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.13.1-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
+**Etapa 7 — APK libre: publicada** (`v1.13.2-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -121,10 +121,12 @@ menú (bloqueada sin 120 Hz), fases del redibujo repartidas entre hilos y el red
 - **`SIN RESOLVER`:** las imágenes de la misión 19 que la autoprueba t = 1 da distintas en el HUD y el radar (pila
   sin inicializar, como las demás).
 
-**El avión a 120 Hz (paso 13, rama `etapa-8-paso-13`, `1.13.2-alfa`): arreglado y confirmado por el dueño en el
-S24.** Temblaba siempre (decimales de la GTE en las fases repartidas) y, al acelerar, salía pequeño y sin textura en
-la primera intermedia (el avión que sigue la cámara no se movía con ella en el redibujo). `docs/14-etapa8.md` paso 13.
-- **Siguiente:** publicarlo como `v1.13.2-alfa` (corrección sobre la 1.13.1), con el permiso del dueño.
+**El avión a 120 Hz (paso 13): publicado en la `v1.13.2-alfa`** (confirmado por el dueño en el S24). Temblaba
+siempre (decimales de la GTE en las fases repartidas) y, al acelerar, salía pequeño y sin textura en la primera
+intermedia (el avión que sigue la cámara no se movía con ella en el redibujo).
+`docs/14-etapa8.md` paso 13.
+- **Pendiente:** jugar la 1.13.1 y la 1.13.2 en la Retroid (60 Hz) y ver la opción de 120 bloqueada en una
+  pantalla de 60 Hz.
 
 **Aparcado, sin publicar:**
 - el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`);

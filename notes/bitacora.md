@@ -5,7 +5,7 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
-## 2026-10-26 — El avión a 120 Hz: tembloroso y, al acelerar, pequeño y sin textura
+## 2026-10-26 — El avión a 120 Hz: tembloroso y, al acelerar, pequeño y sin textura; release v1.13.2-alfa
 
 - **Temblor permanente:** con el reparto de las fases del paso 12, los hilos
   1 y 2 anotaban las intermedias sin los decimales de la GTE del redibujo
