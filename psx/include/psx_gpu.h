@@ -88,6 +88,11 @@ void psx_gpu_record(PsxHwList *list, int only);   /* NULL: sin registro (por hil
  * terminar cada lista anotada */
 extern int psx_gpu_subpix_on;
 void psx_gpu_subpix_store(uint32_t sxy, uint32_t fx16, uint32_t fy16);
+/* (etapa 8, paso 12) una tabla aparte (p. ej. la de una fase intermedia): la que usa este hilo desde ahora
+ * (devuelve la anterior; NULL, la propia del hilo, que se crea al usarla); clear la vacia */
+void *psx_gpu_subpix_new(void);
+void *psx_gpu_subpix_bind(void *t);
+void psx_gpu_subpix_clear(void *t);
 void psx_gpu_record_flush(PsxGpu *g);              /* al terminar la lista: lo pendiente */
 /* etapa 8, paso 2. Con only, la imagen (el area de dibujo al empezar la lista) no se dibuja en la
  * VRAM del software: queda solo en la GPU (psx/gl/psx_hw.c la conserva). psx_gpu_draw_list lo

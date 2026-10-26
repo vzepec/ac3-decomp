@@ -140,7 +140,7 @@ static struct {
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz, dbg_btn, dbg_tap;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -155,7 +155,7 @@ static struct {
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1, btn = 0, tap = 0;
     if (f) {
         char k[32];
         int v;
@@ -182,6 +182,8 @@ static void dbg_read(void) {
             else if (!strcmp(k, "intermedias")) inter = v;
             else if (!strcmp(k, "hz")) G.dbg_hz = v;   /* (paso 12) 60: como en una pantalla de 60 Hz */   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
             else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
+            else if (!strcmp(k, "botones")) btn = v;   /* (paso 13) botones mantenidos (mascara del mando: R1 = 2048) */
+            else if (!strcmp(k, "pulsar")) tap = v;    /* y pulsados una vez cada vez que cambia (SELECT = 1: la vista) */
         }
         fclose(f);
     }
@@ -191,6 +193,10 @@ static void dbg_read(void) {
     if (sp != G.dbg_subpix) LOG("depurar: decimales %d", sp);
     G.dbg_subpix = sp;
     G.dbg_cam = cam; G.dbg_pal = pal; G.dbg_alb = alb; G.dbg_inter = inter;
+    static int tap_last;
+    if (tap != tap_last && tap) G.dbg_tap = tap;
+    tap_last = tap;
+    G.dbg_btn = btn;
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -522,6 +528,9 @@ static void frame_wait(void) {
     if (G.dbg_cam) ry = G.dbg_cam / 100.0f;
     if (G.dbg_pal) ly = G.dbg_pal / 100.0f;
     if (G.dbg_alb) lx = G.dbg_alb / 100.0f;
+    pad |= (uint16_t)G.dbg_btn;
+    static int tap_left;
+    if (G.dbg_tap) { pad |= (uint16_t)G.dbg_tap; if (++tap_left >= 6) { G.dbg_tap = 0; tap_left = 0; } }
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
     if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }
 #endif

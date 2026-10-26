@@ -111,7 +111,7 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     if (w == 0) return;
     if (mipsi_watch_read && ((op >= 0x20 && op <= 0x26) || op == 0x32) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_read & 0x1FFFFFFCu)) {
         static int nw;
-        if (nw++ < 12) fprintf(stderr, "vigia: lectura de %08x desde %08x (ra %08x)\n", mipsi_watch_read, pc, r[31]);
+        if (nw++ < 80) fprintf(stderr, "vigia: lectura de %08x desde %08x (ra %08x)\n", mipsi_watch_read, pc, r[31]);
     }
     if (mipsi_watch_write && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_write & 0x1FFFFFFCu)) {
         static int nw;

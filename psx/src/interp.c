@@ -380,7 +380,8 @@ static struct {
     /* el trabajo */
     uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
     uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
-    uint32_t kready[8];               /* (paso 12) redibujo en paralelo: la fase k, lista para su hilo (el seq del trabajo) */
+    uint32_t kready[8];
+    void *spk[8];                     /* (paso 12) los decimales de la GTE del redibujo de cada fase (los usa su hilo) */               /* (paso 12) redibujo en paralelo: la fase k, lista para su hilo (el seq del trabajo) */
     pthread_cond_t kcv;
     int rebuilt;
     int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
@@ -508,8 +509,17 @@ static void *worker(void *arg) {
         if (par && id == 0) {
             for (int k = 1; k < J.den; k++) {
                 uint8_t *R, *Sc;
+                /* los decimales de la GTE de este redibujo, en la tabla de la fase: el hilo que la acabe la usa. Sin
+                 * esto los hilos 1 y 2 anotaban sin decimales (el avion temblaba a 4x: hasta 3 pixeles) */
+                void *own = NULL;
+                if (k % nt) {
+                    if (!J.spk[k]) J.spk[k] = psx_gpu_subpix_new();
+                    psx_gpu_subpix_clear(J.spk[k]);
+                    own = psx_gpu_subpix_bind(J.spk[k]);
+                }
                 phase_build(k, ram, scratch, &R, &Sc);
                 if (k % nt == 0) { phase_out(id, k, R, Sc, gpu, &hl, out); continue; }
+                psx_gpu_subpix_bind(own);
                 if (!J.ramk[k]) { J.ramk[k] = malloc(PSX_RAM_SIZE); J.scrk[k] = malloc(0x400); }
                 if (J.ramk[k] && J.scrk[k]) { memcpy(J.ramk[k], R, PSX_RAM_SIZE); memcpy(J.scrk[k], Sc, 0x400); }
                 pthread_mutex_lock(&J.mu);
@@ -524,7 +534,9 @@ static void *worker(void *arg) {
                 pthread_mutex_lock(&J.mu);
                 while (J.kready[k] != seen) pthread_cond_wait(&J.kcv, &J.mu);
                 pthread_mutex_unlock(&J.mu);
+                void *own = psx_gpu_subpix_bind(J.spk[k]);
                 if (J.ramk[k] && J.scrk[k]) phase_out(id, k, J.ramk[k], J.scrk[k], gpu, &hl, out);
+                psx_gpu_subpix_bind(own);
             }
         } else {
             int copied = 0;

@@ -110,17 +110,25 @@ static void rec_dirty(int x1, int y1, int x2, int y2);
 int psx_gpu_subpix_on;
 #define SPBITS 17
 typedef struct { uint32_t key, gen; uint8_t fx, fy, amb; } SubPix;   /* amb: dos vertices distintos con ese entero */
-static _Thread_local SubPix *g_sp;
-static _Thread_local uint32_t g_sp_gen = 1;
+/* la tabla lleva su generacion: puede pasar de un hilo a otro (psx_gpu_subpix_bind) */
+typedef struct { uint32_t gen; SubPix e[1u << SPBITS]; } SubTab;
+static _Thread_local SubTab *g_sp;
+void *psx_gpu_subpix_new(void) {
+    SubTab *t = calloc(1, sizeof *t);
+    if (t) t->gen = 1;
+    return t;
+}
+void *psx_gpu_subpix_bind(void *t) { void *o = g_sp; g_sp = t; return o; }
+void psx_gpu_subpix_clear(void *t) { if (t) ((SubTab *)t)->gen++; }
 int psx_gpu_subpix_hits, psx_gpu_subpix_miss, psx_gpu_subpix_amb;   /* medicion */
 static int g_sp_noamb = -1;   /* prueba: PSX_SUBPIX_NOAMB=1, sin marcar los ambiguos (el primero manda, como antes) */
 void psx_gpu_subpix_store(uint32_t sxy, uint32_t fx16, uint32_t fy16) {
     if (g_sp_noamb < 0) g_sp_noamb = getenv("PSX_SUBPIX_NOAMB") != NULL;
-    if (!g_sp && !(g_sp = calloc((size_t)1 << SPBITS, sizeof *g_sp))) return;
+    if (!g_sp && !(g_sp = psx_gpu_subpix_new())) return;
     uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
     for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
-        SubPix *e = &g_sp[h];
-        if (e->gen != g_sp_gen) { e->gen = g_sp_gen; e->key = sxy; e->fx = (uint8_t)(fx16 >> 8); e->fy = (uint8_t)(fy16 >> 8); e->amb = 0; return; }
+        SubPix *e = &g_sp->e[h];
+        if (e->gen != g_sp->gen) { e->gen = g_sp->gen; e->key = sxy; e->fx = (uint8_t)(fx16 >> 8); e->fy = (uint8_t)(fy16 >> 8); e->amb = 0; return; }
         /* ya esta: el mismo vertice da los mismos decimales. Otros decimales son de otro vertice que cae en el
          * mismo pixel: ese entero queda sin decimales (antes mandaba el primero, que cambia de una imagen a otra:
          * las texturas de los bordes en 16:9 temblaban en la Retroid, con muchos vertices lejanos juntos; etapa 8,
@@ -136,8 +144,8 @@ static int subpix_get(uint32_t sxy, int *fx, int *fy) {
     if (!g_sp) return 0;
     uint32_t h = (sxy * 2654435761u) >> (32 - SPBITS);
     for (int n = 0; n < 32; n++, h = (h + 1) & ((1u << SPBITS) - 1)) {
-        SubPix *e = &g_sp[h];
-        if (e->gen != g_sp_gen) return 0;
+        SubPix *e = &g_sp->e[h];
+        if (e->gen != g_sp->gen) return 0;
         if (e->key == sxy) {
             if (e->amb) return 0;
             *fx = e->fx; *fy = e->fy;
@@ -148,7 +156,7 @@ static int subpix_get(uint32_t sxy, int *fx, int *fy) {
 }
 
 void psx_gpu_record(PsxHwList *list, int only) {
-    if (!list) g_sp_gen++;   /* fin de una lista: las proyecciones siguientes son de otra imagen */
+    if (!list && g_sp) g_sp->gen++;   /* fin de una lista: las proyecciones siguientes son de otra imagen */
     g_rec = list;
     g_rec_only = list && only;
     if (list) list->dirty = list->blit = list->nread = 0;
