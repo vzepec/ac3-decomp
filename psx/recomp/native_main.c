@@ -691,7 +691,7 @@ static void rr_hook(PsxGpu *g, uint32_t ot) {
         if (rr_every) {   /* sistematica: resumen al salir y las primeras que fallen */
             rr_tests++;
             if (r) rr_skipped++;
-            else if (nd) { rr_bad++; if (rr_bad <= 5) printf("rr: prueba t = 1 en el VBlank %d: %d pixeles distintos\n", last_vcount, nd); }
+            else if (nd) { rr_bad++; if (rr_bad <= 200) printf("rr: prueba t = 1 en el VBlank %d: %d pixeles distintos\n", last_vcount, nd); }
             rr_self = last_vcount + rr_every;
         } else {
             printf("rr: prueba t = 1 en el VBlank %d: %s, %d pixeles distintos del original\n", last_vcount, r ? "sin construir" : "construida", nd);

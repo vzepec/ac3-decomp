@@ -380,6 +380,8 @@ static struct {
     /* el trabajo */
     uint8_t ram[PSX_RAM_SIZE], scratch[0x400];
     uint8_t *ramk[8], *scrk[8];       /* etapa 8: la RAM de cada fase con el mundo redibujado */
+    uint32_t kready[8];               /* (paso 12) redibujo en paralelo: la fase k, lista para su hilo (el seq del trabajo) */
+    pthread_cond_t kcv;
     int rebuilt;
     int rr_async;                     /* etapa 8: el hilo 0 redibuja cada fase (psx_interp_rebuild_async) */
     int real_only;                    /* etapa 8, paso 2: la real solo esta en la GPU (base de las intermedias) */
@@ -399,7 +401,8 @@ static struct {
     double pair_s, snap_s, real_s;
     double worker0_s, rr_s;
     int rr_n;
-} J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER};
+} J = {.mu = PTHREAD_MUTEX_INITIALIZER, .go = PTHREAD_COND_INITIALIZER, .done = PTHREAD_COND_INITIALIZER,
+       .kcv = PTHREAD_COND_INITIALIZER};
 
 static double tnow(void);
 
@@ -433,6 +436,52 @@ static int rebuild_phases(uint32_t ot, int den) {
     return ok;
 }
 
+/* una fase k ya con su RAM (R, Sc): sus posiciones, la lista y la imagen al sumidero */
+static void phase_out(int id, int k, uint8_t *R, uint8_t *Sc, PsxGpu *gpu, PsxHwList *hl, uint32_t *out) {
+    memcpy(gpu, &J.gpu, sizeof *gpu);
+    int den = J.den;
+    apply_phase(&J.L, k, den, R, Sc);
+    if (J.hwsink && !hw_prepare(hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
+        hl->main_stale = J.real_only;   /* la base (la real pegada) no esta en el software */
+        /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja). Salvo
+         * si la lista copia desde la imagen (el efecto de calor de los motores): entonces el
+         * software la dibuja entera, para que la copia lea lo de esta intermedia y no la real
+         * pegada debajo (con el HUD ya dibujado: salia una banda verde bajo las llamas) */
+        static int nofix = -1;   /* prueba: PSX_INTERP_NOCOPYFIX=1, sin esto (para ver el fallo) */
+        if (nofix < 0) nofix = getenv("PSX_INTERP_NOCOPYFIX") != NULL;
+        int only = nofix || !psx_gpu_list_copies_from(J.ot, R, Sc, J.ax1, J.ay1, J.ax2, J.ay2);
+        static _Thread_local PsxGpu *ref;   /* comparador (full): la referencia, dibujada entera en otra copia */
+        if (g_hwfull) { if (!ref) ref = malloc(sizeof *ref); if (ref) memcpy(ref, gpu, sizeof *ref); }
+        psx_gpu_record(hl, only);
+        psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
+        psx_gpu_record_flush(gpu);
+        psx_gpu_record(NULL, 0);
+        if (g_hwfull && ref) psx_gpu_draw_list_mem(ref, J.ot, R, Sc);
+        hl->nread = J.nread; memcpy(hl->read, J.read, sizeof hl->read);   /* lo que lee la real de la GPU */
+        J.hwsink(hl, J.gpu.vram, g_hwfull && ref ? ref->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
+        return;
+    }
+    double r0 = tnow();
+    psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
+    if (id == 0) { tm_raster_w += tnow() - r0; tm_raster_nw++; }
+    psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
+    J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
+}
+
+/* el redibujo de la fase k en la copia del interprete (solo el hilo 0); 0 si se pudo */
+static int phase_build(int k, uint8_t *ram, uint8_t *scratch, uint8_t **R, uint8_t **Sc) {
+    double tr = tnow();
+    int fail = g_rra->build(J.ot, (float)k / (float)J.den, J.ram, J.scratch, R, Sc);
+    if (fail) {
+        *R = ram; *Sc = scratch;
+        memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, 0x400);
+        pthread_mutex_lock(&J.mu); psx_interp_rebuild_fails++; pthread_mutex_unlock(&J.mu);
+    }
+    double dr = tnow() - tr;
+    pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += dr; psx_interp_rebuild_n++; J.rr_s += dr; J.rr_n++; pthread_mutex_unlock(&J.mu);
+    return fail;
+}
+
 static void *worker(void *arg) {
     int id = (int)(intptr_t)arg;
     if (J.on_start) J.on_start();
@@ -441,6 +490,8 @@ static void *worker(void *arg) {
     uint32_t *out = malloc(1024 * 512 * 4);
     PsxHwList hl = {0};
     uint32_t seen = 0;
+    static int serie = -1;   /* prueba: PSX_INTERP_RRSERIE=1, todas las fases en el hilo 0 (como antes del paso 12) */
+    if (serie < 0) serie = getenv("PSX_INTERP_RRSERIE") != NULL;
     for (;;) {
         pthread_mutex_lock(&J.mu);
         while (J.seq == seen) pthread_cond_wait(&J.go, &J.mu);
@@ -449,52 +500,45 @@ static void *worker(void *arg) {
         pthread_mutex_unlock(&J.mu);
         if (id >= nt) continue;   /* hilo sobrante (se pidieron menos): no cuenta */
         double t0 = tnow();
-        int copied = 0;
-        /* con el redibujo en este hilo (una sola copia del interprete), el hilo 0 hace todas las fases */
-        int rra = J.rr_async, k0 = rra ? (id == 0 ? 1 : J.den) : id + 1, kstep = rra ? 1 : nt;
-        for (int k = k0; k < J.den; k += kstep) {
-            uint8_t *R = ram, *Sc = scratch;
-            if (rra) {
-                double tr = tnow();
-                if (g_rra->build(J.ot, (float)k / (float)J.den, J.ram, J.scratch, &R, &Sc)) {
-                    R = ram; Sc = scratch;
-                    memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch);
-                    pthread_mutex_lock(&J.mu); psx_interp_rebuild_fails++; pthread_mutex_unlock(&J.mu);
-                }
-                double dr = tnow() - tr;
-                pthread_mutex_lock(&J.mu); psx_interp_rebuild_s += dr; psx_interp_rebuild_n++; J.rr_s += dr; J.rr_n++; pthread_mutex_unlock(&J.mu);
-            } else if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
-            else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
-            memcpy(gpu, &J.gpu, sizeof *gpu);
-            int den = J.den;
-            apply_phase(&J.L, k, den, R, Sc);
-            if (J.hwsink && !hw_prepare(&hl, J.ax1, J.ay1, J.ax2, J.ay2)) {
-                hl.main_stale = J.real_only;   /* la base (la real pegada) no esta en el software */
-                /* GLES: solo interpretar (lo de fuera de la imagen, p. ej. paletas, si se dibuja). Salvo
-                 * si la lista copia desde la imagen (el efecto de calor de los motores): entonces el
-                 * software la dibuja entera, para que la copia lea lo de esta intermedia y no la real
-                 * pegada debajo (con el HUD ya dibujado: salia una banda verde bajo las llamas) */
-                static int nofix = -1;   /* prueba: PSX_INTERP_NOCOPYFIX=1, sin esto (para ver el fallo) */
-                if (nofix < 0) nofix = getenv("PSX_INTERP_NOCOPYFIX") != NULL;
-                int only = nofix || !psx_gpu_list_copies_from(J.ot, R, Sc, J.ax1, J.ay1, J.ax2, J.ay2);
-                static _Thread_local PsxGpu *ref;   /* comparador (full): la referencia, dibujada entera en otra copia */
-                if (g_hwfull) { if (!ref) ref = malloc(sizeof *ref); if (ref) memcpy(ref, gpu, sizeof *ref); }
-                psx_gpu_record(&hl, only);
-                psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
-                psx_gpu_record_flush(gpu);
-                psx_gpu_record(NULL, 0);
-                if (g_hwfull && ref) psx_gpu_draw_list_mem(ref, J.ot, R, Sc);
-                hl.nread = J.nread; memcpy(hl.read, J.read, sizeof hl.read);   /* lo que lee la real de la GPU */
-                J.hwsink(&hl, J.gpu.vram, g_hwfull && ref ? ref->vram : NULL, J.x0, J.y0, J.dw, J.dh, k, den, J.interval, J.t);
-                continue;
+        int rra = J.rr_async;
+        /* (etapa 8, paso 12) con el redibujo (una sola copia del interprete) y varias fases (120 Hz: 3), el hilo 0 hace
+         * en fila solo los redibujos y reparte: la fase k la acaba el hilo k % nt (con su RAM copiada a ramk[k]). Antes el
+         * hilo 0 lo hacia todo: 15-21 ms por paso en la estela del virus del S24, con picos de mas de 33 (pasos saltados) */
+        int par = rra && !serie && nt > 1 && J.den > 2;
+        if (par && id == 0) {
+            for (int k = 1; k < J.den; k++) {
+                uint8_t *R, *Sc;
+                phase_build(k, ram, scratch, &R, &Sc);
+                if (k % nt == 0) { phase_out(id, k, R, Sc, gpu, &hl, out); continue; }
+                if (!J.ramk[k]) { J.ramk[k] = malloc(PSX_RAM_SIZE); J.scrk[k] = malloc(0x400); }
+                if (J.ramk[k] && J.scrk[k]) { memcpy(J.ramk[k], R, PSX_RAM_SIZE); memcpy(J.scrk[k], Sc, 0x400); }
+                pthread_mutex_lock(&J.mu);
+                J.kready[k] = seen;
+                pthread_cond_broadcast(&J.kcv);
+                pthread_mutex_unlock(&J.mu);
             }
-            double r0 = tnow();
-            psx_gpu_draw_list_mem(gpu, J.ot, R, Sc);
-            if (id == 0) { tm_raster_w += tnow() - r0; tm_raster_nw++; }
-            psx_display_convert(gpu->vram, J.x0, J.y0, J.dw, J.dh, J.on, J.rgb24, out);
-            J.sink(out, J.dw, J.dh, k, den, J.interval, J.t);
+            g_rra->done();
+        } else if (par) {
+            for (int k = id; k < J.den; k += nt) {
+                if (k == 0) continue;
+                pthread_mutex_lock(&J.mu);
+                while (J.kready[k] != seen) pthread_cond_wait(&J.kcv, &J.mu);
+                pthread_mutex_unlock(&J.mu);
+                if (J.ramk[k] && J.scrk[k]) phase_out(id, k, J.ramk[k], J.scrk[k], gpu, &hl, out);
+            }
+        } else {
+            int copied = 0;
+            /* con el redibujo en este hilo (una sola copia del interprete), el hilo 0 hace todas las fases */
+            int k0 = rra ? (id == 0 ? 1 : J.den) : id + 1, kstep = rra ? 1 : nt;
+            for (int k = k0; k < J.den; k += kstep) {
+                uint8_t *R = ram, *Sc = scratch;
+                if (rra) phase_build(k, ram, scratch, &R, &Sc);
+                else if (J.rebuilt) { memcpy(ram, J.ramk[k], PSX_RAM_SIZE); memcpy(scratch, J.scrk[k], sizeof scratch); }
+                else if (!copied) { memcpy(ram, J.ram, PSX_RAM_SIZE); memcpy(scratch, J.scratch, sizeof scratch); copied = 1; }
+                phase_out(id, k, R, Sc, gpu, &hl, out);
+            }
+            if (rra && id == 0) g_rra->done();
         }
-        if (rra && id == 0) g_rra->done();
         double dt = tnow() - t0;
         pthread_mutex_lock(&J.mu);
         J.worker_s += dt;
