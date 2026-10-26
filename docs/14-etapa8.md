@@ -1068,3 +1068,115 @@ todos los que usan ese entero reciben lo mismo, así que no hay grietas
     con el cono de antes: **no son de este paso**.
   - `SIN RESOLVER`: de qué paso vienen.
 
+## Paso 12: pantallas de 120 Hz (rama `etapa-8-paso-12`)
+
+**Lo que pidió el dueño:** soporte para pantallas de 120 Hz. La Retroid Pocket
+Flip 2 solo tiene 60 Hz (un modo); se probó en un **Galaxy S24** (SM-S921B,
+Exynos 2400 con GPU Xclipse, Android 16, 120 Hz adaptativo). La app ya
+funcionaba en él sin cambios.
+
+**Cambios:**
+- `MainActivity.pickRefreshRate`: la frecuencia más alta de la pantalla (con
+  la misma resolución), pedida para la ventana (`preferredRefreshRate`) y
+  pasada al código nativo (`nativeSetDisplayHz`).
+- La superficie, a esa frecuencia: `ANativeWindow_setFrameRate`
+  (Android 11+, cargada con `dlopen`/`dlsym` porque la mínima es la 26).
+- Con 100 Hz o más y el redibujo: **3 intermedias por paso** (30 → 120), sin
+  pasar por 2 (90 imágenes en 120 refrescos irían a saltos). El hilo del
+  redibujo ya hacía las fases en fila.
+- Con 3 intermedias, toda la presentación **un refresco más tarde**
+  (8,3 ms), igual para reales e intermedias.
+  - Sin eso, la primera intermedia (a 8,3 ms de la real) llegaba tarde: 41
+    de 120 por segundo.
+  - Las tres juntas tardan 16 ms en el S24.
+- Depuración: `hz=60` en `depurar.txt` (como una pantalla de 60 Hz).
+- En pantallas de 60 Hz no cambia nada.
+
+**Medido en el S24** (misión 18, 4x con bilineal):
+- **115-118 fps**, 3 intermedias por paso;
+- hilo del juego al 39 %;
+- GPU 5,4 ms de media y 8,5 la peor vuelta;
+- intermedias tardías, de 41 a 2-12 por segundo;
+- vuelta más larga del presentador, 10,5-12,6 ms.
+
+### Arranque a 3 intermedias y política en pantallas rápidas
+
+- Las misiones empezaban con 1 intermedia: ahora, con 100 Hz o más,
+  empiezan con 3.
+- La política adaptativa de 120 Hz baja a 1 solo con más de 6 pasos
+  saltados por segundo y vuelve a 3 tras 3 segundos limpios o 10 s.
+- **Probado y descartado:** forzar 1 intermedia (60 fps) durante toda la
+  estela del virus. Era estable, pero el dueño prefiere que no baje a la
+  mitad y vuelva (versión de prueba 1.13.5, revertida en la 1.13.6).
+
+### Las fases del redibujo, repartidas entre hilos
+
+**Problema:** en la estela del virus del S24, el hilo 0 hacía las 3 fases
+seguidas (redibujo y preparación de cada una): 15-21 ms por paso, con picos
+de más de 33 ms. En cuanto el juego cargaba más se saltaban 7-9 pasos por
+segundo y la política bajaba a 1 intermedia.
+
+**Cambio** (`psx/src/interp.c`, `worker`): con el redibujo en un hilo y 3
+fases, el hilo 0 hace en fila **solo los redibujos** (la copia del
+intérprete es única). Copia la RAM de cada fase a `ramk[k]` y la fase k la
+acaba el hilo `k % nt` (`kready`, `kcv`). Con 1 intermedia no cambia nada.
+- `PSX_INTERP_RRSERIE=1` (`rrserie=1` en `depurar.txt`): todo en el hilo 0,
+  como antes.
+- **PC** (misiones 0 y 19, 3 intermedias, comparador): 0 listas malas en
+  ambos modos; un 25-35 % menos de tiempo por trabajo.
+- **S24:** vuelo normal a 120 fps justos, hilo de dibujo de 16 a 13,5-14,3
+  ms, 0 tardías. El dueño confirmó que el virus se mantiene a 3 intermedias.
+
+### Temblor del cielo en la misión 19: el redibujo no cabía en el búfer
+
+**Síntoma** (dueño, S24): al girar, el cielo tiembla. En su vídeo (120
+imágenes por segundo) el salto grande llega cada 4 imágenes, en la real; las
+3 intermedias apenas se mueven. Con `rrserie=1` seguía: no era del reparto.
+
+**Registro de la app** (nuevo, cada segundo): por qué no se prepara el
+redibujo (`ac3_rr_why`) y cuántos fallan. En la misión 19 fallaban 90 por
+segundo (todos) desde el principio, no solo en la estela.
+
+**Causa** (`AC3_RR_SITIO=1` en el PC): `build_core` exigía 64 KB libres en
+el búfer de primitivas tras las de la imagen. En la misión 19 el mundo
+estático ocupa hasta 71 KB y quedan 57-65: 312 redibujos descartados por
+falta de sitio, y en esos pasos el mundo quedaba quieto en las intermedias.
+En la misión 0 el mundo ocupa 47 KB y sobran más de 80.
+
+**Arreglo** (`psx/recomp/ac3_rerender.c`):
+- lo necesario se calcula: lo estático más un 25 % y 4 KB (lo redibujado
+  ocupa hasta un 17 % más);
+- si no cabe, lo redibujado va al **otro búfer** de primitivas (el de la
+  imagen anterior), si la cadena no tiene nada en él. La tabla de orden, que
+  está al final de ese búfer, no cuenta, y se usa solo lo de antes de ella;
+- si tras el dibujo se pasó del final, la intermedia se descarta;
+- lo redibujado se reconoce por el tramo (`IS_NEW`), no por estar detrás de
+  la última primitiva;
+- `AC3_RR_NOOTRO=1`: como antes. `AC3_RR_OTRO=1`: siempre en el otro búfer
+  (prueba).
+
+**Validación (PC):**
+- misión 19: de 286 redibujos fallidos a 61, que son los de «sin datos» del
+  arranque; 0 por falta de sitio;
+- comparador, misiones 0 y 19 con 3 intermedias: 0 listas malas;
+- **caso conocido:** con `AC3_RR_OTRO=1` (otro búfer forzado en todas) la
+  autoprueba t = 1 de las misiones 0 y 5 da exactamente las mismas imágenes
+  y píxeles distintos que sin él (12 y 17 de 100);
+- en la misión 19 la autoprueba construye ahora las 100 imágenes (antes 33);
+  22 salen distintas del original (antes 4 de 33), por 36-144 píxeles, en
+  primitivas del HUD y del radar: el mismo patrón que las que ya fallaban. Se
+  atribuye al defecto conocido de la pila sin inicializar (`SIN RESOLVER`).
+- **S24:** el dueño confirmó que el cielo va suave.
+
+### Opción 60/120 en el menú
+
+- Opciones → «Imágenes por segundo»: 60 o 120 (clave `hz`). Por defecto
+  120 si la pantalla llega.
+- `LauncherActivity.highRate`: el modo de 120 Hz o, si no, el más alto de
+  100 Hz o más con la resolución actual. Si no hay, el botón de 120 sale
+  bloqueado y la explicación dice que la pantalla no lo admite.
+- Con 60 en una pantalla de 120 Hz la ventana pide 60 Hz (comprobado en el
+  S24: modo de 60 Hz y 1 intermedia; con 120, modo de 120 Hz y 3).
+
+Publicado en la **`v1.13.1-alfa`**.
+

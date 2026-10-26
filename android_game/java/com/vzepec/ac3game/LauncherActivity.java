@@ -14,6 +14,7 @@ import android.provider.OpenableColumns;
 import android.provider.Settings;
 import android.util.Log;
 import android.util.TypedValue;
+import android.view.Display;
 import android.view.Gravity;
 import android.view.View;
 import android.view.WindowInsets;
@@ -50,6 +51,7 @@ public class LauncherActivity extends Activity {
     static final String KEY_TOUCH = "touch";        /* mando tactil: 0 automatico, 1 siempre, 2 nunca (etapa 7, paso 8) */
     static final String KEY_RUMBLE = "rumble";      /* vibracion del DualShock (etapa 7, paso 9) */
     static final String KEY_RUMBLE_FIRE = "rumble_fire";   /* extra, no del original: al disparar y acelerar */
+    static final String KEY_HZ = "hz";              /* 60 o 120 imagenes por segundo, si la pantalla llega (etapa 8, paso 12) */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */
 
@@ -452,9 +454,34 @@ public class LauncherActivity extends Activity {
 
     /* ------------------------------------------------------------- opciones y acerca de */
 
+    /** (etapa 8, paso 12) el modo de la pantalla para 120 imagenes por segundo: el de 120 Hz o, si no lo hay, el mas
+     *  alto de 100 Hz o mas (con la resolucion actual); 0 si la pantalla no llega a 100 Hz. */
+    static float highRate(Display d) {
+        float best = 0f;
+        try {
+            Display.Mode cur = d.getMode();
+            for (Display.Mode m : d.getSupportedModes()) {
+                if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
+                float r = m.getRefreshRate();
+                if (r < 99f) continue;
+                if (Math.abs(r - 120f) < 1f) return r;
+                if (r > best) best = r;
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "no se pudo mirar la frecuencia de la pantalla: " + e);
+        }
+        return best;
+    }
+
     /** Una opcion de varias: titulo, explicacion y una fila de botones; el elegido va resaltado y se
      *  guarda en `key` (valores vals). Devuelve el boton elegido (para darle el foco). */
     private Button choice(LinearLayout box, String title, String hint, String key, int def, String[] names, int[] vals, int[] widths) {
+        return choice(box, title, hint, key, def, names, vals, widths, null);
+    }
+
+    /** Igual, con botones bloqueados (locked[i]: se ven apagados y no se pueden elegir). */
+    private Button choice(LinearLayout box, String title, String hint, String key, int def, String[] names, int[] vals, int[] widths,
+                          boolean[] locked) {
         SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
         TextView label = text(title, 16, TEXT, true);
         label.setGravity(Gravity.START);
@@ -466,6 +493,7 @@ public class LauncherActivity extends Activity {
         row.setOrientation(LinearLayout.HORIZONTAL);
         row.setPadding(0, dp(6), 0, dp(12));
         int n = names.length, cur = p.getInt(key, def);
+        for (int i = 0; i < n; i++) if (locked != null && locked[i] && vals[i] == cur) cur = def;   /* lo guardado, ya no se puede */
         Button[] bs = new Button[n];
         Button sel = null;
         for (int i = 0; i < n; i++) {
@@ -475,6 +503,7 @@ public class LauncherActivity extends Activity {
             bs[i].setLayoutParams(lp);
             row.addView(bs[i]);
             if (vals[i] == cur) sel = bs[i];
+            if (locked != null && locked[i]) { bs[i].setEnabled(false); bs[i].setTextColor(DIM); }
         }
         for (int i = 0; i < n; i++) {
             int val = vals[i];
@@ -484,6 +513,7 @@ public class LauncherActivity extends Activity {
                     StateListDrawable st = new StateListDrawable();
                     st.addState(new int[] {android.R.attr.state_pressed}, box(ACCENT, ACCENT));
                     st.addState(new int[] {android.R.attr.state_focused}, box(0xFF22345A, ACCENT));
+                    st.addState(new int[] {-android.R.attr.state_enabled}, box(0xFF111A2D, 0));
                     st.addState(new int[] {}, box(vals[k] == val ? 0xFF1F5F99 : PANEL, 0));
                     bs[k].setBackground(st);
                 }
@@ -513,6 +543,13 @@ public class LauncherActivity extends Activity {
                t("Auto hides it when you use a physical controller", "Automático lo oculta al usar un mando físico"),
                KEY_TOUCH, 0, new String[] {t("Auto", "Automático"), t("Always", "Siempre"), t("Never", "Nunca")},
                new int[] {0, 1, 2}, new int[] {120, 96, 96});
+        boolean hi = highRate(getWindowManager().getDefaultDisplay()) > 0f;
+        choice(box, t("Frame rate", "Imágenes por segundo"),
+               hi ? t("120 needs a 120 Hz screen and more power; 60 uses less battery",
+                      "120 pide pantalla de 120 Hz y más potencia; 60 gasta menos batería")
+                  : t("Your screen does not support 120 Hz", "Tu pantalla no admite 120 Hz"),
+               KEY_HZ, hi ? 120 : 60, new String[] {"60", "120"}, new int[] {60, 120}, new int[] {80, 80},
+               new boolean[] {false, !hi});
 
         android.widget.CheckBox rumble = new android.widget.CheckBox(this);
         rumble.setText(t("Vibration", "Vibración"));
