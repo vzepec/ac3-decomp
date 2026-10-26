@@ -392,6 +392,13 @@ static int build_core(uint32_t ot, float t) {
     wr32(gr + 20, nlo);
     /* 3. las entradas, a medio camino; un grupo (un objeto) cuya posición salta (otra ocupación de la
      *    ranura, aparece, desaparece) se queda como en el paso actual */
+    /* (paso 13) en vuelo, el de +0x3C4 (el avion que sigue la camara) se mueve lo mismo que la camara: el dibujo
+     * estatico lo dibuja con su distancia a ella (FUN_80065f68, modelo segun la distancia). Quieto en el paso actual,
+     * con el postquemador quedaba hasta 3/4 de paso por delante: en la primera intermedia, el modelo lejano (pequeno y
+     * sin textura) y en las otras, mas pequeno. Interpolado (como sin juego) vuelve la estela del misil doble del
+     * paso 3b. AC3_RR_NOSIGUE=1: quieto, como antes */
+    static int nosigue = -1;
+    if (nosigue < 0) nosigue = getenv("AC3_RR_NOSIGUE") != NULL;
     for (int i = 0; i < NFIELDS;) {
         int j = i, jump = 0;
         while (j < NFIELDS && FIELDS[j].group == FIELDS[i].group) {
@@ -401,6 +408,9 @@ static int build_core(uint32_t ot, float t) {
         }
         if (FIELDS[i].group == 2 && !g_view) jump = 1;   /* el de +0x3C4, solo sin juego */
         for (int k = i; k < j; k++) field_set(k, t >= 1.0f || jump ? g_cur[k] : lerp_field(k, t));
+        if (FIELDS[i].group == 2 && !g_view && !nosigue && t < 1.0f)
+            for (int k = 0; k < 3; k++)   /* posicion (los 3 primeros de la camara y del grupo) */
+                field_set(i + k, g_cur[i + k] + (lerp_field(k, t) - g_cur[k]));
         i = j;
     }
     t2 = now_s(); ac3_rr_t[2] += t2 - t1;

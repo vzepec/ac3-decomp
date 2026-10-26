@@ -155,9 +155,10 @@ static void frame_check(void) {
         last_vcount++;
         pace();
         if (getenv("AC3_WATCHREAD")) {   /* depuracion: desde donde se lee una direccion (desde AC3_WATCHREAD_FROM) */
-            extern uint32_t mipsi_watch_read;
+            extern uint32_t mipsi_watch_read, rrw_mipsi_watch_read;
             int from = getenv("AC3_WATCHREAD_FROM") ? atoi(getenv("AC3_WATCHREAD_FROM")) : 0;
             if (last_vcount == from) mipsi_watch_read = (uint32_t)strtoul(getenv("AC3_WATCHREAD"), NULL, 16);
+            if (last_vcount == from && getenv("AC3_WATCHREAD_RR")) rrw_mipsi_watch_read = mipsi_watch_read, mipsi_watch_read = 0;   /* (paso 13) en la copia del redibujo */
         }
 #ifdef AC3_LIBRE
         wide_update();
