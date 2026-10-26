@@ -1157,6 +1157,23 @@ void android_main(struct android_app *app) {
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, hilo de dibujo 0 %.1f (redibujo %.1f); modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu,
                     G.st_core, G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, G.st_rr_ms, md);
+#ifdef AC3_LIBRE
+            {   /* (paso 12) por que no se redibuja el mundo en las intermedias: sin datos, el dibujo estatico no es de este
+                 * paso, corte de giro, corte de posicion (ac3_rr_why, al prepararlo) y fallos al redibujarlo */
+                extern long ac3_rr_why[5];
+                extern int psx_interp_rebuild_fails;
+                static long w_last[4];
+                static int f_last;
+                long dw[4];
+                int any = 0;
+                for (int i = 0; i < 4; i++) { dw[i] = ac3_rr_why[i] - w_last[i]; w_last[i] = ac3_rr_why[i]; any |= dw[i] != 0; }
+                int df = psx_interp_rebuild_fails - f_last;
+                f_last = psx_interp_rebuild_fails;
+                if (G.running && (any || df))
+                    LOG("redibujo: no se prepara (sin datos %ld, no es de este paso %ld, corte de giro %ld, de posicion %ld); fallan %d",
+                        dw[0], dw[1], dw[2], dw[3], df);
+            }
+#endif
             {   /* (paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
                 static int fb_last;
                 if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos leen la imagen como textura (el software la dibuja)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
