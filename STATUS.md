@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-25 (release `v1.13-alfa`: rendimiento, vibración, pausa al volver, humo, vértices, bordes en 16:9 y el virus de Bug Hunt; se trabaja con la versión americana)
+**Última actualización:** 2026-10-25 (release `v1.13.1-alfa`: pantallas de 120 Hz, con opción 60/120, y el cielo sin temblor en Bug Hunt; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -10,7 +10,7 @@
 **Etapa 6 — El juego, nativo: EN CURSO** (plan en `docs/11-etapa6.md`). El
 juego corre nativo sobre la capa `psx/`, en las versiones europea y
 americana, hasta la primera misión. Falta el recorrido completo (paso 5).
-**Etapa 7 — APK libre: publicada** (`v1.13-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
+**Etapa 7 — APK libre: publicada** (`v1.13.1-alfa`, `docs/12-etapa7.md`; paso 7: menú y actualizador). Desde
 ahí el único APK que se genera es `AC3Recomp-<versión>.apk`, que interpreta el
 juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
@@ -112,6 +112,14 @@ misiones y entrada directa. Pruebas en la Retroid: `tools/retroid_mision.sh`.
 
 **Pantalla negra al acabar la Maze: arreglada** (`v1.12.1-alfa`, `docs/14-etapa8.md` paso 8;
 `make fin-mision`). La release solo lleva ese arreglo.
+
+**Pantallas de 120 Hz (paso 12): publicado en la `v1.13.1-alfa`.** Galaxy S24 a 120 fps, opción 60/120 en el
+menú (bloqueada sin 120 Hz), fases del redibujo repartidas entre hilos y el redibujo que no cabía en la misión 19
+(el cielo temblaba) en el otro búfer de primitivas (`docs/14-etapa8.md` paso 12).
+- **Pendiente:** jugarla en la Retroid (60 Hz). El arreglo del búfer también actúa ahí; las 41 misiones en el PC
+  con 1 intermedia salen sin fallos.
+- **`SIN RESOLVER`:** las imágenes de la misión 19 que la autoprueba t = 1 da distintas en el HUD y el radar (pila
+  sin inicializar, como las demás).
 
 **Aparcado, sin publicar:**
 - el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`);

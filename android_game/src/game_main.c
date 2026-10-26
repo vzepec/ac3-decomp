@@ -40,6 +40,7 @@
 #include <android/log.h>
 #include <android/window.h>
 #include <android_native_app_glue.h>
+#include <dlfcn.h>
 #include <jni.h>
 #include <math.h>
 #include <pthread.h>
@@ -132,13 +133,14 @@ static struct {
     volatile int hold;
     double exit_t0;
     volatile int in_mission;       /* el juego dibuja terreno (la mision en vuelo) */
-    volatile int rumble_extra;     /* vibracion extra (no del original) al disparar y acelerar: opcion */
+    volatile int rumble_extra;
+    volatile int disp_hz;          /* (etapa 8, paso 12) la frecuencia mas alta de la pantalla; depurar: hz=60 */     /* vibracion extra (no del original) al disparar y acelerar: opcion */
     /* depuracion por adb (etapa 8, paso 4): <externalDataPath>/depurar.txt, releido cada segundo:
      * "escala=N color24=0|1 solo=0|1 filtro=0|1 modo=0-3 gpu=1 vibrar=N" (-1: lo normal; modo: el de
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -171,12 +173,14 @@ static void dbg_read(void) {
              * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
             else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
             else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
+            else if (!strcmp(k, "rrserie") && v == 1) setenv("PSX_INTERP_RRSERIE", "1", 1);   /* (paso 12) las fases en serie, como antes */
             else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */
             else if (!strcmp(k, "pasadas") && v == 2) setenv("PSX_HW_PASADAS2", "1", 1);   /* (paso 10) el bit 15 en dos pasadas, como antes */
             else if (!strcmp(k, "conox") && v > 0) { char b[16]; snprintf(b, sizeof b, "%.2f", v / 100.0); setenv("AC3_WIDE_CONO", b, 1); }
             else if (!strcmp(k, "camara")) cam = v;   /* el stick derecho fijo en v/100 (vertical) */
             else if (!strcmp(k, "palanca")) pal = v;
-            else if (!strcmp(k, "intermedias")) inter = v;   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
+            else if (!strcmp(k, "intermedias")) inter = v;
+            else if (!strcmp(k, "hz")) G.dbg_hz = v;   /* (paso 12) 60: como en una pantalla de 60 Hz */   /* 0: sin imagenes intermedias (30 fps), el resto igual */  /* el izquierdo fijo en v/100 (vertical) */
             else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
         }
         fclose(f);
@@ -200,6 +204,12 @@ static double now(void) {
 }
 
 /* ------------------------------------------------------------------ disco (selector) */
+
+/* (etapa 8, paso 12) la frecuencia mas alta de la pantalla (MainActivity.pickRefreshRate) */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisplayHz(JNIEnv *env, jclass cls, jint hz) {
+    (void)env; (void)cls;
+    G.disp_hz = hz;
+}
 
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetDisc(JNIEnv *env, jclass cls, jint fd) {
     (void)env; (void)cls;
@@ -241,6 +251,19 @@ static uint8_t to_axis(float v) {
 }
 
 /* antes de cada VBlank: ritmo real (50 Hz PAL, 60 Hz NTSC), mando e imagen para la pantalla */
+/* (etapa 8, paso 12) con 3 intermedias por paso (pantalla de 120 Hz), todo un refresco mas tarde: las tres las
+ * hace en fila el hilo del redibujo (16 ms en el S24) y la primera, a 8,3 ms de la real, llegaba tarde un
+ * tercio de las veces (el registro: 41 de 120 por segundo). El mismo retraso para reales e intermedias:
+ * la cadencia no cambia */
+static volatile double g_fb_until;   /* (paso 12) hasta cuando se considera que dura la estela (la ultima vista + 1 s) */
+static double present_delay(int den) {
+    (void)den;   /* (tambien con 1 intermedia: en la estela del virus llegaban tarde 30 por segundo en el S24) */
+    if (G.disp_hz <= 61 || G.dbg_hz == 60) return 0.0;
+    /* en la estela (el software dibuja tambien la real: el redibujo va al limite), dos refrescos */
+    double fb = g_fb_until;
+    return (fb > 0 && now() < fb ? 2.0 : 1.0) / (double)G.disp_hz;
+}
+
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step);
 static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
                     int vb, double t_step);
@@ -367,6 +390,10 @@ static uint16_t dev_buttons(int v) {
 static void frame_wait(void) {
     static double next;
     double t = now();
+    {   /* (paso 12) la estela: un paso que lee la imagen como textura la alarga un segundo (present_delay) */
+        static int fbs;
+        if (psx_interp_feedback != fbs) { fbs = psx_interp_feedback; g_fb_until = t + 1.0; }
+    }
     while ((G.paused || G.hold) && G.running) { usleep(20000); next = 0; }
     if (next == 0 || t - next > 0.2) next = t;   /* tras una pausa o un retraso grande, sin recuperar */
     next += 1.0 / g_refresh;
@@ -390,11 +417,29 @@ static void frame_wait(void) {
         /* subir solo tras 5 ventanas seguidas holgadas: cada cambio altera la cadencia */
         static int good;
         int want = g_nfrac;
-        if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
+        int hi = G.rr_on && G.disp_hz >= 100 && G.dbg_hz != 60;   /* (paso 12) pantalla de 100 Hz o mas */
+        if (hi) {
+            /* (paso 12) con 120 Hz las intermedias las hace el hilo del redibujo, aparte: el reposo del hilo del juego no
+             * dice nada de ellas. Bajar a 1 solo si se saltan mas de 3 pasos de 30; volver a 3 tras 2 ventanas sin
+             * saltar ninguno. Antes, en la estela del virus (el software dibuja tambien la real), 6 pasos saltados lo
+             * bajaban a 60 fps y ya no volvia a subir (Galaxy S24) */
+            /* (en el S24, en la estela, 4-9 saltados de vez en cuando con 3: bajaba y subia cada 2-3 s, un vaiven
+             * 120 <-> 60 mas visible que algun paso suelto saltado. Solo con carga sostenida (mas de 6 de 30), y para
+             * volver, 3 ventanas limpias) */
+            static double down_t;   /* cuando bajo por ultima vez */
+            if (p.steps >= 5 && p.skipped > 6) want = 1, good = 0, down_t = tn;
+            else if (p.steps < 5 || (tn - down_t > 10.0 && p.skipped <= 6)) want = 3, good = 0;   /* sin pasos (menus) o lejos de la ultima bajada */
+            else if (p.skipped == 0 && p.worker_max_ms < 30) { if (++good >= 3) want = 3, good = 0; }
+            else good = 0;
+        } else if (p.steps >= 5 && p.skipped * 10 > p.steps) want = g_nfrac - 1, good = 0;
         else if (avg < 3) want = g_nfrac - 1, good = 0;
         else if (p.steps >= 5 && p.skipped == 0 && p.worker_max_ms < 25 && avg > 8) { if (++good >= 5) want = g_nfrac + 1, good = 0; }
         else good = 0;
-        want = want < 1 ? 1 : want > (G.rr_on ? 1 : 3) ? (G.rr_on ? 1 : 3) : want;   /* la nueva: 30 -> 60 fps con una */
+        /* la nueva: 30 -> 60 fps con una; (paso 12) con pantalla de 100 Hz o mas, 3 (30 -> 120), sin pasar por 2
+         * (90 imagenes en 120 refrescos: a saltos) */
+        int top = G.rr_on ? (hi ? 3 : 1) : 3;
+        want = want < 1 ? 1 : want > top ? top : want;
+        if (hi && want == 2) want = g_nfrac == 1 ? 3 : 1;
         if (want != g_nfrac && G.interp_enabled) {
             g_nfrac = want;
             psx_interp_config(g_nfrac, 2, interp_sink);
@@ -441,7 +486,9 @@ static void frame_wait(void) {
         /* el redibujo, en un hilo de dibujo (segunda copia del interprete): el del juego solo deja
          * una instantanea por paso */
         psx_interp_rebuild_async(rr ? ac3_rr_async() : NULL);
-        if (rr && g_nfrac > 1) { g_nfrac = 1; interp_applied = -1; }
+        /* (paso 12) con pantalla de 100 Hz o mas se empieza en 3 (antes, en 1: cada mision empezaba a 60 fps) */
+        int start = G.disp_hz >= 100 && G.dbg_hz != 60 ? 3 : 1;
+        if (rr && g_nfrac != start) { g_nfrac = start; interp_applied = -1; }
     }
 #endif
     if (interp_applied != G.interp_enabled) {
@@ -496,7 +543,7 @@ static void tick(void) { psx_vblank(); }
  * intermedias): hora de salida = hora del paso + fase */
 static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, int vb, double t_step) {
     if (w * h > 640 * 512) return;
-    double due = t_step + (double)num / den * vb / (double)g_refresh;
+    double due = t_step + (double)num / den * vb / (double)g_refresh + present_delay(den);
     pthread_mutex_lock(&G.lock);
     int k = 0;   /* la ranura libre o la mas antigua */
     for (int i = 0; i < 8; i++) {
@@ -514,7 +561,7 @@ static void interp_sink(const uint32_t *rgba, int w, int h, int num, int den, in
 static void hw_sink(const PsxHwList *l, const uint16_t *bg, const uint16_t *sw, int x0, int y0, int w, int h, int num, int den,
                     int vb, double t_step) {
     (void)sw;
-    double due = t_step + (double)num / den * vb / (double)g_refresh;
+    double due = t_step + (double)num / den * vb / (double)g_refresh + present_delay(den);
     pthread_mutex_lock(&G.lock);
     int k = 0;
     for (int i = 0; i < 8; i++) {
@@ -671,6 +718,12 @@ static void egl_init(void) {
     G.ctx = eglCreateContext(G.dpy, cfg, EGL_NO_CONTEXT, cattr);
     eglMakeCurrent(G.dpy, G.surf, G.surf, G.ctx);
     eglSwapInterval(G.dpy, 1);
+    /* (paso 12) la superficie, a la frecuencia alta (Android 11+: ANativeWindow_setFrameRate, por dlsym) */
+    if (G.disp_hz > 61) {
+        void *lib = dlopen("libandroid.so", RTLD_NOW);
+        int (*setfr)(ANativeWindow *, float, int8_t) = lib ? (int (*)(ANativeWindow *, float, int8_t))dlsym(lib, "ANativeWindow_setFrameRate") : NULL;
+        LOG("pantalla: %d Hz pedidos a la superficie: %s", G.disp_hz, setfr ? (setfr(G.app->window, (float)G.disp_hz, 0) == 0 ? "si" : "fallo") : "no (Android < 11)");
+    }
     eglQuerySurface(G.dpy, G.surf, EGL_WIDTH, &G.w);
     eglQuerySurface(G.dpy, G.surf, EGL_HEIGHT, &G.h);
     psx_present_init();
@@ -1104,6 +1157,23 @@ void android_main(struct android_app *app) {
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, hilo de dibujo 0 %.1f (redibujo %.1f); modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu,
                     G.st_core, G.st_steps, G.st_skip, G.st_unpaired, G.st_real_ms, G.st_worker_ms, G.st_rr_ms, md);
+#ifdef AC3_LIBRE
+            {   /* (paso 12) por que no se redibuja el mundo en las intermedias: sin datos, el dibujo estatico no es de este
+                 * paso, corte de giro, corte de posicion (ac3_rr_why, al prepararlo) y fallos al redibujarlo */
+                extern long ac3_rr_why[5];
+                extern int psx_interp_rebuild_fails;
+                static long w_last[4];
+                static int f_last;
+                long dw[4];
+                int any = 0;
+                for (int i = 0; i < 4; i++) { dw[i] = ac3_rr_why[i] - w_last[i]; w_last[i] = ac3_rr_why[i]; any |= dw[i] != 0; }
+                int df = psx_interp_rebuild_fails - f_last;
+                f_last = psx_interp_rebuild_fails;
+                if (G.running && (any || df))
+                    LOG("redibujo: no se prepara (sin datos %ld, no es de este paso %ld, corte de giro %ld, de posicion %ld); fallan %d",
+                        dw[0], dw[1], dw[2], dw[3], df);
+            }
+#endif
             {   /* (paso 10) pasos sin intermedias porque la lista lee la imagen como textura (la estela del virus) */
                 static int fb_last;
                 if (psx_interp_feedback != fb_last) { LOG("estela: %d pasos leen la imagen como textura (el software la dibuja)", psx_interp_feedback - fb_last); fb_last = psx_interp_feedback; }
