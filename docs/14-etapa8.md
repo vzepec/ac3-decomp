@@ -1180,3 +1180,72 @@ En la misión 0 el mundo ocupa 47 KB y sobran más de 80.
 
 Publicado en la **`v1.13.1-alfa`**.
 
+
+## Paso 13: el avión a 120 Hz (rama `etapa-8-paso-13`)
+
+### El avión temblaba siempre: decimales de la GTE en las fases repartidas
+
+- **Informe del dueño** (S24, `v1.13.1-alfa`): a 120 Hz el modelo del avión
+  tiembla todo el rato.
+- **Medido en el PC** (misión 0 a 4x con decimales, `AC3_HWSHOT`, que ahora
+  nombra cada fase `_i<num>-<den>`): con el reparto del paso 12, la silueta
+  del avión en las intermedias se desplazaba hasta 3 píxeles respecto a las
+  reales. En serie (`PSX_INTERP_RRSERIE=1`) y a 60 Hz (`AC3_INTERP=1`, una
+  sola intermedia, sin reparto) coincidía.
+- **Causa:** la tabla de decimales (paso 7) era del hilo. Los decimales del
+  redibujo los apunta el hilo 0, pero con el reparto las fases 1 y 2 las
+  acaban los hilos 1 y 2, que anotaban sin ellos.
+- **Arreglo:** una tabla por fase (`psx_gpu_subpix_new/bind/clear`). El
+  hilo 0 redibuja la fase en su tabla y el hilo que la acaba la usa.
+- **Medido:** las siluetas de las intermedias, como las de las reales;
+  comparador 0 listas malas en las misiones 0 y 19.
+
+### Al acelerar: el avión pequeño y sin textura en una de cada cuatro imágenes
+
+- **Informe del dueño** (con lo anterior arreglado): al acelerar tiembla un
+  poco y las texturas del avión desaparecen (`imagenes bugs/`, captura del
+  S24).
+- **Reproducido en el S24 sin el dueño:**
+  - el APK de desarrollo entra en la misión 1;
+  - claves nuevas de `depurar.txt`: `botones=2048` mantiene R1 y `pulsar=1`
+    pulsa SELECT una vez (la vista exterior); con `alabeo=40`, girando;
+  - `tools/movil_grabar.sh` graba 2 s a 120 imágenes por segundo y hace la
+    hoja de imágenes seguidas.
+  - **Resultado:** una o dos de cada cuatro imágenes, con el avión más pequeño,
+    sin textura y con las toberas como una caja oscura. También en serie
+    (`rrserie=1`): no es del reparto.
+- **En el PC:** solo a mucha velocidad. Con R1 mantenido 20 s (misión 0,
+  vista exterior, velocidad ~2.900) **la primera intermedia de cada paso**
+  (`_i1-4`) sale así; las otras dos, bien a simple vista. Con
+  `AC3_RR_NODRAW=1` no pasa: viene del redibujo. Con `AC3_RR_SITIO=1`, el
+  redibujo de esa fase ocupa unos 5 KB menos que el estático (28.116 frente a
+  33.036 bytes).
+- **Causa:**
+  - Con el vigía en la copia del redibujo (`AC3_WATCHREAD=<dir>
+    AC3_WATCHREAD_RR=1`), la única lectura de `g_render+0x3C4` (el avión que
+    sigue la cámara, US `0x80134F70` en la misión) está en `FUN_80065f68`. Esa
+    función dibuja los objetos de la lista con el modelo según su distancia a
+    la cámara (tres niveles).
+  - En vuelo esa entrada se dejaba en el paso actual (paso 3b), mientras que
+    la cámara se interpola. Con el postquemador el avión avanza en un paso
+    más que la distancia a la que lo sigue la cámara: en la primera fase
+    (t = 1/4) quedaba 3/4 de paso por delante y el juego elegía el modelo
+    lejano. En las otras, el mismo modelo, algo más lejos.
+- **Lo que no vale:** interpolar la entrada como sin juego (prueba
+  `AC3_RR_OBJ2`, ya quitada) arregla el avión pero devuelve la estela del misil
+  del paso 3b (una banda enorme en las intermedias, misión 0 con
+  `GUION_FUEGO`, VBlank 3321-3331).
+- **Arreglo** (`build_core`): en vuelo, la posición de esa entrada se mueve
+  lo mismo que la cámara interpolada, así que queda donde estaba respecto a
+  ella en el paso real. Sin interpolación propia: no sale la banda.
+  `AC3_RR_NOSIGUE=1` vuelve a lo anterior.
+- **Medido:**
+  - PC, misión 0 a 4x: la primera intermedia con el avión como las reales (de
+    579 a ~2.500 píxeles del avión); el redibujo vuelve a su tamaño;
+  - la estela del misil, sin la banda (VBlank 3300-3340);
+  - comparador 0 listas malas en las misiones 0 y 19;
+  - las 41 misiones sin fallos (`AC3_RR=1 AC3_INTERP=3
+    AC3_INTERP_THREADS=3 AC3_WIDE=1`);
+  - S24: 72 imágenes seguidas bien hasta velocidad 3.592, a 120 fps; **el
+    dueño lo confirma jugando.**
+- **A 60 Hz** (Retroid) no se veía: una sola intermedia, a t = 1/2.

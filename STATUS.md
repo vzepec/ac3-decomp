@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-25 (release `v1.13.1-alfa`: pantallas de 120 Hz, con opción 60/120, y el cielo sin temblor en Bug Hunt; se trabaja con la versión americana)
+**Última actualización:** 2026-10-26 (paso 13: el avión a 120 Hz, sin temblor ni modelo lejano al acelerar, confirmado en el S24; pendiente de publicar como `v1.13.2-alfa`. Publicada: `v1.13.1-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -120,6 +120,11 @@ menú (bloqueada sin 120 Hz), fases del redibujo repartidas entre hilos y el red
   con 1 intermedia salen sin fallos.
 - **`SIN RESOLVER`:** las imágenes de la misión 19 que la autoprueba t = 1 da distintas en el HUD y el radar (pila
   sin inicializar, como las demás).
+
+**El avión a 120 Hz (paso 13, rama `etapa-8-paso-13`, `1.13.2-alfa`): arreglado y confirmado por el dueño en el
+S24.** Temblaba siempre (decimales de la GTE en las fases repartidas) y, al acelerar, salía pequeño y sin textura en
+la primera intermedia (el avión que sigue la cámara no se movía con ella en el redibujo). `docs/14-etapa8.md` paso 13.
+- **Siguiente:** publicarlo como `v1.13.2-alfa` (corrección sobre la 1.13.1), con el permiso del dueño.
 
 **Aparcado, sin publicar:**
 - el HUD sin ensanchar en 16:9 (rama `etapa-8-hud-ancho`);
