@@ -326,6 +326,9 @@ static int build_core(uint32_t ot, float t) {
      *    código que reserva más allá de g_render[5] sin moverlo: lo nuevo no puede ir ahí) */
     uint32_t pe = rd32(gr + 20), pb0 = rd32(gr + 32), pb1 = rd32(gr + 36);
     uint32_t pbase = (pe >= pb1 && pe < pb1 + 0x1F800) ? pb1 : pb0, maxend = pe;
+    uint32_t other = pbase == pb1 ? pb0 : pb1;   /* el otro bufer (el de la imagen anterior) */
+    int other_used = other == pbase;
+    uint32_t o_lo = 0xFFFFFFFFu, o_hi = 0;   /* lo que la cadena tiene en el otro bufer */
     uint32_t a = ot, guard = 0;
     while ((a & 0xFFFFFF) != 0xFFFFFF && ++guard < 300000) {
         uint32_t ra = a & 0x1FFFFC, tag = rd32(a | 0x80000000u), next = tag & 0xFFFFFF;
@@ -333,6 +336,8 @@ static int build_core(uint32_t ot, float t) {
         {
             uint32_t A = a | 0x80000000u, e = A + 4 * ((tag >> 24) + 1);
             if (A >= pbase && A < pbase + 0x1F800 && e > maxend) maxend = e;
+            /* (la tabla de orden, que puede estar al final del otro bufer, no cuenta) */
+            if (A >= other && A < other + 0x1F800 && !(ra >= ob && ra < oe)) { other_used++; if (A < o_lo) o_lo = A; if (e > o_hi) o_hi = e; }
         }
         for (uint32_t w = 0; w <= (tag >> 24) && ra + 4 * w < PSX_RAM_SIZE; w++) {
             uint32_t q = ra + 4 * w;
@@ -352,9 +357,28 @@ static int build_core(uint32_t ot, float t) {
     t1 = now_s(); ac3_rr_t[1] += t1 - t0;
     /* 2. volver a S0 en lo que el dibujo estático escribió (no en tablas de orden, primitivas ni
      *    paquetes de la cadena); las primitivas nuevas, detrás de todas las de esta imagen */
-    uint32_t prim_end = (maxend + 3) & ~3u;
-    g_dbg_pe = prim_end;
-    if (prim_end + 0x10000 > pbase + 0x1F800) return -1;   /* sin sitio en el búfer */
+    /*    (etapa 8, paso 12) si no caben (lo redibujado ocupa como lo estatico, hasta un 17 % mas: en la mision 19 son hasta
+     *    71 KB y tras las de la imagen quedan 57-65), en el otro bufer, si la cadena no tiene nada en el. Antes, sin
+     *    sitio no se redibujaba: la mitad de los pasos de la mision 19 con el mundo quieto en las intermedias (temblor) */
+    uint32_t prim_end = (maxend + 3) & ~3u, need = (g_st1 - g_st0) + (g_st1 - g_st0) / 4 + 0x1000;
+    uint32_t nlo = prim_end, nhi = pbase + 0x1F800;
+    static int force_other = -1;   /* prueba: AC3_RR_OTRO=1, siempre en el otro bufer (si la cadena no lo usa) */
+    if (force_other < 0) force_other = getenv("AC3_RR_OTRO") != NULL;
+    if (nlo + need > nhi || (force_other && !other_used)) {
+        if (other_used || getenv("AC3_RR_NOOTRO")) {   /* sin sitio en el búfer (AC3_RR_NOOTRO=1: como antes) */
+            if (getenv("AC3_RR_SITIO")) fprintf(stderr, "rr sitio: VBlank %d estatico %u libres %d, otro bufer %s\n", VSync(-1), g_st1 - g_st0,
+                                                (int)(nhi - nlo), other_used ? "en uso" : "sin probar");
+            if (getenv("AC3_RR_SITIO") && other_used) fprintf(stderr, "rr otro: %d paquetes, %08x-%08x (bufer %08x-%08x)\n", other_used, o_lo, o_hi, other, other + 0x1F800);
+            return -1;
+        }
+        nlo = other; nhi = other + 0x1F800;
+        if ((ob | 0x80000000u) > nlo && (ob | 0x80000000u) < nhi) nhi = ob | 0x80000000u;   /* hasta la tabla de orden */
+        if (nlo + need > nhi) {
+            if (getenv("AC3_RR_SITIO")) fprintf(stderr, "rr sitio: VBlank %d estatico %u, otro bufer %d\n", VSync(-1), g_st1 - g_st0, (int)(nhi - nlo));
+            return -1;
+        }
+    }
+    g_dbg_pe = nlo;
     uint32_t ex0 = rd32(gr + 24) & 0x1FFFFF, ex1 = (rd32(gr + 36) & 0x1FFFFF) + 0x1F800;
     /* toda palabra distinta de S0 (no solo las que escribió el dibujo: también la pila, que leen
      *    algunas funciones sin iniciarla y que otras han reescrito desde entonces) */
@@ -365,7 +389,7 @@ static int build_core(uint32_t ot, float t) {
     }
     memcpy(psx_scratch, g_s0_scr, 0x400);
     *(PsxGte *)psx_gte_get_context() = g_s0_gte;
-    wr32(gr + 20, prim_end);
+    wr32(gr + 20, nlo);
     /* 3. las entradas, a medio camino; un grupo (un objeto) cuya posición salta (otra ocupación de la
      *    ranura, aparece, desaparece) se queda como en el paso actual */
     for (int i = 0; i < NFIELDS;) {
@@ -389,11 +413,15 @@ static int build_core(uint32_t ot, float t) {
         for (int i = 0; i < 4; i++) guest_call(g_a->draw[i], 0, 0, 0);
     }
     g_busy = 0;
+    if (getenv("AC3_RR_SITIO")) fprintf(stderr, "rr usa: VBlank %d estatico %u redibujo %u libres %d%s\n", VSync(-1), g_st1 - g_st0,
+                                        rd32(gr + 20) - nlo, (int)(nhi - nlo), nlo == prim_end ? "" : " (otro bufer)");
+    if (rd32(gr + 20) > nhi) return -1;   /* se paso del final (lo de detras, pisado en esta copia: se descarta) */
     t3 = now_s(); ac3_rr_t[3] += t3 - t2;
     /* 5. en cada cajón: lo de después del estático > lo redibujado > lo de antes (el juego inserta a
      *    la cabeza; lo redibujado entró el último) */
     uint32_t b = ot & 0xFFFFFF;
     static uint32_t seg[8192], ord[8192];
+#define IS_NEW(x) (((x) | 0x80000000u) >= nlo && ((x) | 0x80000000u) < nhi)   /* lo redibujado */
     while (b != 0xFFFFFF) {
         uint32_t ab = b & 0x1FFFFF;
         if (!(ab >= ob && ab < oe)) { b = rd32(b | 0x80000000u) & 0xFFFFFF; continue; }
@@ -411,31 +439,31 @@ static int build_core(uint32_t ot, float t) {
         uint32_t anc = anchor[(ab - ob) >> 2];
         int placed = 0;
         if (anc && (anc & 0x1FFFFF) == ab) {   /* el ancla es el propio cajón: lo nuevo, a la cabeza */
-            for (uint32_t i = 0; i < nseg; i++) if ((seg[i] | 0x80000000u) >= prim_end) ord[no++] = seg[i];
+            for (uint32_t i = 0; i < nseg; i++) if (IS_NEW(seg[i])) ord[no++] = seg[i];
             placed = 1;
         }
         for (uint32_t i = 0; i < nseg; i++) {
-            if ((seg[i] | 0x80000000u) >= prim_end) continue;
+            if (IS_NEW(seg[i])) continue;
             ord[no++] = seg[i];
             if (!placed && anc && (seg[i] | 0x80000000u) == anc) {
-                for (uint32_t j = 0; j < nseg; j++) if ((seg[j] | 0x80000000u) >= prim_end) ord[no++] = seg[j];
+                for (uint32_t j = 0; j < nseg; j++) if (IS_NEW(seg[j])) ord[no++] = seg[j];
                 placed = 1;
             }
         }
         if (!placed)
-            for (uint32_t i = 0; i < nseg; i++) if ((seg[i] | 0x80000000u) >= prim_end) ord[no++] = seg[i];
+            for (uint32_t i = 0; i < nseg; i++) if (IS_NEW(seg[i])) ord[no++] = seg[i];
         int changed = 0;
         for (uint32_t i = 0; i < nseg; i++) changed |= ord[i] != seg[i];
         if (getenv("AC3_RR_DEBUG") && VSync(-1) == atoi(getenv("AC3_RR_DEBUG")) && nseg) {
             fprintf(stderr, "cajon %u (ancla %08x): ", (ab - ob) >> 2, anchor[(ab - ob) >> 2]);
             for (uint32_t i = 0; i < nseg && i < 40; i++) {
                 uint32_t A = seg[i] | 0x80000000u;
-                fprintf(stderr, "%c", A >= prim_end ? 'N' : (A >= g_st1) ? 'D' : (A >= g_st0) ? 'S' : 'a');
+                fprintf(stderr, "%c", IS_NEW(A) ? 'N' : (A >= g_st1) ? 'D' : (A >= g_st0) ? 'S' : 'a');
             }
             fprintf(stderr, " -> ");
             for (uint32_t i = 0; i < no && i < 40; i++) {
                 uint32_t A = ord[i] | 0x80000000u;
-                fprintf(stderr, "%c", A >= prim_end ? 'N' : (A >= g_st1) ? 'D' : (A >= g_st0) ? 'S' : 'a');
+                fprintf(stderr, "%c", IS_NEW(A) ? 'N' : (A >= g_st1) ? 'D' : (A >= g_st0) ? 'S' : 'a');
             }
             fprintf(stderr, "\n");
         }

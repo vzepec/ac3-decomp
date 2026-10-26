@@ -5,6 +5,23 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-25 — Temblor del cielo en la misión 19: el redibujo no cabía; release v1.13.1-alfa
+
+- En la misión 19 el mundo estático ocupa hasta 71 KB de primitivas y tras
+  las de la imagen quedan 57-65 KB del búfer: el redibujo (que exigía 64 KB)
+  se descartaba en la mitad de los pasos y las intermedias salían con el
+  mundo quieto (el cielo, a saltos). Ahora va al otro búfer de primitivas
+  cuando no cabe. Misión 19: de 286 fallos a 61 (los del arranque).
+- Validado contra el caso conocido: con el otro búfer forzado
+  (`AC3_RR_OTRO=1`) la autoprueba t = 1 de las misiones 0 y 5 sale idéntica.
+- Las 3 fases del redibujo a 120 Hz, repartidas entre hilos (un 25-35 %
+  menos por trabajo en el PC; en el S24 el virus se mantiene a 3).
+- Opción «Imágenes por segundo» 60/120 en el menú (bloqueada sin 120 Hz).
+- Reproducir: `AC3_RR_SITIO=1 AC3_RR=1 AC3_INTERP=3 AC3_INTERP_THREADS=3
+  AC3_WIDE=1 AC3_MISSION=19` (con y sin `AC3_RR_NOOTRO=1`) y la autoprueba
+  `AC3_RR_SELFTEST=2600 AC3_RR_SELFTEST_EVERY=10`. Ver `docs/14-etapa8.md`,
+  paso 12.
+
 ## 2026-10-25 — Pantallas de 120 Hz (Galaxy S24)
 
 - Con pantalla de 100 Hz o más: la frecuencia alta para la ventana y la

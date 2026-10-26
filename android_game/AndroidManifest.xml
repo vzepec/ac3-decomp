@@ -4,8 +4,8 @@
      Las variantes personales (REGION=all/eu/us) llevan codigo del juego y NO se distribuyen. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.vzepec.ac3game"
-    android:versionCode="91"
-    android:versionName="1.13.9-alfa">
+    android:versionCode="93"
+    android:versionName="1.13.1-alfa">
 
     <!-- actualizador del menu (etapa 7, paso 7): consultar las releases de GitHub y descargar el
          APK nuevo; Android pide confirmacion para instalarlo y solo acepta la misma firma -->

@@ -60,27 +60,27 @@ public class MainActivity extends NativeActivity {
     /** Implementado en game_main.c: la frecuencia de la pantalla (Hz) que se pidio para el juego. */
     private static native void nativeSetDisplayHz(int hz);
 
-    /** (etapa 8, paso 12) la frecuencia mas alta de la pantalla (p. ej. 120 Hz), para la ventana del juego: con
-     *  ella el codigo nativo fabrica 3 imagenes intermedias por paso (30 -> 120) en vez de 1 (30 -> 60). */
+    /** (etapa 8, paso 12) con la opcion de 120 (por defecto, si la pantalla llega), la ventana del juego a 120 Hz: el
+     *  codigo nativo fabrica entonces 3 imagenes intermedias por paso (30 -> 120) en vez de 1 (30 -> 60). Con la de 60,
+     *  la ventana a 60 Hz aunque la pantalla de mas. */
     private void pickRefreshRate() {
-        float best = 60f;
+        int hz = 60;
         try {
             Display d = getWindowManager().getDefaultDisplay();
-            Display.Mode cur = d.getMode();
-            for (Display.Mode m : d.getSupportedModes()) {
-                if (m.getPhysicalWidth() != cur.getPhysicalWidth() || m.getPhysicalHeight() != cur.getPhysicalHeight()) continue;
-                if (m.getRefreshRate() > best) best = m.getRefreshRate();
-            }
-            if (best > 61f) {
+            float high = LauncherActivity.highRate(d);
+            int want = getSharedPreferences(LauncherActivity.PREFS, MODE_PRIVATE).getInt(LauncherActivity.KEY_HZ, 120);
+            if (high > 0f) {
+                float r = want >= 100 ? high : 60f;
                 WindowManager.LayoutParams lp = getWindow().getAttributes();
-                lp.preferredRefreshRate = best;
+                lp.preferredRefreshRate = r;
                 getWindow().setAttributes(lp);
+                hz = Math.round(r);
             }
-            Log.i(TAG, "pantalla: " + d.getRefreshRate() + " Hz ahora, la mas alta " + best + " Hz");
+            Log.i(TAG, "pantalla: " + d.getRefreshRate() + " Hz ahora, la alta " + high + " Hz, opcion " + want + ": " + hz + " Hz");
         } catch (Exception e) {
             Log.w(TAG, "no se pudo mirar la frecuencia de la pantalla: " + e);
         }
-        nativeSetDisplayHz(Math.round(best));
+        nativeSetDisplayHz(hz);
     }
 
     /** Implementado en game_main.c (solo en el APK de desarrollo): la mision elegida en la lista. */
