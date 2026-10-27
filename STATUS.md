@@ -115,12 +115,25 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - el jugador 1 queda idéntico en las 41 misiones;
   - 0 fallos;
   - determinista.
-- **Siguiente:** paso 4, el combate del jugador 2:
-  - sus efectos fuera de la cabina del 1 (ráfaga, estelas);
-  - las órdenes de modo también para él;
-  - su puntería, HUD y radar;
-  - el daño, la caída y la reaparición;
+
+**Etapa 9, paso 4 (rama `etapa-9-paso-4`): el combate del jugador 2, en el PC.**
+- **Hecho:**
+  - las órdenes de la misión le llegan;
+  - al caer no termina la partida (la vista y el estado del 1 se protegen) y
+    reaparece a los 5 s;
+  - su metralleta y sus misiles dañan y derriban, y el juego cuenta el
+    derribo;
+  - los enemigos le dañan;
+  - su fogonazo ya no sale en la cabina del 1;
+  - tiene su propia puntería;
+  - determinista, y el jugador 1 idéntico en las 41 misiones.
+- **`SIN RESOLVER`:**
+  - sus misiles no persiguen;
+  - las estelas de sus misiles nacen junto a la cámara del 1;
   - a quién persigue la IA.
+- **Siguiente:** paso 5, la vista propia del jugador 2: su cámara y su HUD,
+  sin romper el lockstep. Los misiles guiados probablemente dependen de
+  ello.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

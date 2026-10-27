@@ -46,7 +46,7 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 | 9 | 1 | **Determinismo:** mismos mandos → misma RAM, con opciones distintas, en el PC y en el aparato; S24 = Retroid | ✅ |
 | 9 | 2 | El avión del jugador: estructura, función de vuelo y todo lo que lo usa (cámara, HUD, radar, daño, fin de misión) | ✅ |
 | 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | ✅ vuela, se dibuja y dispara |
-| 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | |
+| 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | ✅ órdenes, caída y reaparición, disparo, daño y derribos; `SIN RESOLVER`: misiles guiados, estelas, IA |
 | 9 | 5 | Cada jugador con su vista sin romper el lockstep | |
 | 10 | 6-7 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
 | 11 | 8-9 | Internet (código para compartir); las 36 misiones en cooperativo | |
@@ -357,3 +357,110 @@ en el piloto automático y no obedecía. Por ahora copia esas dos palabras del
 - `AC3_COOP=1 AC3_COOP_POS=-90,90 AC3_PAD2_ID=73 AC3_GUION2="2760:cruz:40,2800:circulo:4"`
   con el guion de `tools/misiones.py` y la misión 0 (capturas cada 4 VBlank:
   el avión 2 delante del 1, disparando).
+
+## Paso 4: el combate del jugador 2 (rama `etapa-9-paso-4`)
+
+Todo en `psx/recomp/ac3_coop.c`, en el PC. Herramientas de medida nuevas:
+- `AC3_COOP_DIFF=v0,v1`: lo que el paso del jugador 2 escribe fuera de lo
+  suyo;
+- `AC3_COOP_SONDA=función,vblank`: lo que escribe una función llamada como
+  el jugador 2, deshaciéndolo después;
+- `AC3_COOP_PUNTERIA_LOG=k`: su puntería sobre la entidad k.
+
+Para colocarlo en las pruebas:
+- `AC3_COOP_DESDE=v`: aparece en ese VBlank;
+- `AC3_COOP_TRAS=k`: detrás de la entidad k;
+- `AC3_COOP_GIRO=grados`: además, girado.
+
+### Las órdenes de la misión, también para él
+
+Las cinco órdenes que cambian el modo del jugador (`FUN_80074e9c`, `eb8`,
+`ed8`, `ef8` y `f18`: piloto automático del inicio, control, fin…) las llama
+la misión (`FUN_8003703c`, `FUN_80059e1c`, `FUN_8005a438`, `FUN_80075a14`).
+Un gancho a su entrada las ejecuta antes también como el jugador 2, con los
+mismos argumentos. Sustituye a la copia del modo del paso 3: su modo pasa de
+0x800/4 (inicio) a 1/1 (control) por la orden del juego.
+
+### Al caer, la partida no termina
+
+Medido con `AC3_COOP_DIFF` en el choque (VBlank 3201, misión 0), el paso del
+jugador 2 cambiaba:
+- la cámara (`g_render+0x28` → modo 0x100 → 0x501, objetivo `+0x34` a la
+  entidad 1, `+0xC4/+0xC8`): se iba a sus restos;
+- `g_render+0` (2 → 3) y `0x800BE60C` (0 → 1): jugador derribado;
+- `0x800BB868`: apagaba los canales de sonido del motor del 1
+  (`FUN_8003012c`).
+
+Y en cada paso, sus copias del control (`0x800C6508..14`, `FUN_80070d34`) y
+`g_render+0x28C`.
+
+Ahora todo eso se guarda antes del paso del 2 y se devuelve después
+(`AC3_COOP_VISTA1=0` lo desactiva). Lo que sigue cambiando es legítimo:
+sonidos, explosiones y la cola de eventos.
+
+**Reaparición:** con vida < 1 durante `AC3_COOP_REVIVE` pasos (150, 5 s), y
+mientras el 1 viva, reaparece junto al jugador 1 como al empezar.
+
+- **Medido:** se estrella en el VBlank 3201, sus restos humean en el suelo y
+  reaparece en el 3503 con vida 100 y en modo control.
+- La vista del jugador 1 sigue en su cabina y la misión continúa.
+
+### Disparo, daño y derribos
+
+- **Metralleta:**
+  - la ráfaga que se veía en la cabina del 1 era el fogonazo «del jugador»
+    (`FUN_8008eb78`), con su estado en `DAT_800BB958+0x3948`, que activa
+    `FUN_8008eb40` al disparar;
+  - la etapa de efectos (`FUN_80083cfc`) lo dibujaba en la entidad 0;
+  - ahora ese estado es uno por jugador y un gancho a la entrada de la etapa
+    de efectos hace para el 2 sus partes del jugador (`FUN_80081ad0`,
+    `FUN_80083bac`, `FUN_80083aac` en la misión 0x11, y `FUN_8008eb78`);
+  - la cabina del 1 queda limpia cuando dispara el 2, y su ráfaga sigue
+    saliendo cuando dispara él.
+- **Daño:** detrás del enemigo de la ranura 2, la metralleta del jugador 2
+  le baja la vida de 140 a 25 (sin disparar, 140).
+- **Derribo:** con 160 VBlank de fuego lo derriba (vida 0, banderas
+  0x4082) y **el contador de derribos del juego sube**
+  (`DAT_800BB87C+0x20`).
+- **Misil:** de frente, le quita 70.
+- **Daño recibido:** en las 41 misiones, el jugador 2 acaba algunas con
+  daño parcial sin estrellarse (vida 97, 52, 40, 10). Los disparos enemigos
+  le alcanzan.
+
+### Puntería
+
+`FUN_80044950` calcula, para el jugador, la distancia y el ángulo de cada
+entidad en registros de 0x34 bytes (`DAT_800C57F0[k]`, contiguos) y unas
+globales (`DAT_800C57C0`, 0x14 bytes).
+- Ahora el jugador 2 tiene los suyos (se intercambian con su contexto) y los
+  calcula antes de su paso.
+- **Medido** (`AC3_COOP_PUNTERIA_LOG=2`): marca al enemigo 2 a distancia 150,
+  con las banderas de fijado (0x010001FF). Cada entidad se actualiza cada 64
+  pasos, por turnos.
+
+**`SIN RESOLVER`: sus misiles no persiguen.** Desviado 6° o más, el misil
+falla con y sin su puntería propia. Tampoco persigue forzando en su registro
+la marca de «en pantalla» que pone el HUD (`FUN_8003adb4`, `+0x20 |=
+0x60000`). Falta saber cómo elige blanco el disparo del jugador. Puede
+depender de la cámara y del HUD del jugador, que el 2 tendrá en el paso 5.
+
+### Determinismo y estado
+
+- Las copias propias del jugador 2 (bloques, entrada, fogonazo y puntería)
+  viven en la RAM del juego, reservadas con su asignador (`0x801F3700..` en
+  la misión 0). La huella de la RAM las incluye, y una instantánea también.
+- **Medido:**
+  - con disparos, choque y reaparición, dos ejecuciones dan la misma partida
+    en los 4.000 VBlank, también con intermedias a 120;
+  - un misil más del jugador 2 da otra.
+- **Las 41 misiones** (`tools/coop.py`):
+  - el jugador 1 queda idéntico al de sin cooperativo en todas;
+  - 0 fallos;
+  - las 5 de introducción larga se anotan aparte.
+
+### Otros `SIN RESOLVER`
+
+- **Las estelas de sus misiles nacen junto a la cámara del jugador 1.** El
+  misil nace bien (en su avión, banderas de la entidad 1 en `+0x6C`).
+  Revisarlo en el paso 5, con la vista de cada uno.
+- **A quién persiguen los enemigos.**

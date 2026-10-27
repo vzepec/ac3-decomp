@@ -5,6 +5,35 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 4: el combate del jugador 2
+
+- **Órdenes de la misión:** las cinco que cambian el modo del jugador se
+  ejecutan también como el jugador 2 (gancho a su entrada). Ya no hace falta
+  copiarle el modo.
+- **Al caer, la partida ya no termina:**
+  - su paso movía la cámara del 1 a sus restos, marcaba «jugador derribado»
+    (`g_render+0`, `0x800BE60C`) y apagaba el motor del 1;
+  - ahora la vista y el estado del 1 se guardan y se devuelven (medido con
+    `AC3_COOP_DIFF`);
+  - reaparece a los 5 s junto al 1.
+- **Metralleta:** la ráfaga en la cabina del 1 era el fogonazo «del jugador»
+  (`FUN_8008eb78`, estado en `DAT_800BB958+0x3948`), que la etapa de efectos
+  dibujaba en la entidad 0. Ahora hay uno por jugador, y las partes del
+  jugador de la etapa de efectos se hacen también para el 2.
+- **Combate:**
+  - su metralleta baja la vida de un enemigo de 140 a 25 y lo derriba;
+  - el juego cuenta el derribo (`DAT_800BB87C+0x20`);
+  - los enemigos le dañan;
+  - tiene su propia puntería (`FUN_80044950`, registros de 0x34 bytes).
+- **`SIN RESOLVER`:** sus misiles no persiguen (cómo elige blanco el disparo
+  del jugador); las estelas nacen junto a la cámara del 1; la IA.
+- **Determinista** con choque y reaparición, y el jugador 1 idéntico en las
+  41 misiones.
+- **Reproducir:** `python3 tools/coop.py "<US>" <dir> 0-40 4`;
+  `AC3_COOP_DESDE=2700 AC3_COOP_TRAS=2 AC3_GUION2="2704:cruz:160"` (derribo).
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 3: un segundo avión que vuela, se dibuja y dispara
 
 - **Método** (`psx/recomp/ac3_coop.c`, `AC3_COOP=1`, solo PC): al acabar el

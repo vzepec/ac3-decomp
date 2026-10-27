@@ -158,7 +158,7 @@ static void force_win_log(void);
  * tools/determinismo.py las compara). AC3_SPU=1: la SPU avanza un VBlank de audio en cada VBlank,
  * como en el APK (game_main.c); sin ella, SpuGetAllKeysStatus no cambia en el PC */
 static FILE *g_ramhash;
-static void coop_summary(void) { printf("coop: %d pasos del jugador 2\n", ac3_coop_steps()); }
+static void coop_summary(void) { printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
 static int g_spu_on;
 static void ram_hash(void) {
     uint64_t h[35];

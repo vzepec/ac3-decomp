@@ -8,6 +8,8 @@ ranura 1, sus propios bloques y el mando del puerto 2; psx/recomp/ac3_coop.c). P
   jugador 2 (guion GUION2: gira, sube, baja), volcando las dos entidades en el VBlank V;
 - se anota si hay fallos del codigo del juego (rc_fault), si el jugador 2 sigue vivo, cuanto se ha
   movido y si su rumbo cambio (obedece a su mando), y si el jugador 1 sale igual que sin el 2.
+Las misiones con una introduccion larga (1, 12, 16, 29, 32) aun no vuelan en el VBlank 3600: se anotan
+aparte (con --vblank 8000 aparece en todas).
 
 Uso:
     python3 tools/coop.py <imagen_US> <salida> [misiones] [procesos] [--vblank V]
@@ -91,8 +93,12 @@ def main():
             p2log = [l for l in log1.split('\n') if 'jugador 2 pos' in l]
             ry0 = int(p2log[0].split(' ang ')[1].split()[1]) if p2log else 0
             moved = sum(abs(a - b) for a, b in zip(p2['pos'], p1c['pos']))
-            ok = c1 == 0 and f1 == 0 and act is not None
+            ok = c1 == 0 and f1 == 0
             bad += not ok
+            if ok and act is None:   # la 1, 12, 16, 29 y 32: introduccion larga, aun sin vuelo en el VBlank V
+                print('mision %2d: bien; aun sin vuelo en el VBlank %d (el jugador 2 aparece al empezar el vuelo); jugador 1 %s que sin el 2'
+                      % (m, vb, 'igual' if p1s['bytes'] == p1c['bytes'] else 'distinto'), flush=True)
+                continue
             print('mision %2d: %s; jugador 2 desde el VBlank %s, %s pasos, vida %d, rumbo %d -> %d, a %d del 1; '
                   'jugador 1 %s que sin el 2' % (
                       m, 'bien' if ok else 'MAL (salida %s, %d fallos)' % (c1, f1), act.group(1) if act else '-',

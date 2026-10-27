@@ -19,6 +19,8 @@
 int ac3_coop_install(const Ac3Version *v);
 /* medicion: pasos del jugador 2 y la entidad 1 (0 si no esta activa) */
 int ac3_coop_steps(void);
+int ac3_coop_orders(void);   /* ordenes de modo ejecutadas tambien para el jugador 2 */
+int ac3_coop_revives(void);  /* reapariciones del jugador 2 */
 uint32_t ac3_coop_entity(void);
 
 #endif

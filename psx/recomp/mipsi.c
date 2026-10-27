@@ -29,8 +29,8 @@ void (*rc_find(uint32_t addr))(RCpu *);         /* recomp_rt.c: funcion traducid
 uint64_t mipsi_steps;
 
 /* enganches: se llama a fn al entrar en la funcion `addr` (p. ej. forzar la mision que carga el
- * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta 8; fn NULL lo quita */
-#define NHOOK 12
+ * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta NHOOK; fn NULL lo quita */
+#define NHOOK 24   /* (etapa 9) los del cooperativo */
 static uint32_t g_hook_addr[NHOOK];
 static void (*g_hook_fn[NHOOK])(RCpu *);
 static int g_hook;
