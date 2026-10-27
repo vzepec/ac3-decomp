@@ -45,7 +45,7 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 |---|---|---|---|
 | 9 | 1 | **Determinismo:** mismos mandos → misma RAM, con opciones distintas, en el PC y en el aparato; S24 = Retroid | ✅ |
 | 9 | 2 | El avión del jugador: estructura, función de vuelo y todo lo que lo usa (cámara, HUD, radar, daño, fin de misión) | ✅ |
-| 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | |
+| 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | ✅ vuela, se dibuja y dispara |
 | 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | |
 | 9 | 5 | Cada jugador con su vista sin romper el lockstep | |
 | 10 | 6-7 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
@@ -287,3 +287,73 @@ cruzada con el código de Ghidra):
 - `python3 tools/entidades.py "<US>" --todas`
 - `AC3_WATCHWRITE=80134F70 AC3_WATCHWRITE_FROM=3000` (quién mueve la entidad 0)
 - `AC3_WATCHREAD=800bddec AC3_WATCHREAD_FROM=3050` (quién lee el cabeceo)
+
+## Paso 3: el segundo avión, en el PC (rama `etapa-9-paso-3`)
+
+### Cómo
+
+`psx/recomp/ac3_coop.c` (solo en el binario del PC por ahora;
+`AC3_COOP=1`). Un gancho a la entrada de `FUN_80044f70` (la función del paso
+que va tras el jugador) hace, en cada paso de vuelo:
+
+1. **la primera vez en la misión** (entidad 1 inactiva):
+   - reserva, con el asignador del juego (`g_state+0x1C`), los seis bloques
+     del jugador 2 y su entrada, como copia de los del 1;
+   - activa la entidad 1 como copia de la 0 (ranura 1 en las banderas),
+     desplazada `AC3_COOP_POS=dx,dz` unidades;
+2. traduce el mando del puerto 2 (ranura 4) a la entrada del jugador 2 con
+   la función del juego (`FUN_800288d8`);
+3. **cambio de contexto:** la tabla `[0]` ↔ `[1]`, los seis punteros
+   `DAT_800BBA68..80` y la entrada `g_state+0x120`;
+4. llama a `FUN_800715fc` y lo devuelve todo al jugador 1.
+
+Mandos de prueba: `AC3_PAD2_ID=73` y `AC3_GUION2="vblank:botón:duración,..."`
+(mismo formato que el guion del jugador 1). `AC3_COOP_LOG=n`: posición,
+ángulos, velocidad y vida de los dos cada n pasos.
+
+**El modo del jugador** (`A+0`, `A+4`: piloto automático del inicio,
+control…) lo cambian órdenes de la misión que solo llegan al bloque del
+jugador 1 (`FUN_80074e9c`, `FUN_80074ef8`…). Sin más, el jugador 2 se quedaba
+en el piloto automático y no obedecía. Por ahora copia esas dos palabras del
+1 mientras vive. `SIN RESOLVER`: ejecutar esas órdenes también para él.
+
+### Resultados
+
+- **Vuela con su mando:** alabeo, rumbo y cabeceo siguen a su guion
+  (`AC3_COOP_LOG`).
+- **Se dibuja con el modelo y las texturas del jugador.** No hace falta nada
+  nuestro: el recolector de objetos (`FUN_80065c18`) recorre las ranuras 0-31
+  y solo salta la entidad en la que va la cámara (`cámara+0xC4`).
+- **Dispara misiles desde su avión:** el misil (tipo 0x1801, ranuras
+  `DAT_800BBA60+200+k·0xA4`, creadas por `FUN_8006b18c`) nace a 65 unidades
+  del jugador 2 y a 295 del 1, y avanza en su rumbo. No daña al jugador 1.
+- **Dispara la metralleta (✕) desde su avión:** las balas
+  (`0x80164758..`) forman una hilera que arranca a 9 unidades del jugador 2,
+  en su rumbo.
+- **El jugador 1 no cambia:** en las 41 misiones su entidad es igual byte a
+  byte en el VBlank 3600 con y sin jugador 2 (`tools/coop.py`).
+- **Las 41 misiones, sin fallos del intérprete:**
+  - 36 activan al jugador 2 antes del VBlank 3600;
+  - la 1, 12, 16, 29 y 32 tienen una introducción más larga y lo activan
+    entre el 3802 y el 7686.
+- **Determinista:**
+  - dos ejecuciones iguales dan la misma partida en los 4.000 VBlank, también
+    con intermedias a 120;
+  - un misil más del jugador 2 da otra (desde el VBlank 3202).
+
+### Lo que falta (pasos 4 y 5)
+
+- **Efectos atados a la vista del jugador 1:** cuando dispara el 2, en la
+  cabina del 1 se ve la ráfaga de la metralleta (el mismo efecto que cuando
+  dispara el 1), y las estelas de sus misiles salen de la posición del 1.
+- El modo del jugador 2, copiado del 1 (ver arriba).
+- Su puntería, radar y HUD: `FUN_80044950` y el HUD calculan solo para el 1.
+- La IA, el daño recibido, la caída y la reaparición del jugador 2, y el fin
+  de misión (en muchas misiones el guion de prueba lo estrella: vida −2).
+- La vista propia del jugador 2.
+
+**Reproducir:**
+- `python3 tools/coop.py "<US>" <dir> 0-40 4`
+- `AC3_COOP=1 AC3_COOP_POS=-90,90 AC3_PAD2_ID=73 AC3_GUION2="2760:cruz:40,2800:circulo:4"`
+  con el guion de `tools/misiones.py` y la misión 0 (capturas cada 4 VBlank:
+  el avión 2 delante del 1, disparando).

@@ -5,6 +5,29 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 3: un segundo avión que vuela, se dibuja y dispara
+
+- **Método** (`psx/recomp/ac3_coop.c`, `AC3_COOP=1`, solo PC): al acabar el
+  paso del jugador 1, se cambia el contexto al jugador 2 (entidad de la
+  ranura 1, sus seis bloques reservados con el asignador del juego, la
+  entrada traducida del puerto 2) y se vuelve a llamar a `FUN_800715fc`.
+- **Funciona:**
+  - vuela con su mando;
+  - el juego lo dibuja con el modelo del jugador;
+  - sus misiles y las balas de su metralleta salen de su avión;
+  - el jugador 1 queda idéntico al de sin cooperativo en las 41 misiones;
+  - 0 fallos;
+  - determinista, también con intermedias a 120.
+- **Trampa encontrada:** el modo del jugador (`A+0`, `A+4`) lo cambian
+  órdenes que solo llegan al bloque del 1. Sin copiarlo, el 2 se quedaba en
+  el piloto automático del inicio.
+- **Falta:** la ráfaga de la metralleta y las estelas de los misiles del 2 se
+  ven en la cabina del 1, o salen de él; puntería, HUD, IA, daño y vista
+  propia del 2.
+- **Reproducir:** `python3 tools/coop.py "<US>" <dir> 0-40 4`.
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 2: el avión del jugador y lo que lo usa
 
 - **La entidad del jugador** es la 0 de la tabla de 64 (`*0x800BB824`), en

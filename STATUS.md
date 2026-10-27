@@ -104,9 +104,23 @@ distintas del original a 0).
 `tools/entidades.py`). Entidad 0 en `g_render+0x3BC`; contexto en `DAT_800BBA74/78` y la entrada `g_state+0x120`;
 **ranura 1 de avión libre en las 41 misiones**; el juego ya lee el puerto 2 (ranura 4); 34 funciones de vuelo usan
 al jugador (cámara, HUD, puntería, dibujo, guion).
-- **Siguiente:** paso 3, el segundo avión por cambio de contexto en el PC (ranura 1, mando del puerto 2, segunda
-  llamada a `FUN_800715fc` por paso).
-- **`SIN RESOLVER`:** a quién persigue la IA; cómo se dibuja la entidad 1.
+- **`SIN RESOLVER`:** a quién persigue la IA.
+
+**Etapa 9, paso 3 (rama `etapa-9-paso-3`): el segundo avión, en el PC** (`psx/recomp/ac3_coop.c`, `AC3_COOP=1`,
+`tools/coop.py`).
+- **Funciona:**
+  - vuela con el mando del puerto 2;
+  - el juego lo dibuja con el modelo del jugador;
+  - dispara misiles y metralleta desde su avión;
+  - el jugador 1 queda idéntico en las 41 misiones;
+  - 0 fallos;
+  - determinista.
+- **Siguiente:** paso 4, el combate del jugador 2:
+  - sus efectos fuera de la cabina del 1 (ráfaga, estelas);
+  - las órdenes de modo también para él;
+  - su puntería, HUD y radar;
+  - el daño, la caída y la reaparición;
+  - a quién persigue la IA.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

@@ -34,6 +34,7 @@
 /* etapa 7, modo libre: solo codigo del repositorio. La version se detecta en el disco, ACE.BIN
  * se lee de el y todo lo ejecuta el interprete (make libre) */
 #include "ac3_versions.h"
+#include "ac3_coop.h"
 #include "psx_gte.h"
 #include "psx_acebin.h"
 static const Ac3Version *V;
@@ -80,8 +81,9 @@ void rc_register_overlay(int n, const RcFunc *funcs, unsigned count);
  * para que el juego avance como en el interprete (450.000 instrucciones por fotograma). */
 #define BUDGET_PER_FRAME 25000
 
-static struct { int frame; uint32_t mask; int dur, amt; } script[64];   /* bits 16-23: palancas; amt 1-9: palanca a amt/10 (0: a tope) */
-static int nscript, max_frames, every, last_vcount;
+typedef struct { int frame; uint32_t mask; int dur, amt; } ScriptItem;   /* bits 16-23: palancas; amt 1-9: palanca a amt/10 (0: a tope) */
+static ScriptItem script[64], script2[64];   /* script2: el mando del puerto 2 (AC3_GUION2, etapa 9) */
+static int nscript, nscript2, max_frames, every, last_vcount;
 static const char *shots;
 static jmp_buf stop;
 
@@ -156,6 +158,7 @@ static void force_win_log(void);
  * tools/determinismo.py las compara). AC3_SPU=1: la SPU avanza un VBlank de audio en cada VBlank,
  * como en el APK (game_main.c); sin ella, SpuGetAllKeysStatus no cambia en el PC */
 static FILE *g_ramhash;
+static void coop_summary(void) { printf("coop: %d pasos del jugador 2\n", ac3_coop_steps()); }
 static int g_spu_on;
 static void ram_hash(void) {
     uint64_t h[35];
@@ -165,6 +168,27 @@ static void ram_hash(void) {
     fwrite(h, 8, 35, g_ramhash);
 }
 #endif
+/* el mando del guion en este VBlank, al puerto `port`; devuelve los botones */
+static uint16_t script_pad(int port, const ScriptItem *sc, int n) {
+    uint32_t all = 0;
+    int amt = 0;
+    for (int i = 0; i < n; i++)
+        if (last_vcount >= sc[i].frame && last_vcount < sc[i].frame + sc[i].dur) {
+            all |= sc[i].mask;
+            if (sc[i].amt) amt = sc[i].amt;
+        }
+    uint16_t mask = (uint16_t)all;
+    /* palancas a tope (con AC3_PAD_ID=73): lizq/lder/larr/laba, rizq/rder/rarr/raba; con cifra, a amt/10 */
+    uint8_t ax[4] = {0x80, 0x80, 0x80, 0x80};
+    int dv = amt ? amt * 0x80 / 10 : 0x80;
+    for (int a = 0; a < 4; a++) {
+        if (all >> (16 + 2 * a) & 1) ax[a] = (uint8_t)(0x80 - dv);
+        if (all >> (17 + 2 * a) & 1) ax[a] = (uint8_t)(amt ? 0x80 + dv : 0xFF);
+    }
+    psx_pad_set(port, mask, ax[0], ax[1], ax[2], ax[3]);
+    return mask;
+}
+
 static void frame_check(void) {
     int v = VSync(-1);
     while (last_vcount < v) {
@@ -194,23 +218,9 @@ static void frame_check(void) {
         if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
         if (g_ramhash) ram_hash();
 #endif
-        uint32_t all = 0;
-        int amt = 0;
-        for (int i = 0; i < nscript; i++)
-            if (last_vcount >= script[i].frame && last_vcount < script[i].frame + script[i].dur) {
-                all |= script[i].mask;
-                if (script[i].amt) amt = script[i].amt;
-            }
-        uint16_t mask = (uint16_t)all;
-        /* palancas a tope (con AC3_PAD_ID=73): lizq/lder/larr/laba, rizq/rder/rarr/raba; con cifra, a amt/10 */
-        uint8_t ax[4] = {0x80, 0x80, 0x80, 0x80};
-        int dv = amt ? amt * 0x80 / 10 : 0x80;
-        for (int a = 0; a < 4; a++) {
-            if (all >> (16 + 2 * a) & 1) ax[a] = (uint8_t)(0x80 - dv);
-            if (all >> (17 + 2 * a) & 1) ax[a] = (uint8_t)(amt ? 0x80 + dv : 0xFF);
-        }
-        psx_pad_set(0, mask, ax[0], ax[1], ax[2], ax[3]);
-        if (getenv("AC3_PAD2_BOTONES")) psx_pad_set(1, (uint16_t)strtol(getenv("AC3_PAD2_BOTONES"), NULL, 0), 0x80, 0x80, 0x80, 0x80);
+        uint16_t mask = script_pad(0, script, nscript);
+        if (nscript2) script_pad(1, script2, nscript2);
+        else if (getenv("AC3_PAD2_BOTONES")) psx_pad_set(1, (uint16_t)strtol(getenv("AC3_PAD2_BOTONES"), NULL, 0), 0x80, 0x80, 0x80, 0x80);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
             uint32_t pb = *(uint32_t *)psx_ptr(AC3_PAD_BUF);
             const uint8_t *b = psx_ptr(pb);
@@ -396,7 +406,8 @@ static uint32_t button(const char *b) {
     return 0;
 }
 
-static void parse_script(const char *s) {
+static void parse_script(const char *s, ScriptItem *script, int *nscript_out) {
+    int nscript = *nscript_out;
     char buf[1024];
     snprintf(buf, sizeof buf, "%s", s);
     char *sp1, *sp2;
@@ -414,6 +425,7 @@ static void parse_script(const char *s) {
         script[nscript].frame = f; script[nscript].mask = m; script[nscript].dur = d; script[nscript].amt = amt;
         nscript++;
     }
+    *nscript_out = nscript;
 }
 
 #ifdef AC3_LIBRE
@@ -758,7 +770,8 @@ int main(int argc, char **argv) {
     max_frames = atoi(argv[3]);
     shots = argc > 4 ? argv[4] : NULL;
     every = argc > 5 ? atoi(argv[5]) : 100;
-    if (argc > 6) parse_script(argv[6]);
+    if (argc > 6) parse_script(argv[6], script, &nscript);
+    if (getenv("AC3_GUION2")) parse_script(getenv("AC3_GUION2"), script2, &nscript2);   /* (etapa 9) el mando del puerto 2 */
     /* ACE.BIN en la RAM (0x80010000) y tablas de la GTE */
     static uint8_t ace[0x200000];
 #ifdef AC3_LIBRE
@@ -850,6 +863,10 @@ int main(int argc, char **argv) {
         if (getenv("AC3_RR_SELFTEST_EVERY")) { rr_every = atoi(getenv("AC3_RR_SELFTEST_EVERY")); atexit(rr_self_summary); }
         if (getenv("AC3_RR_INTERP")) sscanf(getenv("AC3_RR_INTERP"), "%d,%d", &rr_from, &rr_len);
         psx_draw_list_hook = rr_hook;
+    }
+    if (getenv("AC3_COOP")) {   /* etapa 9, paso 3: el segundo avion (mando del puerto 2: AC3_PAD2_ID=73, AC3_GUION2) */
+        if (ac3_coop_install(V)) puts("AC3_COOP: esta version aun no tiene direcciones");
+        else atexit(coop_summary);
     }
     if (getenv("AC3_RAMHASH") && !(g_ramhash = fopen(getenv("AC3_RAMHASH"), "wb"))) puts("AC3_RAMHASH: no se crea el archivo");
     if (getenv("AC3_SPU")) { g_spu_on = 1; psx_audio_connect(); }
