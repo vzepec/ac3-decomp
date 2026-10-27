@@ -99,7 +99,14 @@ partida (con intermedias e hilos, otra partida; y la autoprueba t = 1 de las 41 
 distintas del original a 0).
 - **Pendiente:** la europea en el aparato. El arreglo de la semilla toca el redibujo: probarlo jugando antes de
   publicarlo (misiones 8, 17, 19, 22 y 25; «AC3 Dev» 1.13.3 instalada en la Retroid y el S24).
-- **Siguiente:** paso 2, el avión del jugador (estructura, función de vuelo y lo que lo usa).
+
+**Etapa 9, paso 2 (rama `etapa-9-paso-2`): el avión del jugador, mapeado** (`docs/15-etapa9.md`,
+`tools/entidades.py`). Entidad 0 en `g_render+0x3BC`; contexto en `DAT_800BBA74/78` y la entrada `g_state+0x120`;
+**ranura 1 de avión libre en las 41 misiones**; el juego ya lee el puerto 2 (ranura 4); 34 funciones de vuelo usan
+al jugador (cámara, HUD, puntería, dibujo, guion).
+- **Siguiente:** paso 3, el segundo avión por cambio de contexto en el PC (ranura 1, mando del puerto 2, segunda
+  llamada a `FUN_800715fc` por paso).
+- **`SIN RESOLVER`:** a quién persigue la IA; cómo se dibuja la entidad 1.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

@@ -176,6 +176,10 @@ static void frame_check(void) {
             if (last_vcount == from) mipsi_watch_read = (uint32_t)strtoul(getenv("AC3_WATCHREAD"), NULL, 16);
             if (last_vcount == from && getenv("AC3_WATCHREAD_RR")) rrw_mipsi_watch_read = mipsi_watch_read, mipsi_watch_read = 0;   /* (paso 13) en la copia del redibujo */
         }
+        if (getenv("AC3_WATCHWRITE") && getenv("AC3_WATCHWRITE_FROM") && last_vcount == atoi(getenv("AC3_WATCHWRITE_FROM"))) {
+            extern uint32_t mipsi_watch_write;   /* (etapa 9, paso 2) las escrituras, desde ese VBlank */
+            mipsi_watch_write = (uint32_t)strtoul(getenv("AC3_WATCHWRITE"), NULL, 16);
+        }
 #ifdef AC3_LIBRE
         wide_update();
         if (getenv("AC3_DUMPMEM")) {   /* depuracion: AC3_DUMPMEM=fotograma,dir,bytes,archivo vuelca la RAM */
@@ -206,6 +210,7 @@ static void frame_check(void) {
             if (all >> (17 + 2 * a) & 1) ax[a] = (uint8_t)(amt ? 0x80 + dv : 0xFF);
         }
         psx_pad_set(0, mask, ax[0], ax[1], ax[2], ax[3]);
+        if (getenv("AC3_PAD2_BOTONES")) psx_pad_set(1, (uint16_t)strtol(getenv("AC3_PAD2_BOTONES"), NULL, 0), 0x80, 0x80, 0x80, 0x80);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
             uint32_t pb = *(uint32_t *)psx_ptr(AC3_PAD_BUF);
             const uint8_t *b = psx_ptr(pb);
@@ -778,7 +783,9 @@ int main(int argc, char **argv) {
     if (psx_cd_open(argv[1])) { puts("no se abre la imagen"); return 1; }
 #endif
     psx_pad_connect(0, getenv("AC3_PAD_ID") ? (int)strtol(getenv("AC3_PAD_ID"), NULL, 16) : 0x41);   /* 73 = analogico */
-    psx_pad_connect(1, 0);
+    /* (etapa 9, paso 2) AC3_PAD2_ID=73: un mando en el puerto 2 (el juego lo lee en su ranura 4);
+     * AC3_PAD2_BOTONES=mascara: sus botones, siempre pulsados (sin palancas) */
+    psx_pad_connect(1, getenv("AC3_PAD2_ID") ? (int)strtol(getenv("AC3_PAD2_ID"), NULL, 16) : 0);
     psx_card_attach(0, getenv("AC3_CARD") ? getenv("AC3_CARD") : "/tmp/ac3_native_tarjeta1.mcd");   /* AC3_CARD: otra tarjeta */
     psx_card_detach(1);
     psx_set_refresh(AC3_REFRESH);
@@ -846,7 +853,7 @@ int main(int argc, char **argv) {
     }
     if (getenv("AC3_RAMHASH") && !(g_ramhash = fopen(getenv("AC3_RAMHASH"), "wb"))) puts("AC3_RAMHASH: no se crea el archivo");
     if (getenv("AC3_SPU")) { g_spu_on = 1; psx_audio_connect(); }
-    if (getenv("AC3_WATCHWRITE")) { extern uint32_t mipsi_watch_write; mipsi_watch_write = (uint32_t)strtoul(getenv("AC3_WATCHWRITE"), NULL, 16); }
+    if (getenv("AC3_WATCHWRITE") && !getenv("AC3_WATCHWRITE_FROM")) { extern uint32_t mipsi_watch_write; mipsi_watch_write = (uint32_t)strtoul(getenv("AC3_WATCHWRITE"), NULL, 16); }
     if (getenv("AC3_SKYCHECK") || getenv("AC3_SKYDUMP")) {
         if (getenv("AC3_SKYDUMP")) sscanf(getenv("AC3_SKYDUMP"), "%d,%d", &g_sky0, &g_sky1);
         psx_draw_list_hook = sky_hook; atexit(sky_summary);

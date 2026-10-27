@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 2: el avión del jugador y lo que lo usa
+
+- **La entidad del jugador** es la 0 de la tabla de 64 (`*0x800BB824`), en
+  `g_render+0x3BC`: posición `+8`, ángulos `+0x18`, velocidad `+0x38`, vida
+  `+0x4E`, impactos `+0x54`. **La ranura 1 de avión está libre en las 41
+  misiones** (VBlank 3200).
+- **Contexto del jugador:** `DAT_800BBA74` (0x70 B, control) y
+  `DAT_800BBA78` (0x3C B, estado), la entrada del juego `g_state+0x120` y el
+  paso `FUN_800715fc` (vuelo; daño y suelo en `FUN_80070d98`).
+- **Mandos:** el juego lee 8 ranuras (2 puertos con multitap) y solo traduce
+  la 0 (`FUN_800288d8`). Con un mando en el puerto 2 (`AC3_PAD2_ID=73`), la
+  ranura 4 se rellena: la entrada del segundo jugador tiene camino.
+- 34 funciones de vuelo usan al jugador: cámara, HUD, puntería y radar,
+  dibujo, guion de misión. `SIN RESOLVER`: a quién persigue la IA.
+- **Reproducir:** `python3 tools/entidades.py "<US>" --mision 0 --vblank 2950`
+  y `--todas`; `AC3_WATCHWRITE=80134F70 AC3_WATCHWRITE_FROM=3000`.
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 1: la partida es determinista; el redibujo adelantaba la semilla de rand
 
 - **Decisión del dueño:** etapa 9, juego en red experimental: la campaña en
