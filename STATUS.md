@@ -92,12 +92,13 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 ## Siguiente tarea concreta
 
 **Etapa 9, paso 1 (rama `etapa-9-paso-1`, `1.13.3-alfa` de prueba): determinismo, hecho** (`docs/15-etapa9.md`).
-Mismos mandos → misma RAM en el PC y en la Retroid; intermedias, 60/120, GPU y resolución no cambian la partida;
+Mismos mandos → misma RAM en el PC, la Retroid y el S24, y **el S24 y la Retroid dan la misma partida** (aparato
+contra aparato, el caso del juego en red); intermedias, 60/120, GPU y resolución no cambian la partida;
 el 16:9 sí (el anfitrión lo fija para los dos). Arreglado de paso: el redibujo adelantaba la semilla de `rand` de la
 partida (con intermedias e hilos, otra partida; y la autoprueba t = 1 de las 41 misiones pasa de 805 imágenes
 distintas del original a 0).
-- **Pendiente:** dos aparatos distintos (S24 contra Retroid, `tools/movil_determinismo.sh`) y la europea en el
-  aparato. El arreglo de la semilla toca el redibujo: probarlo jugando antes de publicarlo.
+- **Pendiente:** la europea en el aparato. El arreglo de la semilla toca el redibujo: probarlo jugando antes de
+  publicarlo (misiones 8, 17, 19, 22 y 25; «AC3 Dev» 1.13.3 instalada en la Retroid y el S24).
 - **Siguiente:** paso 2, el avión del jugador (estructura, función de vuelo y lo que lo usa).
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y

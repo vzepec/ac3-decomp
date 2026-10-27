@@ -43,7 +43,7 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 
 | Etapa | Paso | Qué | Estado |
 |---|---|---|---|
-| 9 | 1 | **Determinismo:** mismos mandos → misma RAM, con opciones distintas, en el PC y en el aparato | ✅ |
+| 9 | 1 | **Determinismo:** mismos mandos → misma RAM, con opciones distintas, en el PC y en el aparato; S24 = Retroid | ✅ |
 | 9 | 2 | El avión del jugador: estructura, función de vuelo y todo lo que lo usa (cámara, HUD, radar, daño, fin de misión) | |
 | 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | |
 | 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | |
@@ -128,6 +128,15 @@ VBlank):
 
 (`modo=1` también es 16:9: `MODE_WIDE` incluye los modos 0 y 1.)
 
+**Galaxy S24** (SM-S921B, Exynos, pantalla de 120 Hz; mismo APK, misión 0):
+la misma otra vez, 60 Hz (`hz=60`), sin intermedias y escala 1x, iguales; el
+control, distinto desde el 3001; 4:3 y original, distintos desde el 2569.
+
+**Aparato contra aparato** (el caso del juego en red): la base del S24 y la de
+la Retroid (Snapdragon 865, 60 Hz), **iguales en los 4.095 VBlank**, con dos
+ejecuciones de la Retroid en días distintos; y el 4:3 del S24 igual al 4:3 de
+la Retroid. El control del S24 frente a la base, distinto.
+
 ### Conclusiones
 
 - **La partida es determinista** en el PC y en la Retroid, y las opciones de
@@ -143,9 +152,10 @@ VBlank):
 - PC y APK no se comparan directamente: aplican el mando y anotan la huella en
   puntos distintos del VBlank (coinciden 1.920 de 4.000 VBlank con un
   desplazamiento de uno). Para jugar en red solo cuenta aparato contra aparato.
-- **Pendiente:** dos aparatos distintos (S24 contra Retroid: otro procesador,
-  mismo APK) con `tools/movil_determinismo.sh`; y la versión europea en el
-  aparato.
+- **Dos aparatos distintos dan la misma partida** (S24 y Retroid: otro
+  procesador, otra pantalla, mismo APK). Con dos aparatos conectados,
+  `ADB="adb -s <serie>" tools/movil_determinismo.sh ...` en cada uno.
+- **Pendiente:** la versión europea en el aparato.
 
 **Reproducir:**
 `make determinismo MISION=37` · `python3 tools/determinismo.py "<US>" <dir> --mision 19 --apk --detalle` ·

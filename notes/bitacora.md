@@ -25,7 +25,9 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   del HUD y el radar de la 19 era esto, no la pila.
 - **Resultado:** con el arreglo, intermedias (60/120), GPU, ritmo real y
   resolución no cambian la partida: misiones 0, 19 y 37 US y 0 EU en el PC,
-  las 41 US con intermedias a 120, y la misión 0 en la Retroid. El 16:9 sí
+  las 41 US con intermedias a 120, y la misión 0 en la Retroid y en el S24.
+  **El S24 y la Retroid dan la misma partida** en los 4.095 VBlank (mismo
+  APK, otro procesador y otra pantalla). El 16:9 sí
   (sus ganchos cambian lo que el juego calcula de la imagen): opción que el
   anfitrión fija para los dos. La SPU también es partida (`AC3_SPU=1` en el PC).
 - **Reproducir:** `make determinismo MISION=37`;
