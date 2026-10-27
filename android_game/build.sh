@@ -104,7 +104,7 @@ if [ "$REGION" = libre ]; then
     sh "$ROOT/tools/rr_clone.sh" "$CC -O2 $CF -DAC3_LIBRE" "$TC/llvm-nm" "$TC/llvm-objcopy" "$B/obj_rrw" \
         "$ROOT/psx/recomp/mipsi.c" "$ROOT/psx/recomp/recomp_rt.c" "$ROOT/psx/recomp/ac3_versions.c" "$ROOT/psx/recomp/ac3_rerender.c" \
         "$ROOT/psx/recomp/hle_eu.c" "$ROOT/psx/recomp/hle_us.c" "$ROOT/psx/src/mem.c" "$ROOT/psx/src/gte.c" "$ROOT/psx/src/libgte.c" \
-        "$ROOT/psx/src/libgpu.c"
+        "$ROOT/psx/src/libgpu.c" "$ROOT/psx/src/libc_psx.c"
     $CC -O2 $CF -DAC3_LIBRE $DEV_CF -I"$GLUE" -c src/game_main.c -o "$B/obj/game_main.o"
     $CC -O2 $CF -DAC3_LIBRE -I"$GLUE" -c src/touchpad.c -o "$B/obj/touchpad.o"
 else

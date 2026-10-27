@@ -15,6 +15,9 @@
 extern uint8_t psx_ram[PSX_RAM_SIZE];
 extern uint8_t psx_scratch[0x400];
 
+/* huella de la RAM (32 bloques de 64 KB) y del scratchpad (h[32]): etapa 9, determinismo */
+void psx_mem_hash(uint64_t h[33]);
+
 /* direccion PS1 (KSEG0, 0x80xxxxxx) de un puntero dentro de la RAM o el scratchpad */
 static inline uint32_t psx_addr(const void *p) {
     const uint8_t *b = (const uint8_t *)p;

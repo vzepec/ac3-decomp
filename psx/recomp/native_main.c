@@ -20,11 +20,14 @@
 #include "psx_libapi.h"
 #include "psx_libcard.h"
 #include "psx_libcd.h"
+#include "psx_libc.h"
 #include "psx_libetc.h"
 #include "psx_libgte.h"
 #include "psx_interp.h"
 #include "psx_libpad.h"
+#include "psx_libspu.h"
 #include "psx_mem.h"
+#include "psx_xa.h"
 #include "recomp_rt.h"
 
 #ifdef AC3_LIBRE
@@ -148,6 +151,19 @@ static int g_win, g_mission_frame, g_win_i, g_win_n;
 static int g_win_f[8];
 static void force_win(void);
 static void force_win_log(void);
+/* etapa 9, paso 1 (determinismo): AC3_RAMHASH=archivo: en cada VBlank, el numero de VBlank y la
+ * huella de la RAM en 32 bloques de 64 KB, la del scratchpad y la semilla de rand (35 enteros de 64 bits, binario;
+ * tools/determinismo.py las compara). AC3_SPU=1: la SPU avanza un VBlank de audio en cada VBlank,
+ * como en el APK (game_main.c); sin ella, SpuGetAllKeysStatus no cambia en el PC */
+static FILE *g_ramhash;
+static int g_spu_on;
+static void ram_hash(void) {
+    uint64_t h[35];
+    h[0] = (uint64_t)last_vcount;
+    psx_mem_hash(h + 1);
+    h[34] = psx_rand_seed();
+    fwrite(h, 8, 35, g_ramhash);
+}
 #endif
 static void frame_check(void) {
     int v = VSync(-1);
@@ -171,6 +187,8 @@ static void frame_check(void) {
         }
         if (g_win_i < g_win_n && g_mission_frame >= 0 && last_vcount == g_mission_frame + g_win_f[g_win_i]) { force_win(); g_win_i++; }
         if (g_win_i > 0 && last_vcount % 60 == 0) force_win_log();
+        if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
+        if (g_ramhash) ram_hash();
 #endif
         uint32_t all = 0;
         int amt = 0;
@@ -826,6 +844,8 @@ int main(int argc, char **argv) {
         if (getenv("AC3_RR_INTERP")) sscanf(getenv("AC3_RR_INTERP"), "%d,%d", &rr_from, &rr_len);
         psx_draw_list_hook = rr_hook;
     }
+    if (getenv("AC3_RAMHASH") && !(g_ramhash = fopen(getenv("AC3_RAMHASH"), "wb"))) puts("AC3_RAMHASH: no se crea el archivo");
+    if (getenv("AC3_SPU")) { g_spu_on = 1; psx_audio_connect(); }
     if (getenv("AC3_WATCHWRITE")) { extern uint32_t mipsi_watch_write; mipsi_watch_write = (uint32_t)strtoul(getenv("AC3_WATCHWRITE"), NULL, 16); }
     if (getenv("AC3_SKYCHECK") || getenv("AC3_SKYDUMP")) {
         if (getenv("AC3_SKYDUMP")) sscanf(getenv("AC3_SKYDUMP"), "%d,%d", &g_sky0, &g_sky1);

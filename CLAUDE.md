@@ -75,6 +75,7 @@ La hoja de ruta está dividida en etapas que valen por sí solas.
 | Análisis del código (Ghidra) | `docs/09-codigo.md` |
 | Capa PsyQ (etapa 5) | `docs/10-etapa5.md` |
 | Plan de la etapa 6 | `docs/11-etapa6.md` |
+| Juego en red (etapa 9) | `docs/15-etapa9.md` |
 | Historial de hallazgos | `notes/bitacora.md` |
 
 ## Al terminar cualquier trabajo

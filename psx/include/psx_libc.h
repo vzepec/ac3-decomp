@@ -5,5 +5,6 @@
 
 int psx_rand(void);
 void psx_srand(unsigned int seed);
+unsigned int psx_rand_seed(void);
 
 #endif

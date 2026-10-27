@@ -10,3 +10,5 @@ int psx_rand(void) {
 }
 
 void psx_srand(unsigned int s) { seed = s; }
+/* etapa 9, paso 1: la semilla es estado de la partida fuera de la RAM (el redibujo la copia y la huella la incluye) */
+unsigned int psx_rand_seed(void) { return seed; }

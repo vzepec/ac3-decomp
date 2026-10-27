@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-26 (paso 13: el avión a 120 Hz, sin temblor ni modelo lejano al acelerar; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
+**Última actualización:** 2026-10-27 (etapa 9, paso 1: la partida es determinista, base del cooperativo en red; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -16,6 +16,8 @@ juego desde el disco del usuario. Etapas 1-5 cerradas.
 **Etapa 8 — Interpolación pulida: publicada en la `v1.9-alfa`**
 (`docs/14-etapa8.md`). El mundo se redibuja con el código del juego en cada
 imagen intermedia, en un hilo de dibujo.
+**Etapa 9 — Juego en red (experimental): EN CURSO** (`docs/15-etapa9.md`, rama `etapa-9`). La campaña en
+cooperativo por lockstep, sin servidor propio. Paso 1 (determinismo) hecho.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -89,6 +91,15 @@ DISCO="$(US)" LIBRE_GUION="$(GUION_US)"` y `make native-us`.
 
 ## Siguiente tarea concreta
 
+**Etapa 9, paso 1 (rama `etapa-9-paso-1`, `1.13.3-alfa` de prueba): determinismo, hecho** (`docs/15-etapa9.md`).
+Mismos mandos → misma RAM en el PC y en la Retroid; intermedias, 60/120, GPU y resolución no cambian la partida;
+el 16:9 sí (el anfitrión lo fija para los dos). Arreglado de paso: el redibujo adelantaba la semilla de `rand` de la
+partida (con intermedias e hilos, otra partida; y la autoprueba t = 1 de las 41 misiones pasa de 805 imágenes
+distintas del original a 0).
+- **Pendiente:** dos aparatos distintos (S24 contra Retroid, `tools/movil_determinismo.sh`) y la europea en el
+  aparato. El arreglo de la semilla toca el redibujo: probarlo jugando antes de publicarlo.
+- **Siguiente:** paso 2, el avión del jugador (estructura, función de vuelo y lo que lo usa).
+
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
 `vX.Y-alfa` es la versión que compara el actualizador.
@@ -118,8 +129,8 @@ menú (bloqueada sin 120 Hz), fases del redibujo repartidas entre hilos y el red
 (el cielo temblaba) en el otro búfer de primitivas (`docs/14-etapa8.md` paso 12).
 - **Pendiente:** jugarla en la Retroid (60 Hz). El arreglo del búfer también actúa ahí; las 41 misiones en el PC
   con 1 intermedia salen sin fallos.
-- **`SIN RESOLVER`:** las imágenes de la misión 19 que la autoprueba t = 1 da distintas en el HUD y el radar (pila
-  sin inicializar, como las demás).
+- ~~`SIN RESOLVER`: las imágenes de la misión 19 que la autoprueba t = 1 da distintas en el HUD y el radar~~:
+  resuelto en la etapa 9, paso 1. Era el ruido de `FUN_80082f68`: el redibujo usaba otra semilla de `rand`.
 
 **El avión a 120 Hz (paso 13): publicado en la `v1.13.2-alfa`** (confirmado por el dueño en el S24). Temblaba
 siempre (decimales de la GTE en las fases repartidas) y, al acelerar, salía pequeño y sin textura en la primera

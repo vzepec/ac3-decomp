@@ -205,6 +205,15 @@ Criterio de salida: el juego completo, jugable de principio a fin en la
 Retroid, nativo y 1:1. Después, como hito aparte: resolución nativa,
 panorámico y 60 fps por interpolación.
 
+## Etapa 9 — Juego en red (experimental) 🔄 EN CURSO (abierta el 2026-10-27)
+
+Plan en `docs/15-etapa9.md`. La campaña en cooperativo para dos jugadores,
+por lockstep (los dos aparatos simulan la misma partida con los mandos de
+los dos), sin servidor propio para red local, zona Wi-Fi o IP directa.
+Precedente: el cooperativo de Mega Man X4 Recompiled (`recomp-net`, MIT).
+Etapa 9: dos aviones en un aparato; 10: red local; 11: Internet y las 36
+misiones. Requisito comprobado en el paso 1: la partida es determinista.
+
 ---
 
 ## Mientras tanto

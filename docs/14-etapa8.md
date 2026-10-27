@@ -1166,6 +1166,9 @@ En la misión 0 el mundo ocupa 47 KB y sobran más de 80.
   22 salen distintas del original (antes 4 de 33), por 36-144 píxeles, en
   primitivas del HUD y del radar: el mismo patrón que las que ya fallaban. Se
   atribuye al defecto conocido de la pila sin inicializar (`SIN RESOLVER`).
+  **Resuelto en la etapa 9, paso 1** (`docs/15-etapa9.md`): era el ruido de
+  `FUN_80082f68`, dibujado con otra semilla de `rand`; con la semilla de S0,
+  0 imágenes distintas.
 - **S24:** el dueño confirmó que el cielo va suave.
 
 ### Opción 60/120 en el menú

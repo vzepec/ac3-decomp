@@ -7,7 +7,7 @@ EU  := Rom/Ace Combat 3 - Electrosphere (Europe) (EnFrDeEsIt)/Ace Combat 3 - Ele
 US  := Rom/Ace Combat 3 - Electrosphere (USA)/Ace Combat 3 - Electrosphere (USA).bin
 DISC ?= $(EU)
 
-.PHONY: fin-mision help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native us-prep ghidra-us recomp-us recomp-check-us native-us native-us-build
+.PHONY: determinismo fin-mision help brief files info index inventory records tags extract-bpb ulz-check sections textures models sounds acebin overlays apk ghidra-import ghidra-stats check psx-check psyq-api psx-scene progress psx-display psx-android recomp recomp-check recomp-record native us-prep ghidra-us recomp-us recomp-check-us native-us native-us-build
 
 help:
 	@echo "make brief      - estado del proyecto + comprobacion de entorno"
@@ -42,6 +42,7 @@ help:
 	@echo "make us-prep    - version US: ACE.BIN, BPB, overlays y perfil de direcciones (data/recomp_us)"
 	@echo "make ghidra-us  - version US: analisis y volcado de Ghidra (data/ghidra_us, ~10 min)"
 	@echo "make recomp-us / recomp-check-us / native-us - recompilacion, validacion y arranque de la US"
+	@echo "make determinismo - etapa 9: misma partida con opciones distintas -> misma RAM? (MISION=0)"
 	@echo ""
 	@echo "Usa DISC=... para apuntar a otro disco (por defecto el europeo)."
 
@@ -222,7 +223,7 @@ libre: libre-build
 
 # etapa 8: la segunda copia del interprete (simbolos rrw_*) para redibujar en un hilo de dibujo
 RR_CLONE = psx/recomp/mipsi.c psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/ac3_rerender.c psx/recomp/hle_eu.c \
-	psx/recomp/hle_us.c psx/src/mem.c psx/src/gte.c psx/src/libgte.c psx/src/libgpu.c
+	psx/recomp/hle_us.c psx/src/mem.c psx/src/gte.c psx/src/libgte.c psx/src/libgpu.c psx/src/libc_psx.c
 libre-build: $(GLINC)/GLES3/gl3.h
 	@mkdir -p psx/build/libre
 	@sh tools/rr_clone.sh "cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp" nm objcopy psx/build/rrw $(RR_CLONE)
@@ -270,6 +271,12 @@ guardado-eu: libre-build
 # una mision cumplida pasa al informe (tools/fin_mision.py; etapa 8, el negro al acabar la Maze).
 # Hace falta una tarjeta con una partida justo antes de la mision: make fin-mision TARJETA=...
 TARJETA ?= data/android/tarjeta/tarjeta1.mcd
+# etapa 9, paso 1: la misma partida con opciones distintas (intermedias, 120 Hz, GPU, ritmo real, 16:9) da la
+# misma RAM? Base del juego en red por lockstep (tools/determinismo.py; en el movil: tools/movil_determinismo.sh)
+MISION ?= 0
+determinismo: libre-build
+	@$(PY) tools/determinismo.py "$(US)" psx/build/determinismo --mision $(MISION) --apk
+
 fin-mision: libre-build
 	@$(PY) tools/fin_mision.py "$(US)" "$(TARJETA)" psx/build/fin_mision_$$(date +%s)
 

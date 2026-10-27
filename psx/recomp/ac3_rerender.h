@@ -42,6 +42,7 @@ typedef struct {
     PsxGte gte;
     float wide;                   /* psx_gte_wide del paso */
     int view;                     /* subpaso sin juego (repetición, demostración) */
+    unsigned int rand_seed;   /* (etapa 9) la semilla de rand del paso: el redibujo no toca la del juego */
 } RrSnap;
 /* hilo del juego, en DrawOTag: 0 si este paso se puede redibujar; el búfer de S0 queda reservado
  * hasta ac3_rr_release (mientras, el juego guarda el del paso siguiente en el otro) */

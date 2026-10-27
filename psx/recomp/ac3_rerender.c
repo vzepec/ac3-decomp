@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "psx_gte.h"
+#include "psx_libc.h"
 #include "psx_libgte.h"
 #include "psx_mem.h"
 #include "recomp_rt.h"
@@ -75,6 +76,7 @@ static uint8_t g_s0buf[2][PSX_RAM_SIZE], g_s0scrbuf[2][0x400], g_wt[PSX_RAM_SIZE
 static const uint8_t *g_s0 = g_s0buf[0], *g_s0_scr = g_s0scrbuf[0];
 static PsxGte g_s0_gte;
 static int g_s0_idx, g_s0_ok;
+static unsigned int g_s0_seed;   /* (etapa 9) la semilla de rand en S0 */
 static int g_s0_locked = -1;   /* el búfer que está leyendo el hilo de dibujo (atómico) */
 static int32_t g_cur[NFIELDS], g_prev[NFIELDS];
 /* encuesta (AC3_RR_SURVEY): lo que el dibujo estatico lee antes de escribirlo y cambia entre pasos */
@@ -134,6 +136,7 @@ static void mark0(RCpu *c) {
         g_s0 = g_s0buf[idx];
         g_s0_scr = g_s0scrbuf[idx];
         g_s0_gte = *(PsxGte *)psx_gte_get_context();
+        g_s0_seed = psx_rand_seed();
     }
     memset(g_wt, 0, sizeof g_wt);
     mipsi_wtrace = g_wt;
@@ -275,7 +278,18 @@ static int rr_check(void) {
 }
 
 static int build_core(uint32_t ot, float t);
-int ac3_rr_build(uint32_t ot, float t) { return rr_check() ? -1 : build_core(ot, t); }
+/* (etapa 9, paso 1) el codigo del juego que se redibuja llama a rand (FUN_80082f68, sprites de ruido): el redibujo
+ * parte de la semilla de S0 (los mismos numeros que el dibujo real) y, en el hilo del juego, la de la partida vuelve
+ * a ser la que era; la copia (rrw_) tiene la suya. Antes el redibujo adelantaba la del juego: con intermedias, otra
+ * partida (misiones 19 y 37, tools/determinismo.py) */
+int ac3_rr_build(uint32_t ot, float t) {
+    if (rr_check()) return -1;
+    unsigned int keep = psx_rand_seed();
+    psx_srand(g_s0_seed);
+    int r = build_core(ot, t);
+    psx_srand(keep);
+    return r;
+}
 
 int ac3_rr_snapshot(RrSnap *s) {
     if (rr_check()) return -1;
@@ -285,6 +299,7 @@ int ac3_rr_snapshot(RrSnap *s) {
     s->s0 = g_s0; s->s0_scr = g_s0_scr; s->gte = g_s0_gte;
     s->wide = psx_gte_wide;
     s->view = g_view;
+    s->rand_seed = g_s0_seed;
     __atomic_store_n(&g_s0_locked, g_s0_idx, __ATOMIC_RELEASE);
     return 0;
 }
@@ -298,6 +313,7 @@ int ac3_rr_build_from(const RrSnap *s, uint32_t ot, float t) {
     g_s0 = s->s0; g_s0_scr = s->s0_scr; g_s0_gte = s->gte;
     psx_gte_wide = s->wide;
     g_view = s->view;
+    psx_srand(s->rand_seed);
     return build_core(ot, t);
 }
 

@@ -5,6 +5,34 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 1: la partida es determinista; el redibujo adelantaba la semilla de rand
+
+- **Decisión del dueño:** etapa 9, juego en red experimental: la campaña en
+  cooperativo por lockstep (los dos aparatos simulan la misma partida con los
+  mandos de los dos), sin servidor propio (`docs/15-etapa9.md`). Requisito:
+  mismos mandos → misma RAM.
+- **Medida:** huella de la RAM en cada VBlank (32 bloques de 64 KB, scratchpad
+  y semilla de `rand`), en el PC (`AC3_RAMHASH`) y en el APK de desarrollo
+  (`huella=1`, `guion=1`, `mision=N` en `depurar.txt`). Control positivo: un
+  misil más en el VBlank 3000 (sale distinta en el PC y en la Retroid).
+- **Hallazgo:** el redibujo de las intermedias ejecuta código del juego que
+  llama a `rand` (`FUN_80082f68`, sprites de ruido) y su copia del intérprete
+  compartía la semilla con la partida: con redibujo e hilos, la partida era
+  otra (misión 37 desde el VBlank 2492; en la 19, a 120, según los tiempos
+  de los hilos). `libc_psx.c` entra en la copia y el redibujo parte de la
+  semilla de S0. La autoprueba t = 1 de las 41 misiones pasa de 805 imágenes
+  distintas (de 28.310; misiones 8, 17, 19, 22 y 25) a 0: el `SIN RESOLVER`
+  del HUD y el radar de la 19 era esto, no la pila.
+- **Resultado:** con el arreglo, intermedias (60/120), GPU, ritmo real y
+  resolución no cambian la partida: misiones 0, 19 y 37 US y 0 EU en el PC,
+  las 41 US con intermedias a 120, y la misión 0 en la Retroid. El 16:9 sí
+  (sus ganchos cambian lo que el juego calcula de la imagen): opción que el
+  anfitrión fija para los dos. La SPU también es partida (`AC3_SPU=1` en el PC).
+- **Reproducir:** `make determinismo MISION=37`;
+  `tools/movil_determinismo.sh <dir> 0` con el APK de desarrollo.
+
+---
+
 ## 2026-10-26 — El avión a 120 Hz: tembloroso y, al acelerar, pequeño y sin textura; release v1.13.2-alfa
 
 - **Temblor permanente:** con el reparto de las fases del paso 12, los hilos

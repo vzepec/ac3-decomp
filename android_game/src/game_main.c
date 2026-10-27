@@ -55,6 +55,7 @@
 
 #include "psx_display.h"
 #include "psx_interp.h"
+#include "psx_libc.h"
 #include "psx_libcard.h"
 #include "psx_libcd.h"
 #include "psx_libetc.h"
@@ -140,7 +141,7 @@ static struct {
      * L3+R3, 1 = software a 16:9 con intermedias, fuera del ciclo; gpu=1: medir el tiempo de la GPU con
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
-    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz, dbg_btn, dbg_tap;
+    volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz, dbg_btn, dbg_tap, dbg_hash, dbg_script, dbg_mission;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -155,7 +156,7 @@ static struct {
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
-    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1, btn = 0, tap = 0;
+    int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1, btn = 0, tap = 0, hs = 0, sc = 0, mi = 0;
     if (f) {
         char k[32];
         int v;
@@ -184,6 +185,9 @@ static void dbg_read(void) {
             else if (!strcmp(k, "alabeo")) alb = v;   /* el izquierdo fijo en v/100 (horizontal) */
             else if (!strcmp(k, "botones")) btn = v;   /* (paso 13) botones mantenidos (mascara del mando: R1 = 2048) */
             else if (!strcmp(k, "pulsar")) tap = v;    /* y pulsados una vez cada vez que cambia (SELECT = 1: la vista) */
+            else if (!strcmp(k, "huella")) hs = v;     /* (etapa 9, paso 1) huella de la RAM en cada VBlank */
+            else if (!strcmp(k, "guion")) sc = v;      /* (etapa 9, paso 1) el mando del guion del PC */
+            else if (!strcmp(k, "mision")) mi = v + 1;   /* (etapa 9, paso 1) APK de desarrollo: sin la lista */
         }
         fclose(f);
     }
@@ -197,6 +201,7 @@ static void dbg_read(void) {
     if (tap != tap_last && tap) G.dbg_tap = tap;
     tap_last = tap;
     G.dbg_btn = btn;
+    G.dbg_hash = hs; G.dbg_script = sc; G.dbg_mission = mi;
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -393,8 +398,31 @@ static uint16_t dev_buttons(int v) {
 }
 #endif
 
+/* (etapa 9, paso 1) huella=1: la huella de la RAM (psx_mem_hash) en cada VBlank, en huella.bin junto a
+ * depurar.txt, con el mismo formato que AC3_RAMHASH en el PC (tools/determinismo.py --comparar) */
+static void hash_frame(void) {
+    static FILE *hf;
+    static int failed;
+    if (!G.dbg_hash || failed) { if (hf) { fclose(hf); hf = NULL; } return; }
+    if (!hf) {
+        char p[600];
+        const char *sl = strrchr(G.dbg_path, '/');
+        snprintf(p, sizeof p, "%.*s/huella.bin", sl ? (int)(sl - G.dbg_path) : 0, G.dbg_path);
+        hf = fopen(p, "wb");
+        LOG("huella: %s desde el VBlank %d", hf ? p : "no se crea el archivo", VSync(-1));
+        if (!hf) { failed = 1; return; }
+    }
+    uint64_t h[35];
+    h[0] = (uint64_t)VSync(-1);
+    psx_mem_hash(h + 1);
+    h[34] = psx_rand_seed();
+    fwrite(h, 8, 35, hf);
+    if (h[0] % 60 == 0) fflush(hf);
+}
+
 static void frame_wait(void) {
     static double next;
+    hash_frame();
     double t = now();
     {   /* (paso 12) la estela: un paso que lee la imagen como textura la alarga un segundo (present_delay) */
         static int fbs;
@@ -533,9 +561,39 @@ static void frame_wait(void) {
     if (G.dbg_tap) { pad |= (uint16_t)G.dbg_tap; if (++tap_left >= 6) { G.dbg_tap = 0; tap_left = 0; } }
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
     if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }
+    /* (etapa 9, paso 1) guion=1: el mando lo pone solo el guion de tools/misiones.py (GUION, por VBlank),
+     * como en el PC: dos ejecuciones con el mismo guion deben dar la misma partida. guion=2: un misil mas en el
+     * VBlank 3000 (el control de tools/determinismo.py: debe salir otra partida) */
+    if (G.dbg_script) {
+        static const struct { int v, d; uint16_t m; uint8_t lx, ly, rx; } gs[] = {   /* palancas: 0x80 centro, 0 / 0xFF a tope */
+            {300, 8, PSX_PAD_START, 0x80, 0x80, 0x80}, {500, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {700, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80},
+            {900, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {1100, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {1300, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80},
+            {1500, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {1700, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {1900, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80},
+            {2100, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {2300, 6, PSX_PAD_CROSS, 0x80, 0x80, 0x80}, {2900, 60, 0, 0x00, 0x80, 0x80},
+            {3050, 60, 0, 0xFF, 0x80, 0x80}, {3200, 40, 0, 0x80, 0x00, 0x80}, {3300, 6, PSX_PAD_CIRCLE, 0x80, 0x80, 0x80},
+            {3400, 40, 0, 0x80, 0xFF, 0x80}, {3500, 6, PSX_PAD_CIRCLE, 0x80, 0x80, 0x80}, {3600, 30, 0, 0x80, 0x80, 0xFF},
+            {3700, 60, 0, 0x00, 0x00, 0x80}, {3850, 6, PSX_PAD_CIRCLE, 0x80, 0x80, 0x80},
+        };
+        int v = VSync(-1);
+        uint16_t m = 0;
+        uint8_t ax[3] = {0x80, 0x80, 0x80};
+        for (size_t i = 0; i < sizeof gs / sizeof gs[0]; i++)
+            if (v >= gs[i].v && v < gs[i].v + gs[i].d) {
+                m |= gs[i].m;
+                if (gs[i].lx != 0x80) ax[0] = gs[i].lx;
+                if (gs[i].ly != 0x80) ax[1] = gs[i].ly;
+                if (gs[i].rx != 0x80) ax[2] = gs[i].rx;
+            }
+        if (G.dbg_script == 2 && v >= 3000 && v < 3002) m |= PSX_PAD_CIRCLE;
+        psx_pad_set(0, m, ax[0], ax[1], ax[2], 0x80);
+        goto pad_done;
+    }
 #endif
     psx_pad_set(0, pad, to_axis(tact ? tx : lx), to_axis(tact ? ty : ly),
                 to_axis(G.rx), to_axis(ry));
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+pad_done:
+#endif
     static uint32_t img[640 * 512];
     int w, h;
     psx_display_frame(img, 640 * 512, &w, &h);
@@ -1043,6 +1101,8 @@ void android_main(struct android_app *app) {
                 ask_disc();
             } else if (ok) {
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
+                dbg_read();   /* (etapa 9, paso 1) mision=N en depurar.txt: la elige sin mostrar la lista */
+                if (g_dev_state == 0 && G.dbg_mission > 0) { g_dev_mission = G.dbg_mission - 1; g_dev_nav = 1; g_dev_state = 2; }
                 if (g_dev_state == 0) { dev_names(); g_dev_state = 1; dev_show_list(); }   /* arranca al elegir */
 #else
                 start_game();
