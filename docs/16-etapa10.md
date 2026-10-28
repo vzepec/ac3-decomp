@@ -8,7 +8,7 @@ simula la partida entera, y lo único que viaja es el mando de cada jugador.
 | Paso | Qué | Estado |
 |---|---|---|
 | 7 | Lockstep por TCP (`psx/recomp/ac3_net.c`): PC↔PC y PC↔Retroid por el cable; saltar la introducción, pausa compartida | ✅ |
-| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | 🔄 menú, anuncio, saludo y ping; PC↔Retroid y Retroid↔S24 por Wi-Fi con la misma partida; falta que el dueño lo juegue |
+| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | ✅ menú, anuncio, saludo y ping; PC↔Retroid y Retroid↔S24 por Wi-Fi con la misma partida, jugado por el dueño |
 
 Solo código nuestro: sockets POSIX, iguales en el PC y en Android. No hay
 servidor: uno escucha (el anfitrión) y el otro conecta (el invitado).
@@ -208,10 +208,26 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
   - arreglado, y desde entonces el cooperativo va en las opciones del
     saludo: si un lado lo tiene y el otro no, se avisa.
 
+- **El autopiloto del 1 salía también en la pantalla del 2** (lo vio el
+  dueño jugando Retroid↔S24; el del 2 salía bien, solo en la suya):
+  - el aviso del HUD lo elige `FUN_80041c88`, desde el HUD de cada imagen
+    (`FUN_80040c44`), con el estado y la entrada del jugador. El 9 es el
+    autopiloto; hay otros, como fuera de zona o la altura;
+  - lo guarda en un bloque global que dura entre imágenes:
+    `DAT_800C5AA0..AF` (aviso y tiempos) y `DAT_800BB988` (su cuenta);
+    medido con `AC3_WATCHWRITE`;
+  - el redibujo del 2 partía del bloque que dejó el dibujo del 1 y heredaba
+    su aviso; el del 2 se perdía con el redibujo.
+  - **Arreglo:** el 2 tiene su copia del bloque, que se pone al empezar su
+    redibujo y se guarda al acabar (vacía al empezar la misión).
+  - `AC3_COOP_AVISO=0` lo quita, y es el control positivo.
+
 ### Resultados
 
 | Prueba | Resultado |
 |---|---|
+| `tools/red.py aviso`: autopiloto del 1 y del 2, desde las dos vistas | la barra «AUTOPILOT» (911 px) solo en la vista de quien lo activa, la misma partida; control (`AC3_COOP_AVISO=0`): sale en las dos |
+| El dueño jugando Retroid↔S24 por Wi-Fi desde el menú, misión 1, 11 minutos | 690 huellas, 0 distintas; Retroid 60 fps, S24 120; ping 17-21 ms |
 | `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |
 | PC crea, Retroid se une por Wi-Fi desde el menú (`MENU=1 tools/movil_red.sh`) | ve «PC · 01 (192.168.1.34)»; 66-74 huellas, 0 distintas; ping 14-25 ms |
 | Retroid crea (misión 1 de la lista), PC se une por Wi-Fi | el PC oye su anuncio («Retroid Pocket Flip2», «01 Transport»), adopta la misión; 74 huellas, 0 distintas |

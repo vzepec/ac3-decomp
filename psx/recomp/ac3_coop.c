@@ -60,6 +60,9 @@ typedef struct {
                                                    * su numero en *DAT_800BB970 + 0xC, ellas en *DAT_800BB974 + 0x518 */
     uint32_t menu_draw[2];   /* (etapa 10, paso 7) los menus sobre la mision parada, que se dibujan tras FUN_80033910: el de
                               * la pausa (FUN_80034808, desde FUN_80033e20) y el de FUN_8003422c (FUN_80034d78) */
+    uint32_t hud_msg[2][2];  /* (paso 8) el aviso del HUD del jugador (direccion, bytes): FUN_80041c88 (desde el HUD de cada
+                              * imagen, FUN_80040c44) lo elige por su estado y su entrada (9, el autopiloto; fuera de zona,
+                              * altura...) y lo guarda en DAT_800C5AA0..AF (aviso y tiempos) y DAT_800BB988 (su cuenta) */
 } CoopAddr;
 #define NORDERS 5
 
@@ -89,7 +92,7 @@ static const CoopAddr ADDR[] = {
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
      0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
-     0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}},
+     0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}, {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
 };
 
 static const CoopAddr *A;
@@ -113,6 +116,7 @@ static uint32_t g_blip;   /* (paso 6) el registro del punto del otro jugador en 
 #define FRND_SIZE 0x40
 static uint32_t g_frnd;   /* (paso 6) sus registros de pantalla (0xC bytes) y de punteria (0x34) para el recuadro FRND */
 static int g_busy, g_steps, g_orders, g_revives;
+static int g_msg2_ok;   /* (etapa 10, paso 8) el aviso del HUD del 2 ya tiene valor (hud_msg_in) */
 static int g_rebuilding;   /* (paso 5) dentro del redibujo del jugador 2 */
 static uint32_t g_e1;
 
@@ -265,6 +269,7 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
         uint8_t *r1 = psx_ptr(REL(1, 0));
         r1[0] = 0; r1[1] = r1[2] = r1[3] = 0xFF;
     }
+    g_msg2_ok = 0;   /* (paso 8) el 2 empieza sin aviso del HUD */
     printf("coop: entidad 1 (%08x) activa en el VBlank %d\n", e1, VSync(-1));
     return 0;
 }
@@ -890,6 +895,26 @@ static void noop_hook(RCpu *c) {
     if (g_rebuilding) memcpy(psx_ptr(rd32(G_RENDER) + 0x28C), g_bars, sizeof g_bars);
 }
 static int g_views, g_view_miss;
+/* (etapa 10, paso 8) el aviso del HUD del jugador 2, de un redibujo al siguiente. Antes el redibujo partia del que dejo
+ * el dibujo del 1 y salia su aviso (el autopiloto del 1 en el aparato del 2, lo vio el dueno); el del 2 se perdia con el
+ * redibujo y no salia en el otro aparato. Al empezar, sin aviso (como FUN_80041c68: -1 y ceros) */
+static uint8_t g_msg2[0x14];
+static int hud_msg_on(void) {   /* AC3_COOP_AVISO=0 (control): sin la copia, como antes */
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_AVISO") || atoi(getenv("AC3_COOP_AVISO")) != 0;
+    return on;
+}
+static void hud_msg_in(void) {
+    if (!hud_msg_on()) return;
+    if (!g_msg2_ok) { memset(g_msg2, 0, sizeof g_msg2); memset(g_msg2, 0xFF, 4); g_msg2_ok = 1; }
+    memcpy(psx_ptr(A->hud_msg[0][0]), g_msg2, A->hud_msg[0][1]);
+    memcpy(psx_ptr(A->hud_msg[1][0]), g_msg2 + A->hud_msg[0][1], A->hud_msg[1][1]);
+}
+static void hud_msg_out(void) {
+    if (!hud_msg_on()) return;
+    memcpy(g_msg2, psx_ptr(A->hud_msg[0][0]), A->hud_msg[0][1]);
+    memcpy(g_msg2 + A->hud_msg[0][1], psx_ptr(A->hud_msg[1][0]), A->hud_msg[1][1]);
+}
 int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     ac3_rr_mute = 0;
     if (!A || !g_draw_sp || !g_s1_ok || !p2_active()) {
@@ -921,7 +946,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
         static int self = -1;   /* AC3_COOP_AUTOPRUEBA=1 (prueba): el mismo redibujo, pero como el jugador 1 (igual al original) */
         if (self < 0) self = getenv("AC3_COOP_AUTOPRUEBA") != NULL;
         Swap s;
-        if (!self) p2_begin(&s);
+        if (!self) { p2_begin(&s); hud_msg_in(); }
         uint32_t tab = rd32(A->ent_table), pe0 = rd32(tab + 4), pe1 = rd32(tab);   /* (tras p2_begin: [0] es la 1) */
         int content = content_mask() & 1;
         if (!self && content) ent_content_swap(tab, pe0, pe1);
@@ -938,6 +963,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
                    a[2], t0, e[0], e[1], e[2]);
         }
         guest_call(&cb, A->mission_draw, A->noop, 0, 0);
+        if (!self) hud_msg_out();
         if (trace) {   /* depuracion: lo que el redibujo lee de los bloques del jugador 1 (por su direccion, no por el puntero) */
             mipsi_rtrace = NULL;
             unsetenv("AC3_COOP_LECTURAS");

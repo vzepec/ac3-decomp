@@ -28,7 +28,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   - `MENU=1 VB=4000 tools/movil_red.sh <serie> <dir> 1`.
 - **Retroid ↔ S24 por Wi-Fi, sin el PC:** la Retroid crea la misión 1 y el
   S24 la encuentra en su lista. 89-90 huellas, 0 distintas; ping 17-19 ms.
-- **Pendiente:** que el dueño lo juegue.
+- **El dueño lo jugó Retroid↔S24** (11 min, 690 huellas, 0 distintas) y
+  encontró un fallo: el aviso de autopiloto del 1 (SELECT mantenido) salía
+  también en la pantalla del 2.
+  - **Causa:** `FUN_80041c88` (desde el HUD de cada imagen) guarda el aviso
+    del jugador en un bloque global que dura entre imágenes
+    (`DAT_800C5AA0..AF` y `DAT_800BB988`; con `AC3_WATCHWRITE`). El
+    redibujo del 2 heredaba el del 1.
+  - **Arreglo:** el 2 tiene su copia del bloque en el redibujo.
+  - `tools/red.py aviso`: la barra solo en la vista de quien lo activa; el
+    control (`AC3_COOP_AVISO=0`) la saca en las dos.
 
 ---
 

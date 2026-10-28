@@ -18,9 +18,12 @@ Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mi
   escucha en el puerto 7071 y debe llegar cada segundo con su puerto, su disco, su mision y su nombre.
 - disco (paso 8): el invitado con otro disco (la imagen europea, tercer argumento): el saludo debe rechazarlo (el caso
   positivo de la comprobacion del disco).
+- aviso (paso 8): el autopiloto (SELECT mantenido) del jugador 1 y, aparte, el del 2, sin red, dibujando desde el 1 y
+  desde el 2: la barra azul "AUTOPILOT" (pixeles azules en la imagen 2850) solo en la vista de quien lo activa, y la
+  misma partida desde las dos vistas. Antes del arreglo salia tambien en la vista del 2 cuando lo activaba el 1.
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco ...] [--eu <imagen_EU>]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|aviso ...] [--eu <imagen_EU>]
 """
 import os
 import re
@@ -44,13 +47,13 @@ G2 = '2700:start:6,3100:select:6,3300:lder:60,3500:start:6'
 G1 = G0 + ',3800:start:6'
 
 
-def run(d, env, guion, frames=FRAMES, disc=None):
+def run(d, env, guion, frames=FRAMES, disc=None, shots=0):
     os.makedirs(d, exist_ok=True)
     e = dict(os.environ, **{k: v for k, v in env.items() if v is not None})
     for k in [k for k, v in env.items() if v is None]:   # None: sin la variable (AC3_WIDE vale con solo existir)
         e.pop(k, None)
     log = open(os.path.join(d, 'log.txt'), 'w')
-    return subprocess.Popen([EXE, disc or DISC, '-', str(frames), d, '0', guion], env=e, stdout=log, stderr=subprocess.STDOUT,
+    return subprocess.Popen([EXE, disc or DISC, '-', str(frames), d, str(shots), guion], env=e, stdout=log, stderr=subprocess.STDOUT,
                             cwd=ROOT)
 
 
@@ -180,6 +183,47 @@ def test_views(out):
     return ok
 
 
+def blue_bar(ppm):
+    """pixeles azules donde sale la barra "AUTOPILOT" (911 con ella, 0 sin ella; sin Pillow: el PPM a mano)"""
+    data = open(ppm, 'rb').read()
+    parts = data.split(b'\n', 3)
+    w, h = map(int, parts[1].split())
+    px = parts[3]
+    n = 0
+    for y in range(70, 95):
+        for x in range(80, 240):
+            r, g, b = px[(y * w + x) * 3:(y * w + x) * 3 + 3]
+            n += b > 150 and r < 120 and g < 140
+    return n
+
+
+def test_hud_message(out, control=False):
+    """control=True: AC3_COOP_AVISO=0 (sin la copia del aviso del 2): la barra del 1 debe salir tambien en la vista del 2"""
+    ok = True
+    for who in ((1,) if control else (1, 2)):
+        ps = []
+        for v in (1, 2):
+            d = os.path.join(out, 'aviso_control' if control else 'aviso', 'j%d_ver%d' % (who, v))
+            g1 = G0 + ',2700:start:6' + (',2800:select:120' if who == 1 else '')
+            env = dict(AC3_PAD_ID='73', AC3_MISSION='1', AC3_COOP='1', AC3_PAD2_ID='73', AC3_WIDE='1', AC3_COMO_APK='1',
+                       AC3_SPU='1', AC3_COOP_VER=str(v), AC3_COOP_POS='300,-200',
+                       AC3_GUION2='2800:select:120' if who == 2 else '', AC3_RAMHASH=os.path.join(d, 'huella.bin'))
+            if control:
+                env['AC3_COOP_AVISO'] = '0'
+            ps.append((v, d, run(d, env, g1, 3000, shots=50)))
+        bars = {}
+        for v, d, p in ps:
+            p.wait()
+            bars[v] = blue_bar(os.path.join(d, 'f02850.ppm'))
+        same = open(os.path.join(ps[0][1], 'huella.bin'), 'rb').read() == open(os.path.join(ps[1][1], 'huella.bin'), 'rb').read()
+        good = same and (bars[who] > 500) and ((bars[3 - who] > 500) if control else (bars[3 - who] == 0))
+        ok = ok and good
+        print('aviso%s: autopiloto del jugador %d: barra en la vista del 1 %d px, en la del 2 %d px; %s -> %s' % (
+            ' (control, sin el arreglo: debe salir en las dos)' if control else '', who, bars[1], bars[2],
+            'la misma partida' if same else 'DISTINTAS', 'bien' if good else 'MAL'), flush=True)
+    return ok
+
+
 def main():
     global DISC
     if len(sys.argv) < 3:
@@ -191,7 +235,7 @@ def main():
         eu = args[i + 1]
         del args[i:i + 2]
     DISC, out = args[0], args[1]
-    what = args[2:] or ['red', 'control', 'vistas', 'anuncio'] + (['disco'] if eu else [])
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'aviso'] + (['disco'] if eu else [])
     ok = True
     if 'red' in what:
         ok = test_net(out) and ok
@@ -203,6 +247,9 @@ def main():
         ok = test_beacon(out) and ok
     if 'disco' in what:
         ok = test_disc(out, eu) and ok
+    if 'aviso' in what:
+        ok = test_hud_message(out) and ok
+        ok = test_hud_message(out, control=True) and ok
     return 0 if ok else 1
 
 

@@ -206,8 +206,11 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - el ping va en el contador.
   - PC↔Retroid por Wi-Fi en los dos sentidos y Retroid↔S24 sin el PC: 0
     distintas.
-- **Siguiente:** que el dueño juegue Retroid↔S24; decidir si el menú pasa
-  al APK publicable.
+  - el dueño lo jugó Retroid↔S24: 0 distintas. Su fallo (el aviso de
+    autopiloto del 1 salía también en la pantalla del 2) está arreglado:
+    el 2 tiene su copia del aviso del HUD.
+- **Siguiente:** que el dueño vuelva a probar el autopiloto; decidir si el
+  menú pasa al APK publicable; cerrar la etapa 10 (fusionar en `etapa-10`).
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
