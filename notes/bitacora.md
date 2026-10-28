@@ -38,6 +38,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   - **Arreglo:** el 2 tiene su copia del bloque en el redibujo.
   - `tools/red.py aviso`: la barra solo en la vista de quien lo activa; el
     control (`AC3_COOP_AVISO=0`) la saca en las dos.
+- **Menús sin guion** (lo pidió el dueño: elegir dificultad y avión):
+  - la misión elegida se pone en la partida nueva. Se vigila la escritura
+    de `g_state+0x390` desde el `sh` de `0x800D2448`
+    (`FUN_800d2418`, overlay 1). Un gancho de entrada no saltaba: se llega
+    por una tabla de saltos;
+  - resultado: el menú de misión y el informe ya son los de la elegida
+    (Scramble), y el juego arranca la 5 por sí mismo;
+  - **sin tarjeta de memoria:** el juego la lee al arrancar, y con tarjeta
+    en un solo lado las partidas se separaban desde el VBlank 120;
+  - `tools/red.py menus`; Retroid↔PC por Wi-Fi, 0 distintas.
 
 ---
 

@@ -60,6 +60,8 @@ typedef struct {
                                                    * su numero en *DAT_800BB970 + 0xC, ellas en *DAT_800BB974 + 0x518 */
     uint32_t menu_draw[2];   /* (etapa 10, paso 7) los menus sobre la mision parada, que se dibujan tras FUN_80033910: el de
                               * la pausa (FUN_80034808, desde FUN_80033e20) y el de FUN_8003422c (FUN_80034d78) */
+    uint32_t newgame_sh;     /* (etapa 10, paso 8) el sh de la partida nueva que pone la mision 1 en g_state + 0x390
+                              * (FUN_800d2418, overlay 1; se llega a ella por una tabla de saltos) */
     uint32_t hud_msg[2][2];  /* (paso 8) el aviso del HUD del jugador (direccion, bytes): FUN_80041c88 (desde el HUD de cada
                               * imagen, FUN_80040c44) lo elige por su estado y su entrada (9, el autopiloto; fuera de zona,
                               * altura...) y lo guarda en DAT_800C5AA0..AF (aviso y tiempos) y DAT_800BB988 (su cuenta) */
@@ -92,7 +94,8 @@ static const CoopAddr ADDR[] = {
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
      0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
-     0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}, {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
+     0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}, 0x800D2448u,
+     {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
 };
 
 static const CoopAddr *A;
@@ -1069,6 +1072,28 @@ int ac3_coop_install(const Ac3Version *v) {
 }
 
 int ac3_coop_steps(void) { return g_steps; }
+
+/* (etapa 10, paso 8) la mision elegida, en la partida nueva: se vigila la escritura de la mision actual (g_state +
+ * 0x390, mipsi_watch_write) y solo cuenta la del sh de la partida nueva; en la siguiente espera del VBlank (la misma en
+ * los dos aparatos) se pone la elegida. Medido: en la US, el menu de mision ya muestra la elegida (Scramble con la 5) */
+extern uint32_t mipsi_watch_write;
+extern void (*mipsi_watch_write_fn)(uint32_t pc);
+static int g_ng_mission = -1, g_ng_hit;
+static void newgame_write(uint32_t pc) {
+    if (A && pc == A->newgame_sh) g_ng_hit = 1;
+}
+void ac3_coop_newgame(int mission) { g_ng_mission = A ? mission : -1; }
+void ac3_coop_frame(void) {
+    if (g_ng_mission < 0) return;
+    uint32_t st = rd32(g_state_ptr);
+    if (!mipsi_watch_write && st) { mipsi_watch_write_fn = newgame_write; mipsi_watch_write = st + 0x390; }
+    if (g_ng_hit) {
+        g_ng_hit = 0;
+        printf("coop: partida nueva en el VBlank %d: la mision %d\n", VSync(-1), g_ng_mission);
+        int16_t m = (int16_t)g_ng_mission;
+        memcpy(psx_ptr(st + 0x390), &m, 2);
+    }
+}
 uint16_t ac3_coop_p1_extra(uint16_t p2) {
     int flying = VSync(-1) - g_flight_vb <= 4;   /* (el vuelo da un paso cada 2 VBlank) */
     return flying ? (uint16_t)(p2 & PSX_PAD_START) : p2;

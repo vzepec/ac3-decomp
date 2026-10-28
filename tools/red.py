@@ -18,12 +18,15 @@ Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mi
   escucha en el puerto 7071 y debe llegar cada segundo con su puerto, su disco, su mision y su nombre.
 - disco (paso 8): el invitado con otro disco (la imagen europea, tercer argumento): el saludo debe rechazarlo (el caso
   positivo de la comprobacion del disco).
+- menus (paso 8): el modo del menu Cooperativo (AC3_RED_MENUS: sin tarjeta y la mision en la partida nueva). El
+  anfitrion elige la 5 y recorre los menus con su guion: los dos deben poner la 5 en la partida nueva y el juego
+  arrancar el mismo la 5 (no la 1 forzada al arrancar), con las huellas iguales.
 - aviso (paso 8): el autopiloto (SELECT mantenido) del jugador 1 y, aparte, el del 2, sin red, dibujando desde el 1 y
   desde el 2: la barra azul "AUTOPILOT" (pixeles azules en la imagen 2850) solo en la vista de quien lo activa, y la
   misma partida desde las dos vistas. Antes del arreglo salia tambien en la vista del 2 cuando lo activaba el 1.
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|aviso ...] [--eu <imagen_EU>]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|aviso ...] [--eu <imagen_EU>]
 """
 import os
 import re
@@ -183,6 +186,26 @@ def test_views(out):
     return ok
 
 
+def test_menus(out):
+    d = os.path.join(out, 'menus')
+    h, g = os.path.join(d, 'anfitrion'), os.path.join(d, 'invitado')
+    ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_MISSION='5', AC3_RED_MENUS='1', AC3_RAMHASH=os.path.join(h, 'huella.bin')),
+             G0, 3000)
+    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_MISSION=None, AC3_RED_MENUS='1', AC3_COOP_VER='2',
+                     AC3_RAMHASH=os.path.join(g, 'huella.bin')), G0, 3000)
+    ph.wait()
+    pg.wait()
+    same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
+    ng = [re.search(r'partida nueva en el VBlank (\d+): la mision (\d+)', log_of(x)) for x in (h, g)]
+    st = [re.search(r'el juego arranca la (\d+)', log_of(x)) for x in (h, g)]
+    ok = same and all(ng) and all(m.group(2) == '5' for m in ng) and all(st) and all(m.group(1) == '5' for m in st)
+    print('menus: partida nueva %s; el juego arranca la %s; %s -> %s' % (
+        ' y '.join('VBlank %s mision %s' % (m.group(1), m.group(2)) if m else '-' for m in ng),
+        '/'.join(m.group(1) if m else '-' for m in st), 'huellas iguales' if same else 'DISTINTAS', 'bien' if ok else 'MAL'),
+        flush=True)
+    return ok
+
+
 def blue_bar(ppm):
     """pixeles azules donde sale la barra "AUTOPILOT" (911 con ella, 0 sin ella; sin Pillow: el PPM a mano)"""
     data = open(ppm, 'rb').read()
@@ -235,7 +258,7 @@ def main():
         eu = args[i + 1]
         del args[i:i + 2]
     DISC, out = args[0], args[1]
-    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'aviso'] + (['disco'] if eu else [])
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'aviso'] + (['disco'] if eu else [])
     ok = True
     if 'red' in what:
         ok = test_net(out) and ok
@@ -247,6 +270,8 @@ def main():
         ok = test_beacon(out) and ok
     if 'disco' in what:
         ok = test_disc(out, eu) and ok
+    if 'menus' in what:
+        ok = test_menus(out) and ok
     if 'aviso' in what:
         ok = test_hud_message(out) and ok
         ok = test_hud_message(out, control=True) and ok

@@ -15,6 +15,7 @@ typedef struct { uint16_t buttons; uint8_t lx, ly, rx, ry; } NetPad;   /* el man
 
 #define AC3_NET_OPT_WIDE 1u   /* opciones que cambian la partida y deben ser iguales en los dos: la imagen a 16:9 */
 #define AC3_NET_OPT_COOP 2u   /* (paso 8) y el cooperativo (el segundo avion; sin el, en el paso 8, se separaban en el VBlank 60) */
+#define AC3_NET_OPT_MENUS 4u  /* (paso 8) los menus sin guion: sin tarjeta de memoria y la mision en la partida nueva */
 
 /* (paso 8) lo que cada uno dice de si en el saludo (y el anfitrion en su anuncio): las opciones, el disco (huella de
  * ACE.BIN: deben ser iguales), la mision que eligio el anfitrion (-1: ninguna, se va por los menus del juego), el

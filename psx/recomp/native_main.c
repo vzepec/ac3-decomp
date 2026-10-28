@@ -259,6 +259,7 @@ static void pc_frame_wait(void) {
     if (g_ramhash) ram_hash(v);
     if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
 #endif
+    ac3_coop_frame();   /* (paso 8) la mision elegida en la partida nueva (AC3_RED_MENUS), antes del mando y la huella, como el APK */
     if (ac3_net_active() || g_net) {   /* (paso 7) en red: el mando de este jugador (su guion) y el del otro, de la red */
         NetPad mine = ac3_net_is_host() ? script_eval(script, nscript, v) : script_eval(script2, nscript2, v), p1, p2;
         ac3_net_frame(v, &mine, &p1, &p2);
@@ -1013,7 +1014,8 @@ int main(int argc, char **argv) {
         int delay = getenv("AC3_RED_RETRASO") ? atoi(getenv("AC3_RED_RETRASO")) : 2;
         /* (paso 8) el anfitrion dice su mision (AC3_MISSION) y el invitado, si no tiene una, carga la suya;
          * AC3_RED_NOMBRE: el nombre en la lista de partidas */
-        NetInfo mine = {(getenv("AC3_WIDE") ? AC3_NET_OPT_WIDE : 0) | (getenv("AC3_COOP") ? AC3_NET_OPT_COOP : 0), g_disc_id, getenv("AC3_MISSION") ? atoi(getenv("AC3_MISSION")) : -1, "", ""},
+        NetInfo mine = {(getenv("AC3_WIDE") ? AC3_NET_OPT_WIDE : 0) | (getenv("AC3_COOP") ? AC3_NET_OPT_COOP : 0) |
+                        (getenv("AC3_RED_MENUS") ? AC3_NET_OPT_MENUS : 0), g_disc_id, getenv("AC3_MISSION") ? atoi(getenv("AC3_MISSION")) : -1, "", ""},
                 theirs;
         snprintf(mine.name, sizeof mine.name, "%s", getenv("AC3_RED_NOMBRE") ? getenv("AC3_RED_NOMBRE") : "PC");
         if (mine.mission >= 0) snprintf(mine.label, sizeof mine.label, "%02d", mine.mission);
@@ -1023,6 +1025,11 @@ int main(int argc, char **argv) {
             printf("red: el anfitrion eligio la mision %d\n", theirs.mission);
             g_force_mission = theirs.mission;
             mipsi_set_hook(V->mission_start, force_mission);
+        }
+        if (getenv("AC3_RED_MENUS")) {   /* (paso 8) como el menu Cooperativo del APK: sin tarjeta y la mision en la partida nueva */
+            psx_card_detach(0);
+            ac3_coop_newgame(host ? mine.mission : theirs.mission);
+            puts("red: menus sin guion, sin tarjeta de memoria");
         }
         g_net = 1;
         atexit(net_summary);

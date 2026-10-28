@@ -433,7 +433,7 @@ static void java_str(const char *method, const char *arg) {
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetMission(JNIEnv *env, jclass cls, jint n) {
     (void)env; (void)cls;
     g_dev_mission = n;
-    g_dev_nav = 1;
+    g_dev_nav = !G.ui_net;   /* (etapa 10, paso 8: en el cooperativo del menu, los menus los recorren los jugadores) */
     g_dev_state = 2;
 }
 /* al arrancar la mision (la primera vez): la elegida en g_state + 0x390, y el mando vuelve al jugador */
@@ -690,6 +690,7 @@ pad_done:
             psx_pad_set(1, (uint16_t)(G.p2_buttons | G.p2_keys), to_axis(G.p2_lx), to_axis(G.p2_ly), to_axis(G.p2_rx), to_axis(G.p2_ry));
         else psx_pad_set(1, 0, 0x80, 0x80, 0x80, 0x80);
     }
+    ac3_coop_frame();   /* (paso 8) la mision elegida en la partida nueva (si esta pedida) */
     static int lost_told;
     if (ac3_net_lost() && !lost_told) {   /* (paso 8) el otro se fue: se sigue solo (su avion, suelto) */
         lost_told = 1;
@@ -850,7 +851,8 @@ static void *game_thread(void *arg) {
         char ip[32], ips[128], msg[256];
         snprintf(ip, sizeof ip, "%d.%d.%d.%d", G.dbg_net_ip[0], G.dbg_net_ip[1], G.dbg_net_ip[2], G.dbg_net_ip[3]);
         /* (paso 8) el saludo: el disco, la mision elegida por el que crea (y su nombre, para la lista de partidas) */
-        NetInfo mine = {(MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0) | (G.dbg_coop ? AC3_NET_OPT_COOP : 0), ac3_net_disc_id(g_ace, g_ab.size),
+        NetInfo mine = {(MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0) | (G.dbg_coop ? AC3_NET_OPT_COOP : 0) | (G.ui_net ? AC3_NET_OPT_MENUS : 0),
+                        ac3_net_disc_id(g_ace, g_ab.size),
                         host ? g_dev_mission : -1, "", ""},
                 theirs;
         snprintf(mine.name, sizeof mine.name, "%s", G.ui_name[0] ? G.ui_name : "AC3 Recomp");
@@ -872,7 +874,14 @@ static void *game_thread(void *arg) {
                 G.gfx_mode = (theirs.opts & AC3_NET_OPT_WIDE) ? 0 : G.gfx_mode == 3 ? 3 : 2;
                 LOG("red: imagen a %s, como el que crea", (theirs.opts & AC3_NET_OPT_WIDE) ? "16:9" : "4:3");
             }
-            if (G.ui_net) java_str("netDone", theirs.name);
+            if (G.ui_net) {
+                java_str("netDone", theirs.name);
+                /* (paso 8) sin tarjeta: cada aparato tiene la suya y cargar una partida separaria las dos; los menus
+                 * los recorren los jugadores y la mision elegida se pone en la partida nueva */
+                psx_card_detach(0);
+                ac3_coop_newgame(g_dev_mission);
+                LOG("red: menus sin guion, sin tarjeta de memoria; la mision %d en la partida nueva", g_dev_mission);
+            }
         }
     }
 #endif
@@ -1299,7 +1308,7 @@ void android_main(struct android_app *app) {
                 dbg_read();   /* (etapa 9, paso 1) mision=N en depurar.txt: la elige sin mostrar la lista */
                 if (g_dev_state == 0 && G.dbg_mission > 0) { g_dev_mission = G.dbg_mission - 1; g_dev_nav = 1; g_dev_state = 2; }
                 /* (etapa 10, paso 8) el que se une no elige: la mision llega en el saludo del que crea */
-                if (g_dev_state == 0 && G.dbg_net == 2) { g_dev_mission = -1; g_dev_nav = 1; g_dev_state = 2; }
+                if (g_dev_state == 0 && G.dbg_net == 2) { g_dev_mission = -1; g_dev_nav = !G.ui_net; g_dev_state = 2; }
                 if (g_dev_state == 0) { dev_names(); g_dev_state = 1; dev_show_list(); }   /* arranca al elegir */
 #else
                 start_game();

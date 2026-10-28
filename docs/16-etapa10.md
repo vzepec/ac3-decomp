@@ -167,6 +167,29 @@ opciones:
     los anuncios.
   - Quien se une no elige misión: le llega en el saludo.
 
+**Los menús sin guion** (desde la prueba del dueño): tras conectar, los
+jugadores recorren los menús del juego (título, partida nueva, dificultad,
+menú de misión, informe, avión, armas). Los botones del 2 cuentan fuera del
+vuelo.
+
+- **La misión elegida, en la partida nueva:**
+  - `FUN_800d2418` (overlay 1) guarda la dificultad (`g_state+0x398`) y pone
+    la misión 1 en `+0x390`, con el `sh` de `0x800D2448`;
+  - se vigila esa escritura (`mipsi_watch_write`, con un aviso nuevo,
+    `mipsi_watch_write_fn`), y en la siguiente espera del VBlank, la misma
+    en los dos aparatos, se pone la elegida;
+  - así el menú de misión, el informe y el avión ya son los suyos: con la
+    5, el menú muestra «SCRAMBLE» y el propio juego arranca la 5;
+  - un gancho de entrada no servía: a `FUN_800d2418` se llega por una tabla
+    de saltos, no con `jal`;
+  - la escritura de la demo del título (VBlank 1319, desde `800cb8f4`) no
+    cuenta.
+- **Sin tarjeta de memoria** (`psx_card_detach(0)`): cada aparato tiene la
+  suya, y el juego la lee al arrancar. Con tarjeta en un lado y sin ella en
+  el otro, las partidas se separaron en el VBlank 120. Cargar una partida
+  separaría las dos.
+- Es la opción `AC3_NET_OPT_MENUS` del saludo. En el PC, `AC3_RED_MENUS=1`.
+
 Al conectar sale un aviso con el nombre del otro. Si el otro se va a mitad
 de partida, otro aviso: «sigues solo». Si no se conecta, se explica el
 motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
@@ -226,6 +249,8 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
 
 | Prueba | Resultado |
 |---|---|
+| `tools/red.py menus`: el anfitrión elige la 5, los dos con `AC3_RED_MENUS` | partida nueva en el VBlank 704 con la 5 en los dos; el juego arranca la 5; huellas iguales |
+| Retroid crea Scramble desde el menú, el PC se une (`AC3_RED_MENUS`), menús recorridos a mano | el menú de misión muestra «SCRAMBLE»; partida nueva en el VBlank 1131 en los dos; el juego arranca la 5 en el 4218; 0 distintas |
 | `tools/red.py aviso`: autopiloto del 1 y del 2, desde las dos vistas | la barra «AUTOPILOT» (911 px) solo en la vista de quien lo activa, la misma partida; control (`AC3_COOP_AVISO=0`): sale en las dos |
 | El dueño jugando Retroid↔S24 por Wi-Fi desde el menú, misión 1, 11 minutos | 690 huellas, 0 distintas; Retroid 60 fps, S24 120; ping 17-21 ms |
 | `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |

@@ -101,6 +101,7 @@ static inline uint32_t fetch(uint32_t pc) {
  * LWC2); asi se sabe que datos usa una funcion */
 uint8_t *mipsi_rtrace, *mipsi_wtrace;   /* con mipsi_wtrace: solo lo leido antes de escribirlo */
 uint32_t mipsi_watch_write;              /* depuracion: imprime desde donde se escribe esta direccion */
+void (*mipsi_watch_write_fn)(uint32_t pc);   /* (etapa 10, paso 8) si esta: se le avisa (antes de escribir) en vez de imprimir */
 uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
 
 static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
@@ -116,7 +117,8 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     if (mipsi_watch_write && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_write & 0x1FFFFFFCu)) {
         static int nw;
         int VSync(int);
-        if (nw++ < 64) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
+        if (mipsi_watch_write_fn) mipsi_watch_write_fn(pc);
+        else if (nw++ < 64) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
     }
     if (mipsi_rtrace || mipsi_wtrace) {
         uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;

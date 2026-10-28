@@ -29,6 +29,10 @@ int ac3_coop_steps(void);
  * es de los dos). Asi cualquiera de los dos salta la introduccion o maneja los menus. Depende solo de la partida: en red,
  * igual en los dos aparatos */
 uint16_t ac3_coop_p1_extra(uint16_t p2);
+/* (etapa 10, paso 8) los menus sin guion: la mision elegida se pone en la partida nueva (el menu de mision, el informe y
+ * el avion ya son los suyos); ac3_coop_frame, en cada espera del VBlank */
+void ac3_coop_newgame(int mission);
+void ac3_coop_frame(void);
 int ac3_coop_orders(void);   /* ordenes de modo ejecutadas tambien para el jugador 2 */
 int ac3_coop_revives(void);  /* reapariciones del jugador 2 */
 uint32_t ac3_coop_entity(void);
