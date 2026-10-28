@@ -84,7 +84,7 @@ def hashes(disc, out):
     views = [l for l in read_log(ps[1][0]).split('\n') if 'imagenes desde' in l]
     same = h[0] == h[1]
     print('huella: %d VBlank, desde el jugador 1 y desde el 2 (%s): %s' % (
-        n, views[0].replace('coop: ', '') if views else '-', 'la misma partida' if same else 'DISTINTAS'), flush=True)
+        n, views[-1].replace('coop: ', '') if views else '-', 'la misma partida' if same else 'DISTINTAS'), flush=True)
     return same
 
 

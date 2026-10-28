@@ -48,8 +48,9 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 | 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | ✅ vuela, se dibuja y dispara |
 | 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | ✅ órdenes, caída y reaparición, disparo, daño y derribos; `SIN RESOLVER`: misiles guiados, estelas, IA |
 | 9 | 5 | Cada jugador con su vista sin romper el lockstep | ✅ en el PC: su cámara, su blanco y su fijado (misiles guiados) y su imagen, con la misma partida |
-| 10 | 6-7 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
-| 11 | 8-9 | Internet (código para compartir); las 36 misiones en cooperativo | |
+| 9 | 6 | El cooperativo en el APK: dos aparatos, cada uno con la imagen de su jugador, la misma partida | ✅ Retroid y S24 |
+| 10 | 7-8 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
+| 11 | 9-10 | Internet (código para compartir); las 36 misiones en cooperativo | |
 
 Los pasos 1 y 2 deciden la viabilidad.
 
@@ -465,7 +466,9 @@ misiles persiguen.
 
 - **Las estelas de sus misiles nacen junto a la cámara del jugador 1.** El
   misil nace bien (en su avión, banderas de la entidad 1 en `+0x6C`).
-  Revisarlo en el paso 5, con la vista de cada uno.
+  Revisarlo en el paso 5, con la vista de cada uno. **Resuelto en el paso
+  6:** salen de «el avión del jugador», que el dibujo lee de la entidad 0
+  por su dirección.
 - **A quién persiguen los enemigos.**
 
 ## Paso 5: la vista de cada jugador (rama `etapa-9-paso-5`)
@@ -568,6 +571,10 @@ sin acertar.)
 - su altitud, su velocidad, su radar y su HUD;
 - al estrellarse, su cámara sigue sus restos con «BODY DAMAGE» en rojo
   mientras el 1 sigue volando.
+- **Corregido en el paso 6:** en vuelo normal su cámara seguía al avión del
+  1 (el puntero de su objetivo apunta dentro de la entidad, no a su inicio),
+  y en tercera persona se dibujaba el avión del 1. El HUD sí era el suyo, y
+  por eso no se vio en estas capturas.
 
 **Lockstep:**
 - con la SPU, la huella de la RAM de los 4.001 VBlank es la misma dibujando
@@ -608,10 +615,107 @@ sin acertar.)
   de la partida: la SPU cuenta para el determinismo).
 - **`SIN RESOLVER`:**
   - las estelas de sus misiles: en las dos vistas se ve una que nace junto
-    al radar, y no se ha podido decidir de dónde nace;
+    al radar, y no se ha podido decidir de dónde nace (resuelto en el paso
+    6);
   - a quién persiguen los enemigos;
   - la transición de ruido en la vista del 2.
 
 **Reproducir:**
 - `python3 tools/coop_vista.py "<US>" <dir>`
 - `python3 tools/coop.py "<US>" <dir> 0-40 6 --vista2`
+
+## Paso 6: el cooperativo en el APK (rama `etapa-9-paso-6`)
+
+### Cómo
+
+- **La capa:**
+  - `DrawOTag` tiene un desvío (`psx_draw_redirect`): recibe la lista y lo
+    que hay que hacer con ella (con intermedias, sin ellas). El cooperativo
+    reconstruye la lista del 2 y se la pasa;
+  - con `ac3_rr_mute`, el redibujo de las intermedias (etapa 8) no anota el
+    dibujo original del paso, que no se va a ver, y sí el del 2. Sus
+    intermedias salen desde él.
+- **El APK de desarrollo** (`depurar.txt`, se leen al arrancar):
+  - `coop=1`: el segundo avión y el mando del puerto 2;
+  - `vista=2`: la imagen desde el jugador 2;
+  - `guion2=1`: su mando lo pone el guion de `tools/coop_vista.py`;
+  - `mando2=1`: su mando es un segundo mando físico (el primero que se usa
+    es el del 1);
+  - `jugador=2`: desde que el 2 vuela, los controles del aparato son suyos y
+    el 1 queda con el mando suelto (para probarlo con un solo aparato).
+- Los mensajes del cooperativo van al registro (`logcat`, `AC3Game`). Cada
+  300 imágenes, lo que cuesta el redibujo.
+
+### Arreglos de la vista (lo vio el dueño jugando)
+
+«Al alabear, en primera persona no se aprecia el giro; en tercera persona sí,
+y aparece el avión transparente.» Reproducido en el PC con un control: el
+jugador 1 y el 2 con las mismas entradas deben verse igual.
+
+1. **La cámara del 2 seguía al avión del 1.**
+   - Sus ángulos los pone el ajuste de la cámara (`FUN_8007a03c`) a partir
+     de su objetivo, un puntero en `+0x34` a la posición de la entidad
+     (`e+8`), no a su inicio.
+   - Al crear su cámara solo se cambiaban los punteros iguales a la
+     entidad 0. Ahora cambia cualquiera que apunte dentro de ella.
+   - Medido (`AC3_COOP_DBGCAM`): su avión alabeado 4096 y su cámara a 0,
+     como la del 1.
+2. **«El avión del jugador» se dibuja desde una dirección fija.**
+   - El dibujo estático lo dibuja, y saca el origen de las estelas, de la
+     entidad 0 por su dirección (`g_render+0x3BC`), no por la tabla.
+   - En su vista en la simulación y en el redibujo, el contenido de las dos
+     entidades se intercambia (cada una conserva su ranura). La tabla
+     vuelve a su orden y los punteros de la cámara se cambian
+     (`ent_content_swap`).
+   - Sin esto, en tercera persona se veía el avión del 1, nivelado.
+   - **Las estelas de sus misiles ya nacen en su avión** (era `SIN RESOLVER`
+     desde el paso 4).
+3. **Sus copias del control** (`0x800C6508`, `FUN_80070d34`) pasan de
+   protegidas a suyas, como su estado del blanco.
+
+Comprobado: con las mismas entradas, sus imágenes en cabina y en tercera
+persona coinciden con las del 1 (horizonte, alabeo, altitud). La lectura del
+redibujo de los bloques del 1 por su dirección (`AC3_COOP_LECTURAS`) da
+cero.
+
+### Resultados
+
+- **Lockstep entre aparatos** (`tools/movil_coop.sh`, mismos mandos por
+  guion para los dos jugadores):
+  - Retroid dibujando desde el 1 y S24 desde el 2: la misma huella de la
+    RAM en los 4.081 VBlank (misión 0);
+  - al revés también;
+  - tras los arreglos de la vista, en la misión 5: la misma en los 4.004.
+- **Coste del redibujo del 2**, de media por imagen y como máximo:
+
+  | Aparato | Media | Máximo | CPU |
+  |---|---|---|---|
+  | S24 | 8,5 ms (5,2 redibujo + 2,6 dibujo + 0,4 restaurar) | 22 ms | — |
+  | Retroid | 7 ms | 15 ms | 24-42 % |
+
+  El paso dura 33 ms. A 120 Hz (S24) y a 60 (Retroid) sin pasos saltados a
+  la vista (contador de imágenes 120 / 60).
+- **En el PC, de nuevo:**
+  - misiles, huella con SPU y autoprueba iguales que en el paso 5;
+  - con las intermedias de 120 Hz, la misma huella dibujando desde el 2;
+  - las 41 misiones con `--vista2`: el 1 igual, 0 fallos.
+- **«MISSION FAILED» en las pruebas con guion:** lo provoca el jugador 1
+  (el guion del PC acaba en un picado y cae hacia el VBlank 3850). La caída
+  del 2 no termina la misión: reaparece. Con el mando suelto, el 1 aguanta
+  al menos 9.000 VBlank en las misiones 0 y 5.
+
+### Lo que falta
+
+- La red (etapa 10). Hasta entonces, el mando del 2 en un aparato es un
+  guion, un segundo mando o los controles del propio aparato.
+- La caída del 1 termina la misión, como en el juego. En cooperativo
+  habría que decidir si reaparece.
+- Los avisos de fijado del 2 suenan en los dos aparatos.
+- `SIN RESOLVER`: a quién persiguen los enemigos; la transición de ruido en
+  la vista del 2.
+
+**Reproducir:**
+- `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`
+- `python3 tools/coop_vista.py "<US>" <dir>`
+- En el PC, la prueba del alabeo: `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'`
+  con `AC3_COOP_VER=2`, contra el mismo guion en el jugador 1.

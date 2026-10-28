@@ -5,6 +5,36 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 6: el cooperativo en el APK; la cámara del 2 seguía al avión del 1
+
+- **En el APK:**
+  - un desvío en DrawOTag (`psx_draw_redirect`) recibe la lista y lo que hay
+    que hacer con ella;
+  - `ac3_rr_mute` hace que las intermedias anoten el redibujo del 2;
+  - nuevas claves de `depurar.txt` (`coop`, `vista`, `guion2`, `mando2`,
+    `jugador`).
+- **Retroid y S24 dan la misma partida**, uno dibujando desde el jugador 1 y
+  el otro desde el 2 (4.081 VBlank; y al revés).
+- **Coste:** 7-8,5 ms por imagen de media, sin pasos saltados a 120 Hz (S24)
+  ni a 60 (Retroid).
+- **El dueño lo vio jugando:** al alabear, en cabina no giraba y en tercera
+  persona salía otro avión. Dos errores del paso 5:
+  - el objetivo de la cámara (`+0x34`) apunta a la posición de la entidad
+    (`e+8`): al crear la del 2 solo se cambiaba el puntero exacto, y su
+    cámara seguía al 1;
+  - el dibujo estático saca «el avión del jugador» (y el origen de las
+    estelas) de `g_render+0x3BC` por su dirección: en su vista y en el
+    redibujo se intercambia el contenido de las entidades.
+  - Con un control (el 1 con las mismas entradas) las imágenes coinciden; y
+    las estelas de sus misiles ya nacen en su avión.
+- **«MISSION FAILED» en las pruebas:** lo provocaba el guion del 1 (cae
+  hacia el VBlank 3850), no el 2.
+- **Reproducir:** `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`;
+  en el PC, `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'
+  AC3_COOP_VER=2` contra el mismo guion en el 1.
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 5: la vista del jugador 2; el fijado lo pone el HUD
 
 - **El fijado es cosa del HUD:**

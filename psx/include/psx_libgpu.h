@@ -68,6 +68,8 @@ void SetDrawMode(DR_MODE *p, int dfe, int dtd, int tpage, RECT *tw);
 uint32_t *ClearOTagR(uint32_t *ot, int n);
 uint32_t *ClearOTag(uint32_t *ot, int n);
 void DrawOTag(uint32_t *ot);
+/* (etapa 9, paso 6) desvio de DrawOTag: recibe la lista y lo que hay que hacer con ella; 0 si se encargo */
+extern int (*psx_draw_redirect)(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u);
 DRAWENV *PutDrawEnv(DRAWENV *env);
 DISPENV *PutDispEnv(DISPENV *env);
 /* zona de la VRAM que se muestra (ultimo PutDispEnv) y si la pantalla esta activa */

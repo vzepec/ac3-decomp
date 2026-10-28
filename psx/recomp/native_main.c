@@ -158,13 +158,9 @@ static void force_win_log(void);
  * tools/determinismo.py las compara). AC3_SPU=1: la SPU avanza un VBlank de audio en cada VBlank,
  * como en el APK (game_main.c); sin ella, SpuGetAllKeysStatus no cambia en el PC */
 static FILE *g_ramhash;
-/* (etapa 9, paso 5) AC3_COOP_VER=2: la imagen desde el avion del jugador 2 (la partida, igual) */
-static int g_coop_view_n, g_coop_view_miss;
+/* (etapa 9, paso 5) AC3_COOP_VER=2: la imagen desde el avion del jugador 2 (la partida, igual): el desvio de DrawOTag
+ * (psx_draw_redirect, paso 6) es ac3_coop_draw_p2 */
 static void coop_draw_cb(uint32_t ot, void *u) { psx_gpu_draw_list((PsxGpu *)u, ot); }
-static void coop_view_hook(PsxGpu *g, uint32_t ot) {
-    if (ac3_coop_draw_p2(ot, coop_draw_cb, g) == 0) g_coop_view_n++;
-    else { g_coop_view_miss++; psx_gpu_draw_list(g, ot); }
-}
 /* AC3_COOP_AUTOPRUEBA=1: en cada imagen, el original y el redibujo como el jugador 1 (ac3_coop_draw_p2), comparados */
 static int g_coop_self_n, g_coop_self_bad;
 static void save_vram(const PsxGpu *g, const char *name);
@@ -186,7 +182,8 @@ static void coop_self_hook(PsxGpu *g, uint32_t ot) {
 }
 static void coop_summary(void) {
     if (g_coop_self_n) printf("coop: autoprueba: %d imagenes, %d distintas del original\n", g_coop_self_n, g_coop_self_bad);
-    if (g_coop_view_n || g_coop_view_miss) printf("coop: %d imagenes desde el jugador 2, %d como el original\n", g_coop_view_n, g_coop_view_miss);
+    int miss, views = ac3_coop_views(&miss);
+    if (views || miss) printf("coop: %d imagenes desde el jugador 2, %d como el original\n", views, miss);
     printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
 static int g_spu_on;
 static void ram_hash(void) {
@@ -582,6 +579,7 @@ static void trace_hook(RCpu *c) {
 #include "ac3_rr_async.h"
 #include "psx_gpu.h"
 extern void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
+extern int (*psx_draw_redirect)(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u);
 /* AC3_UNCOVERED=dir: pixeles de la imagen que no dibuja ninguna primitiva (el area se rellena antes
  * con un color testigo); en la mision, el cielo y el terreno deberian cubrirlo todo. Guarda las
  * imagenes con pixeles sin cubrir (u<VBlank>.ppm, el testigo en magenta) */
@@ -896,7 +894,7 @@ int main(int argc, char **argv) {
     if (getenv("AC3_COOP")) {   /* etapa 9, paso 3: el segundo avion (mando del puerto 2: AC3_PAD2_ID=73, AC3_GUION2) */
         if (ac3_coop_install(V)) puts("AC3_COOP: esta version aun no tiene direcciones");
         else atexit(coop_summary);
-        if (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) psx_draw_list_hook = coop_view_hook;
+        if (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) psx_draw_redirect = ac3_coop_draw_p2;
         if (getenv("AC3_COOP_AUTOPRUEBA")) psx_draw_list_hook = coop_self_hook;
     }
     if (getenv("AC3_RAMHASH") && !(g_ramhash = fopen(getenv("AC3_RAMHASH"), "wb"))) puts("AC3_RAMHASH: no se crea el archivo");

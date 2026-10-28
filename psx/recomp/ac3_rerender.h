@@ -22,6 +22,9 @@
 
 /* instala los enganches (inicio y fin del dibujo estático); 0 si la versión lo admite */
 int ac3_rr_install(const Ac3Version *v);
+/* (etapa 9, paso 6) distinto de 0: el inicio y el fin del dibujo estatico no se anotan (el dibujo de este paso no es el
+ * que se va a ver: con la vista del jugador 2 se anota su redibujo) */
+extern int ac3_rr_mute;
 /* hay un dibujo estático completo de este paso y el estado del anterior */
 int ac3_rr_ready(void);
 /* construye en psx_ram la lista de la imagen intermedia de fase t (0 = paso anterior, 1 = este)

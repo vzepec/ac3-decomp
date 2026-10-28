@@ -30,5 +30,7 @@ uint32_t ac3_coop_entity(void);
 /* (paso 5) en DrawOTag (ot: la lista del paso): reconstruye la lista desde el avion del jugador 2, la pasa a draw y deja
  * la RAM, el scratchpad y la GTE como estaban. -1 (sin hacer nada) si en este VBlank no hubo paso de vuelo con el 2 */
 int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u);
+/* (paso 6) imagenes dibujadas desde el jugador 2 y, en miss, pasos de vuelo con el 2 que se dibujaron como el original */
+int ac3_coop_views(int *miss);
 
 #endif

@@ -127,6 +127,16 @@ int VSync(int);
 /* pruebas (etapa 6, paso 17): si esta puesto, dibuja la lista en lugar de psx_gpu_draw_list
  * (psx/gl/psx_hwcmp.c: comparador del dibujo por GLES) */
 void (*psx_draw_list_hook)(PsxGpu *g, uint32_t ot);
+/* lo que DrawOTag hace con la lista: con imagenes intermedias, sin ellas o con el gancho de pruebas */
+static void draw_list(uint32_t ot, void *u) {
+    (void)u;
+    if (psx_interp_on && psx_interp_draw(&g_gpu, ot)) return;
+    if (psx_draw_list_hook) { psx_draw_list_hook(&g_gpu, ot); return; }
+    psx_gpu_draw_list(&g_gpu, ot);
+}
+/* (etapa 9, paso 6) si esta puesto, recibe la lista y lo que hay que hacer con ella: puede dibujar otra en su lugar (la
+ * vista del jugador 2) y devolver 0; si devuelve otra cosa, se dibuja la lista como siempre */
+int (*psx_draw_redirect)(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u);
 void DrawOTag(uint32_t *ot) {
     if (getenv("PSX_FPSDBG")) {   /* depuracion: imagenes dibujadas por segundo de VBlank */
         static int n, v0 = -1;
@@ -135,9 +145,8 @@ void DrawOTag(uint32_t *ot) {
         n++;
         if (v - v0 >= 100) { fprintf(stderr, "fps: VBlank %d: %d DrawOTag en %d VBlank\n", v, n, v - v0); n = 0; v0 = v; }
     }
-    if (psx_interp_on && psx_interp_draw(&g_gpu, psx_addr(ot))) return;   /* con imagenes intermedias */
-    if (psx_draw_list_hook) { psx_draw_list_hook(&g_gpu, psx_addr(ot)); return; }
-    psx_gpu_draw_list(&g_gpu, psx_addr(ot));
+    if (psx_draw_redirect && psx_draw_redirect(psx_addr(ot), draw_list, NULL) == 0) return;
+    draw_list(psx_addr(ot), NULL);
 }
 
 DRAWENV *PutDrawEnv(DRAWENV *env) {

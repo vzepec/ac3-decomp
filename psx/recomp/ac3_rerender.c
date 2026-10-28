@@ -102,7 +102,8 @@ static int g_have_cur, g_have_prev, g_complete, g_mark_vb, g_in_static;
  * dibujo estatico; en vuelo, el dibujo estatico lo usa de origen de estelas (paso 3: interpolado,
  * la estela del misil se estiraba) */
 static int g_step_view, g_view;
-static void mark_view(RCpu *c) { (void)c; if (!g_busy) g_step_view = 1; }
+int ac3_rr_mute;
+static void mark_view(RCpu *c) { (void)c; if (!g_busy && !ac3_rr_mute) g_step_view = 1; }
 int VSync(int);
 
 static uint32_t field_addr(int i) {
@@ -121,7 +122,7 @@ static void field_set(int i, int32_t v) {
 
 /* inicio del dibujo estático: S0 y el registro de escrituras */
 static void mark0(RCpu *c) {
-    if (g_busy) return;
+    if (g_busy || ac3_rr_mute) return;
     double t0 = now_s();
     g_st0 = rd32(rd32(g_a->g_render) + 20);
     g_sp = c->r[29];
@@ -177,7 +178,7 @@ static void mark0(RCpu *c) {
 /* fin (la función siguiente): rango de primitivas (sin el E5 que el juego pone justo antes) */
 static void mark1(RCpu *c) {
     (void)c;
-    if (g_busy) return;
+    if (g_busy || ac3_rr_mute) return;
     /* sin el inicio en este mismo paso (pausa: el juego dibuja el HUD pero no el mundo), el rango no vale */
     if (!g_in_static) { g_complete = 0; mipsi_wtrace = NULL; return; }
     g_in_static = 0;

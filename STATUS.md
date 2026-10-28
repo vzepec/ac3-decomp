@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-27 (etapa 9, paso 5: la vista del jugador 2 en el PC, con la misma partida; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
+**Última actualización:** 2026-10-27 (etapa 9, paso 6: el cooperativo en el APK, dos aparatos con la misma partida y cada uno con su jugador; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -17,8 +17,8 @@ juego desde el disco del usuario. Etapas 1-5 cerradas.
 (`docs/14-etapa8.md`). El mundo se redibuja con el código del juego en cada
 imagen intermedia, en un hilo de dibujo.
 **Etapa 9 — Juego en red (experimental): EN CURSO** (`docs/15-etapa9.md`, rama `etapa-9`). La campaña en
-cooperativo por lockstep, sin servidor propio. Pasos 1-5 hechos en el PC: determinismo, el segundo avión, su
-combate y su vista.
+cooperativo por lockstep, sin servidor propio. Pasos 1-6 hechos: determinismo, el segundo avión, su combate y su
+vista (PC), y el cooperativo en el APK (dos aparatos, cada uno con su jugador, la misma partida).
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -144,13 +144,27 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - la misma huella de la RAM dibujando desde el 1 o desde el 2 (con SPU), y
     el 1 igual en las 41 misiones;
   - corregido el paso 4: su prueba de misiles no tenía caso positivo.
-- **Pendiente:** llevarlo al APK (DrawOTag, intermedias de 120 Hz, coste en
-  el aparato); los avisos de fijado del 2 suenan en los dos.
-- **`SIN RESOLVER`:** las estelas de sus misiles; a quién persigue la IA; la
-  transición de ruido al empezar el vuelo no sale en su vista.
-- **Siguiente:** etapa 10, pasos 6-7: el lockstep en red local
-  (`recomp-net`) y el menú Crear / Unirse. Antes, llevar el cooperativo al
-  APK para probarlo en dos aparatos.
+- Llevado al APK en el paso 6.
+
+**Etapa 9, paso 6 (rama `etapa-9-paso-6`): el cooperativo en el APK** (`tools/movil_coop.sh`, APK de desarrollo
+`1.13.3-alfa`).
+- **Hecho:**
+  - `depurar.txt`: `coop=1`, `vista=2`, `guion2=1`, `mando2=1`, `jugador=2`;
+  - el redibujo del 2 en el DrawOTag del APK, también con las intermedias
+    de 120 Hz (desde él);
+  - **Retroid y S24 dan la misma partida dibujando uno desde el 1 y otro
+    desde el 2**;
+  - coste: 7-8,5 ms por imagen de media, 15-22 ms como máximo, sin pasos
+    saltados (120 Hz en el S24, 60 en la Retroid);
+  - arreglos de la vista del 2, que vio el dueño jugando: su cámara seguía
+    al avión del 1, y «el avión del jugador» se dibuja desde la entidad 0
+    por su dirección (tercera persona y estelas).
+- **Pendiente:** la prueba jugando (`jugador=2`); los avisos de fijado del 2
+  suenan en los dos; la caída del 1 termina la misión.
+- **`SIN RESOLVER`:** a quién persigue la IA; la transición de ruido al
+  empezar el vuelo no sale en su vista.
+- **Siguiente:** etapa 10, pasos 7-8: el lockstep en red local
+  (`recomp-net`) y el menú Crear / Unirse.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

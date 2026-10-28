@@ -59,6 +59,7 @@
 #include "psx_libcard.h"
 #include "psx_libcd.h"
 #include "psx_libetc.h"
+#include "psx_libgpu.h"
 #include "psx_libgte.h"
 #include "psx_libpad.h"
 #include "psx_libspu.h"
@@ -78,6 +79,7 @@
 /* etapa 7, APK libre (sin nada de Namco): la version se detecta en el disco, ACE.BIN se lee y
  * descomprime de el y todo el codigo del juego lo ejecuta el interprete (psx/recomp/mipsi.c) */
 #include "ac3_versions.h"
+#include "ac3_coop.h"
 #include "ac3_rerender.h"
 #include "ac3_rr_async.h"
 #include "psx_acebin.h"
@@ -142,6 +144,14 @@ static struct {
      * glFinish; vibrar: forzar esa fuerza, 0-255) */
     char dbg_path[512];
     volatile int dbg_scale, dbg_true, dbg_only, dbg_filter, dbg_mode, dbg_gpu, dbg_rumble, dbg_subpix, dbg_dump, dbg_cam, dbg_pal, dbg_alb, dbg_inter, dbg_hz, dbg_btn, dbg_tap, dbg_hash, dbg_script, dbg_mission;
+    /* (etapa 9, paso 6) el cooperativo en el APK de desarrollo: coop=1 (el segundo avion, al arrancar), vista=2 (la
+     * imagen desde el), guion2=1 (su mando, el guion GUION2 de tools/coop_vista.py), mando2=1 (su mando, un segundo
+     * mando fisico: el primero que se mueve es el del jugador 1), jugador=2 (los controles del aparato mueven al 2 desde
+     * que vuela; el 1, con el mando suelto: para probarlo con un solo aparato) */
+    volatile int dbg_coop, dbg_view, dbg_script2, dbg_pad2, dbg_player;
+    volatile int pad1_dev, pad2_dev;   /* los mandos fisicos de cada jugador (-1: aun ninguno) */
+    volatile float p2_lx, p2_ly, p2_rx, p2_ry;
+    volatile uint16_t p2_buttons, p2_keys;
     volatile int rr_on;              /* la interpolacion nueva esta activa (una intermedia por paso) */
     volatile int wide_now;           /* la GTE proyecta en pantalla ancha (mision con modo 0 o 1) */
     int frame_wide;                  /* G.frame se presenta a 16:9 (modo 0 o 1 y no es un video) */
@@ -152,11 +162,13 @@ static struct {
     int16_t ring[16384 * 2];       /* anillo de audio estereo (potencia de dos) */
     volatile uint32_t ring_w, ring_r;
 } G = {.lock = PTHREAD_MUTEX_INITIALIZER, .disc_fd = -1, .interp_enabled = 1, .show_stats = 1, .scale = 1,
-       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1, .dbg_inter = -1};
+       .dbg_scale = -1, .dbg_true = -1, .dbg_only = -1, .dbg_filter = -1, .dbg_mode = -1, .dbg_gpu = -1, .dbg_rumble = -1, .dbg_subpix = -1, .dbg_dump = -1, .dbg_inter = -1,
+       .pad1_dev = -1, .pad2_dev = -1};
 
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
     int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1, btn = 0, tap = 0, hs = 0, sc = 0, mi = 0;
+    int co = 0, vi = 0, s2 = 0, p2 = 0, pl = 0;
     if (f) {
         char k[32];
         int v;
@@ -188,6 +200,11 @@ static void dbg_read(void) {
             else if (!strcmp(k, "huella")) hs = v;     /* (etapa 9, paso 1) huella de la RAM en cada VBlank */
             else if (!strcmp(k, "guion")) sc = v;      /* (etapa 9, paso 1) el mando del guion del PC */
             else if (!strcmp(k, "mision")) mi = v + 1;   /* (etapa 9, paso 1) APK de desarrollo: sin la lista */
+            else if (!strcmp(k, "coop")) co = v;         /* (etapa 9, paso 6) el cooperativo (al arrancar) */
+            else if (!strcmp(k, "vista")) vi = v;        /* 2: la imagen desde el jugador 2 (al arrancar) */
+            else if (!strcmp(k, "guion2")) s2 = v;       /* el mando del jugador 2, el guion GUION2 */
+            else if (!strcmp(k, "mando2")) p2 = v;       /* el mando del jugador 2, un segundo mando fisico */
+            else if (!strcmp(k, "jugador")) pl = v;      /* 2: los controles del aparato, para el jugador 2 */
         }
         fclose(f);
     }
@@ -202,6 +219,7 @@ static void dbg_read(void) {
     tap_last = tap;
     G.dbg_btn = btn;
     G.dbg_hash = hs; G.dbg_script = sc; G.dbg_mission = mi;
+    G.dbg_coop = co; G.dbg_view = vi; G.dbg_script2 = s2; G.dbg_pad2 = p2; G.dbg_player = pl;
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -589,10 +607,39 @@ static void frame_wait(void) {
         goto pad_done;
     }
 #endif
-    psx_pad_set(0, pad, to_axis(tact ? tx : lx), to_axis(tact ? ty : ly),
+#if defined(AC3_LIBRE) && defined(AC3_DEV)
+    /* (etapa 9, paso 6) jugador=2: desde que el 2 vuela, los controles del aparato son suyos (puerto 2); el 1, suelto */
+    int p2_local = G.dbg_coop && G.dbg_player == 2 && ac3_coop_steps() > 0;
+    if (p2_local) psx_pad_set(0, 0, 0x80, 0x80, 0x80, 0x80);
+#else
+    const int p2_local = 0;
+#endif
+    psx_pad_set(p2_local ? 1 : 0, pad, to_axis(tact ? tx : lx), to_axis(tact ? ty : ly),
                 to_axis(G.rx), to_axis(ry));
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
 pad_done:
+    /* (etapa 9, paso 6) el mando del jugador 2 (puerto 2): guion2=1, el guion GUION2 de tools/coop_vista.py (por VBlank, como
+     * AC3_GUION2 en el PC); mando2=1, el segundo mando fisico */
+    if (G.dbg_coop && !(G.dbg_player == 2 && ac3_coop_steps() > 0)) {
+        if (G.dbg_script2) {
+            static const struct { int v, d; uint16_t m; uint8_t lx, ly; } g2[] = {
+                {2700, 120, 0, 0xFF, 0x80}, {2900, 60, 0, 0x80, 0xFF}, {3000, 60, PSX_PAD_CROSS, 0x80, 0x80}, {3100, 120, 0, 0x00, 0x80},
+                {3300, 60, 0, 0x80, 0x00}, {3400, 4, PSX_PAD_CIRCLE, 0x80, 0x80}, {3500, 200, 0, 0xC0, 0x80},
+            };
+            int v = VSync(-1);
+            uint16_t m = 0;
+            uint8_t ax[2] = {0x80, 0x80};
+            for (size_t i = 0; i < sizeof g2 / sizeof g2[0]; i++)
+                if (v >= g2[i].v && v < g2[i].v + g2[i].d) {
+                    m |= g2[i].m;
+                    if (g2[i].lx != 0x80) ax[0] = g2[i].lx;
+                    if (g2[i].ly != 0x80) ax[1] = g2[i].ly;
+                }
+            psx_pad_set(1, m, ax[0], ax[1], 0x80, 0x80);
+        } else if (G.dbg_pad2)
+            psx_pad_set(1, (uint16_t)(G.p2_buttons | G.p2_keys), to_axis(G.p2_lx), to_axis(G.p2_ly), to_axis(G.p2_rx), to_axis(G.p2_ry));
+        else psx_pad_set(1, 0, 0x80, 0x80, 0x80, 0x80);
+    }
 #endif
     static uint32_t img[640 * 512];
     int w, h;
@@ -713,6 +760,18 @@ static void *game_thread(void *arg) {
     mipsi_set_hook(R->mission_start, dev_force_mission);   /* la mision elegida en la lista */
 #endif
     if (ac3_rr_install(R) || ac3_rr_async_install(R)) LOG("interpolacion nueva: esta version no tiene direcciones");
+#ifdef AC3_DEV
+    if (G.dbg_coop) {   /* (etapa 9, paso 6) el segundo avion: mando en el puerto 2; vista=2, la imagen desde el */
+        if (G.dbg_view == 2) setenv("AC3_COOP_VER", "2", 1);
+        if (ac3_coop_install(R)) LOG("coop: esta version aun no tiene direcciones");
+        else {
+            psx_pad_connect(1, 0x73);
+            if (G.dbg_view == 2) psx_draw_redirect = ac3_coop_draw_p2;
+            LOG("coop: el segundo avion, vista del jugador %d, mando del 2: %s", G.dbg_view == 2 ? 2 : 1,
+                G.dbg_player == 2 ? "los controles del aparato" : G.dbg_script2 ? "guion" : G.dbg_pad2 ? "segundo mando fisico" : "ninguno");
+        }
+    }
+#endif
 #else
     rc_register(R->funcs, *R->nfuncs);
     for (int i = 0; i < 5; i++) rc_register_overlay(i + 1, R->ovl[i], *R->novl[i]);
@@ -848,6 +907,37 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_TOUCHSCREEN)) return 1;
     }
     if (touchpad_event(e)) return 1;   /* la pantalla tactil: el mando virtual */
+    /* (etapa 9, paso 6) mando2=1: el primer mando fisico que se usa es el del jugador 1 y otro distinto, el del 2 */
+    int32_t src = AInputEvent_getSource(e), dev = AInputEvent_getDeviceId(e);
+    int pad_ev = (type == AINPUT_EVENT_TYPE_MOTION && (src & AINPUT_SOURCE_JOYSTICK)) ||
+                 (type == AINPUT_EVENT_TYPE_KEY && (src & (AINPUT_SOURCE_GAMEPAD | AINPUT_SOURCE_DPAD) & ~AINPUT_SOURCE_CLASS_BUTTON) &&
+                  key_button(AKeyEvent_getKeyCode(e)));
+    if (pad_ev && G.pad1_dev < 0) G.pad1_dev = dev;
+    if (pad_ev && G.dbg_pad2 && dev != G.pad1_dev) {
+        if (G.pad2_dev != dev) { G.pad2_dev = dev; LOG("coop: mando del jugador 2: dispositivo %d (el del 1: %d)", dev, G.pad1_dev); }
+        if (type == AINPUT_EVENT_TYPE_MOTION) {
+            G.p2_lx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_X, 0);
+            G.p2_ly = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Y, 0);
+            G.p2_rx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_Z, 0);
+            G.p2_ry = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RZ, 0);
+            float lt = fmaxf(AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_LTRIGGER, 0), AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_BRAKE, 0));
+            float rt = fmaxf(AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_RTRIGGER, 0), AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_GAS, 0));
+            float hx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_HAT_X, 0), hy = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_HAT_Y, 0);
+            uint16_t b = 0;
+            if (lt > 0.5f) b |= PSX_PAD_L2;
+            if (rt > 0.5f) b |= PSX_PAD_R2;
+            if (hx < -0.5f) b |= PSX_PAD_LEFT;
+            if (hx > 0.5f) b |= PSX_PAD_RIGHT;
+            if (hy < -0.5f) b |= PSX_PAD_UP;
+            if (hy > 0.5f) b |= PSX_PAD_DOWN;
+            G.p2_buttons = b;
+        } else {
+            uint16_t m = key_button(AKeyEvent_getKeyCode(e));
+            if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) G.p2_keys |= m;
+            else if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_UP) G.p2_keys &= (uint16_t)~m;
+        }
+        return 1;
+    }
     if (type == AINPUT_EVENT_TYPE_MOTION && (AInputEvent_getSource(e) & AINPUT_SOURCE_JOYSTICK)) {
         touchpad_physical();   /* (modo automatico: con un mando fisico se oculta) */
         G.lx = AMotionEvent_getAxisValue(e, AMOTION_EVENT_AXIS_X, 0);
