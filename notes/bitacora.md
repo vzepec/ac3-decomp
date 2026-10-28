@@ -5,6 +5,52 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-28 — Etapa 10, paso 7: lockstep en red; SELECT separaba las partidas (la semilla de rand); la pausa desde el 2
+
+- **Lockstep por TCP** (`psx/recomp/ac3_net.c`, igual en el PC y en el APK):
+  - solo viajan los mandos, para v + 2 VBlank;
+  - cada 60 VBlank se compara la huella de la RAM.
+- **Resultados:**
+  - PC↔PC: la misma huella en cada VBlank;
+  - control positivo (el invitado a 4:3): 29 de 74 huellas distintas, y el
+    saludo avisa;
+  - PC↔Retroid por el cable (`adb reverse`): 0 distintas;
+  - el dueño jugando contra el PC: 0 distintas, sin esperas, 60 fps.
+- **Fallos que vio el dueño:**
+  - **las partidas se separaban** con el mando real a los 9 s. En el PC, con
+    un guion que pulsa todo y comparando las dos vistas, se separa tras
+    SELECT y solo en la semilla de `rand`:
+    - la vista exterior llama a `rand`, y su semilla está fuera de la RAM;
+    - el redibujo del 2 la gastaba en un solo aparato;
+    - ahora vuelve a la de S1 y a la del final;
+  - la Retroid se rendía si el PC aún no escuchaba: por el cable, `adb
+    reverse` acepta y cierra. Ahora el invitado reintenta;
+  - menús sin sonido: el APK de desarrollo los recorre acelerado y en
+    silencio, y en red ya no;
+  - retraso de 4 → 2 VBlank.
+- **Menús e introducción de los dos:**
+  - fuera del vuelo, los botones del 2 también cuentan como del 1; en vuelo,
+    solo START (la pausa es de los dos);
+  - misión 1: con START del 2, el vuelo empieza en el VBlank ~2700 y no en
+    el 6817;
+  - pausa del 2 y reanuda el 1: 150 pasos menos, la misma partida.
+- **La pausa desde el 2:**
+  - se redibuja también con la pausa: `g_state` bit `0x20000000`, o
+    `g_render` bit `0x40`. Este último lo pone el menú tras el dibujo; con
+    él solo, la primera imagen salía como el 1 y parpadeaba (lo vio el
+    dueño);
+  - el menú (`FUN_80034808` / `FUN_80034d78`, dibujados tras
+    `FUN_80033910`) se repite encima, con el puntero de primitivas del
+    redibujo y el estado del 1;
+  - el menú aparece en las mismas imágenes que en el original.
+- **La misión 0 es la de prueba;** el juego, sin forzar nada, arranca la 1.
+- **Reproducir:**
+  - `python3 tools/red.py "<US>" <dir>`;
+  - `VB=4500 tools/movil_red.sh <serie> <dir> 1`.
+- Detalle en `docs/16-etapa10.md`.
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 6: el cooperativo en el APK; la cámara del 2 seguía al avión del 1
 
 - **En el APK:**

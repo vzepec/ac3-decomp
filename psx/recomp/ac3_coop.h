@@ -24,6 +24,11 @@
 int ac3_coop_install(const Ac3Version *v);
 /* medicion: pasos del jugador 2 y la entidad 1 (0 si no esta activa) */
 int ac3_coop_steps(void);
+/* (etapa 10, paso 7) los botones del jugador 2 que tambien cuentan como del 1 (el juego solo lee el puerto 1 fuera del
+ * avion): fuera del vuelo (menus, introducciones, cinematicas, pausa, informe), todos; en vuelo, solo START (la pausa
+ * es de los dos). Asi cualquiera de los dos salta la introduccion o maneja los menus. Depende solo de la partida: en red,
+ * igual en los dos aparatos */
+uint16_t ac3_coop_p1_extra(uint16_t p2);
 int ac3_coop_orders(void);   /* ordenes de modo ejecutadas tambien para el jugador 2 */
 int ac3_coop_revives(void);  /* reapariciones del jugador 2 */
 uint32_t ac3_coop_entity(void);

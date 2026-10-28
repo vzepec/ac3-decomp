@@ -35,6 +35,7 @@
  * se lee de el y todo lo ejecuta el interprete (make libre) */
 #include "ac3_versions.h"
 #include "ac3_coop.h"
+#include "ac3_net.h"
 #include "psx_gte.h"
 #include "psx_acebin.h"
 static const Ac3Version *V;
@@ -148,6 +149,22 @@ static void pace(void) {
     }
     if (due > t) { ts.tv_sec = (time_t)(due - t); ts.tv_nsec = (long)((due - t - (double)ts.tv_sec) * 1e9); nanosleep(&ts, NULL); }
 }
+/* (etapa 10, paso 7) AC3_COMO_APK=1: la huella, la SPU y el mando en la espera del VBlank (psx_set_frame_wait), antes
+ * de que avance el contador y se lea el mando, como frame_wait en el APK (game_main.c). Por defecto el PC lo hace
+ * despues (frame_check): su mando llega al juego un VBlank mas tarde y la huella se anota al otro lado del avance;
+ * PC y APK no daban la misma partida. Para jugar entre el PC y un aparato, los dos asi */
+static int g_like_apk;
+/* (paso 7) AC3_RED=anfitrion|invitado (AC3_RED_IP, 127.0.0.1; AC3_RED_PUERTO, 7070; AC3_RED_RETRASO, 2 VBlank): el juego
+ * en red con otro PC o un aparato (psx/recomp/ac3_net.c). El mando de este jugador: el guion (anfitrion, el jugador 1)
+ * o AC3_GUION2 (invitado, el 2). Implica AC3_COMO_APK y la SPU. AC3_RED_ESPERA=s: cuanto esperar al otro (300) */
+static int g_net;
+static void net_summary(void) {
+    int cmp, dif, first, waits;
+    double ms;
+    ac3_net_stats(&cmp, &dif, &first, &waits, &ms);
+    printf("red: %d huellas comparadas, %d distintas%s; %d esperas (%.0f ms)\n", cmp, dif, dif ? " (las partidas se separaron)" : "", waits, ms);
+    if (dif) printf("red: la primera distinta, en el VBlank %d\n", first);
+}
 #ifdef AC3_LIBRE
 static int g_win, g_mission_frame, g_win_i, g_win_n;
 static int g_win_f[8];
@@ -186,20 +203,38 @@ static void coop_summary(void) {
     if (views || miss) printf("coop: %d imagenes desde el jugador 2, %d como el original\n", views, miss);
     printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
 static int g_spu_on;
-static void ram_hash(void) {
+static void ram_hash(int v) {
     uint64_t h[35];
-    h[0] = (uint64_t)last_vcount;
+    h[0] = (uint64_t)v;
     psx_mem_hash(h + 1);
     h[34] = psx_rand_seed();
     fwrite(h, 8, 35, g_ramhash);
 }
 #endif
-/* el mando del guion en este VBlank, al puerto `port`; devuelve los botones */
-static uint16_t script_pad(int port, const ScriptItem *sc, int n) {
+/* el mando del guion en el VBlank v */
+static NetPad script_eval(const ScriptItem *sc, int n, int v) {
     uint32_t all = 0;
     int amt = 0;
     for (int i = 0; i < n; i++)
-        if (last_vcount >= sc[i].frame && last_vcount < sc[i].frame + sc[i].dur) {
+        if (v >= sc[i].frame && v < sc[i].frame + sc[i].dur) {
+            all |= sc[i].mask;
+            if (sc[i].amt) amt = sc[i].amt;
+        }
+    uint8_t ax[4] = {0x80, 0x80, 0x80, 0x80};
+    int dv = amt ? amt * 0x80 / 10 : 0x80;
+    for (int a = 0; a < 4; a++) {
+        if (all >> (16 + 2 * a) & 1) ax[a] = (uint8_t)(0x80 - dv);
+        if (all >> (17 + 2 * a) & 1) ax[a] = (uint8_t)(amt ? 0x80 + dv : 0xFF);
+    }
+    NetPad p = {(uint16_t)all, ax[0], ax[1], ax[2], ax[3]};
+    return p;
+}
+/* el mando del guion en el VBlank v, al puerto `port`; devuelve los botones */
+static uint16_t script_pad(int port, const ScriptItem *sc, int n, int v) {
+    uint32_t all = 0;
+    int amt = 0;
+    for (int i = 0; i < n; i++)
+        if (v >= sc[i].frame && v < sc[i].frame + sc[i].dur) {
             all |= sc[i].mask;
             if (sc[i].amt) amt = sc[i].amt;
         }
@@ -213,6 +248,28 @@ static uint16_t script_pad(int port, const ScriptItem *sc, int n) {
     }
     psx_pad_set(port, mask, ax[0], ax[1], ax[2], ax[3]);
     return mask;
+}
+
+/* (etapa 10, paso 7) con AC3_COMO_APK: en la espera del VBlank v, como frame_wait en el APK: la huella, la SPU y el
+ * mando de v */
+static void pc_frame_wait(void) {
+    int v = VSync(-1);
+#ifdef AC3_LIBRE
+    if (g_ramhash) ram_hash(v);
+    if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
+#endif
+    if (ac3_net_active() || g_net) {   /* (paso 7) en red: el mando de este jugador (su guion) y el del otro, de la red */
+        NetPad mine = ac3_net_is_host() ? script_eval(script, nscript, v) : script_eval(script2, nscript2, v), p1, p2;
+        ac3_net_frame(v, &mine, &p1, &p2);
+        p1.buttons |= ac3_coop_p1_extra(p2.buttons);   /* (menus e introducciones: tambien los del 2) */
+        psx_pad_set(0, p1.buttons, p1.lx, p1.ly, p1.rx, p1.ry);
+        psx_pad_set(1, p2.buttons, p2.lx, p2.ly, p2.rx, p2.ry);
+        if (ac3_net_hash_due(v)) ac3_net_hash(v, ac3_net_ram_hash());
+        return;
+    }
+    script_pad(0, script, nscript, v);
+    if (nscript2) script_pad(1, script2, nscript2, v);
+    else if (getenv("AC3_PAD2_BOTONES")) psx_pad_set(1, (uint16_t)strtol(getenv("AC3_PAD2_BOTONES"), NULL, 0), 0x80, 0x80, 0x80, 0x80);
 }
 
 static void frame_check(void) {
@@ -241,11 +298,12 @@ static void frame_check(void) {
         }
         if (g_win_i < g_win_n && g_mission_frame >= 0 && last_vcount == g_mission_frame + g_win_f[g_win_i]) { force_win(); g_win_i++; }
         if (g_win_i > 0 && last_vcount % 60 == 0) force_win_log();
-        if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
-        if (g_ramhash) ram_hash();
+        if (!g_like_apk && g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
+        if (!g_like_apk && g_ramhash) ram_hash(last_vcount);
 #endif
-        uint16_t mask = script_pad(0, script, nscript);
-        if (nscript2) script_pad(1, script2, nscript2);
+        uint16_t mask = g_like_apk ? 0 : script_pad(0, script, nscript, last_vcount);
+        if (g_like_apk) ;
+        else if (nscript2) script_pad(1, script2, nscript2, last_vcount);
         else if (getenv("AC3_PAD2_BOTONES")) psx_pad_set(1, (uint16_t)strtol(getenv("AC3_PAD2_BOTONES"), NULL, 0), 0x80, 0x80, 0x80, 0x80);
         if (getenv("AC3_PADDBG") && mask) {   /* depuracion: lo que ve el juego en su bufer de mando */
             uint32_t pb = *(uint32_t *)psx_ptr(AC3_PAD_BUF);
@@ -946,6 +1004,21 @@ int main(int argc, char **argv) {
     psx_set_call(rc_host_callback);
     rc_set_tick(tick, BUDGET_PER_FRAME);
     rc_set_frame_hook(on_vsync_frame);
+    if (getenv("AC3_RED")) {
+        int host = !strcmp(getenv("AC3_RED"), "anfitrion");
+        int port = getenv("AC3_RED_PUERTO") ? atoi(getenv("AC3_RED_PUERTO")) : 7070;
+        int delay = getenv("AC3_RED_RETRASO") ? atoi(getenv("AC3_RED_RETRASO")) : 2;
+        if (ac3_net_open(host, getenv("AC3_RED_IP") ? getenv("AC3_RED_IP") : "127.0.0.1", port, delay,
+                         getenv("AC3_WIDE") ? AC3_NET_OPT_WIDE : 0,
+                         getenv("AC3_RED_ESPERA") ? atoi(getenv("AC3_RED_ESPERA")) : 300)) return 1;   /* (s esperando al otro) */
+        g_net = 1;
+        atexit(net_summary);
+        setenv("AC3_COMO_APK", "1", 1);
+#ifdef AC3_LIBRE
+        if (!g_spu_on) { g_spu_on = 1; psx_audio_connect(); }
+#endif
+    }
+    if (getenv("AC3_COMO_APK")) { g_like_apk = 1; psx_set_frame_wait(pc_frame_wait); }
     if (getenv("AC3_INTERP")) {
         interp_from = getenv("AC3_INTERP_FROM") ? atoi(getenv("AC3_INTERP_FROM")) : 0;
         if (getenv("AC3_INTERP_LEN")) interp_len = atoi(getenv("AC3_INTERP_LEN"));

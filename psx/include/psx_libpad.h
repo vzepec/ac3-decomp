@@ -24,6 +24,8 @@ enum { PSX_PAD_SELECT = 1 << 0, PSX_PAD_L3 = 1 << 1, PSX_PAD_R3 = 1 << 2, PSX_PA
 void psx_pad_connect(int port, int id);
 /* botones activos a nivel ALTO (PSX_PAD_*) y ejes de 0 a 255 (centro 0x80) */
 void psx_pad_set(int port, uint16_t buttons, uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry);
+/* (etapa 10) lo ultimo puesto con psx_pad_set en ese puerto (el juego en red envia el mando local) */
+void psx_pad_peek(int port, uint16_t *buttons, uint8_t *lx, uint8_t *ly, uint8_t *rx, uint8_t *ry);
 /* vibracion que pide el juego: fuerza 0-255 (el motor grande; el pequeno, encendido, cuenta 160) */
 int psx_pad_motor(int port);
 

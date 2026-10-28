@@ -49,7 +49,7 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 | 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | ✅ órdenes, caída y reaparición, disparo, daño y derribos; `SIN RESOLVER`: misiles guiados, estelas, IA |
 | 9 | 5 | Cada jugador con su vista sin romper el lockstep | ✅ en el PC: su cámara, su blanco y su fijado (misiles guiados) y su imagen, con la misma partida |
 | 9 | 6 | El cooperativo en el APK: dos aparatos, cada uno con la imagen de su jugador, la misma partida | ✅ Retroid y S24 |
-| 10 | 7-8 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
+| 10 | 7-8 | Lockstep en red local; menú Crear / Unirse (`docs/16-etapa10.md`) | ✅ paso 7: PC↔PC y PC↔Retroid, jugado |
 | 11 | 9-10 | Internet (código para compartir); las 36 misiones en cooperativo | |
 
 Los pasos 1 y 2 deciden la viabilidad.

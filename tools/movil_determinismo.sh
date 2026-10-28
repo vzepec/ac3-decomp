@@ -28,11 +28,15 @@ for c in $CONFIGS; do
     { printf 'huella=1\nmision=%d\n' "$mision"; case " ${extra//,/ } " in *" guion="*) ;; *) echo guion=1 ;; esac
       for kv in ${extra//,/ }; do echo "$kv"; done; } |
         $ADB shell "cat > $F/depurar.txt"
+    $ADB shell input keyevent KEYCODE_WAKEUP   # (etapa 10) con la pantalla apagada la app no arranca
     $ADB shell monkey -p $PKG -c android.intent.category.LAUNCHER 1 >/dev/null 2>&1
-    sleep 3
-    $ADB shell input keyevent KEYCODE_DPAD_CENTER   # Jugar tiene el foco
-    sleep 3
-    if [ -z "$($ADB shell pidof $PKG:game)" ]; then $ADB shell input tap 1170 520; sleep 3; fi   # (S24: Jugar)
+    for i in 1 2 3 4; do   # Jugar: con el foco (Retroid) o pulsado (S24: 1170,520; Retroid: 960,536)
+        sleep 3
+        [ -n "$($ADB shell pidof $PKG:game)" ] && break
+        if [ $i -eq 1 ]; then $ADB shell input keyevent KEYCODE_DPAD_CENTER
+        elif [ $i -eq 2 ]; then $ADB shell input tap 1170 520
+        else $ADB shell input tap 960 536; fi
+    done
     t=0
     while :; do
         sz=$($ADB shell stat -c %s $F/huella.bin 2>/dev/null | tr -d '\r' || true)

@@ -215,6 +215,9 @@ Etapa 9: dos aviones en un aparato; 10: red local; 11: Internet y las 36
 misiones. Requisito comprobado en el paso 1: la partida es determinista.
 En el PC (pasos 3-5) el segundo avión ya vuela, combate, persigue con sus
 misiles y tiene su propia imagen, con la misma partida en los dos.
+Etapa 10 (`docs/16-etapa10.md`): paso 7 hecho, el lockstep por TCP, jugado
+entre el PC y la Retroid con la misma partida; el paso 8 es el menú
+Crear / Unirse y el Wi-Fi entre dos aparatos.
 
 ---
 

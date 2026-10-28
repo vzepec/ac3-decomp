@@ -228,7 +228,7 @@ libre-build: $(GLINC)/GLES3/gl3.h
 	@mkdir -p psx/build/libre
 	@sh tools/rr_clone.sh "cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp" nm objcopy psx/build/rrw $(RR_CLONE)
 	@cc -O2 -w -D_GNU_SOURCE -DAC3_LIBRE -Ipsx/include -Ipsx/recomp -I$(GLINC) psx/recomp/native_main.c psx/recomp/mipsi.c \
-		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/ac3_rerender.c psx/recomp/ac3_rr_async.c psx/recomp/ac3_coop.c psx/recomp/hle_eu.c psx/recomp/hle_us.c \
+		psx/recomp/recomp_rt.c psx/recomp/ac3_versions.c psx/recomp/ac3_rerender.c psx/recomp/ac3_rr_async.c psx/recomp/ac3_coop.c psx/recomp/ac3_net.c psx/recomp/hle_eu.c psx/recomp/hle_us.c \
 		psx/src/*.c psx/gl/psx_hw.c psx/gl/psx_hwcmp.c psx/build/rrw/*.o $(GLLIBS) -lm -lpthread -o psx/build/ac3_libre
 
 # etapa 6, paso 5: carga una a una las 41 misiones (por defecto en la americana) con el binario

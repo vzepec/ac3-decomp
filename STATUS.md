@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-27 (etapa 9, paso 6: el cooperativo en el APK, dos aparatos con la misma partida y cada uno con su jugador; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
+**Última actualización:** 2026-10-28 (etapa 10, paso 7: el cooperativo en red por lockstep, PC↔Retroid jugado por el dueño con la misma partida; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -19,6 +19,8 @@ imagen intermedia, en un hilo de dibujo.
 **Etapa 9 — Juego en red (experimental): EN CURSO** (`docs/15-etapa9.md`, rama `etapa-9`). La campaña en
 cooperativo por lockstep, sin servidor propio. Pasos 1-6 hechos: determinismo, el segundo avión, su combate y su
 vista (PC), y el cooperativo en el APK (dos aparatos, cada uno con su jugador, la misma partida).
+**Etapa 10 — Cooperativo en red local: EN CURSO** (`docs/16-etapa10.md`, rama `etapa-10`). Paso 7 hecho: el lockstep
+por TCP, jugado entre el PC y la Retroid.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -169,8 +171,33 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   decidir si en cooperativo el 1 reaparece.
 - **`SIN RESOLVER`:** si los enemigos disparan al 2 (le persiguen, medido);
   la transición de ruido al empezar el vuelo no sale en su vista.
-- **Siguiente:** etapa 10, pasos 7-8: el lockstep en red local
-  (`recomp-net`) y el menú Crear / Unirse.
+- **Siguiente:** etapa 10 (abajo).
+
+**Etapa 10, paso 7 (rama `etapa-10-paso-7`): el lockstep en red** (`tools/red.py`, `tools/movil_red.sh`,
+`docs/16-etapa10.md`).
+- **Hecho:**
+  - `psx/recomp/ac3_net.c`: el anfitrión (jugador 1) escucha y el invitado
+    (2) conecta. Solo viajan los mandos, para v + 2 VBlank, y cada 60 se
+    compara la huella;
+  - en `depurar.txt`: `red=1/2`, `red_ip1..4`, `red_puerto`, `retraso`. En
+    el PC: `AC3_RED`, `AC3_RED_IP`, `AC3_RED_PUERTO`, `AC3_RED_RETRASO`;
+  - PC↔PC y PC↔Retroid por el cable, con la misma partida; el control (4:3
+    contra 16:9) se separa;
+  - el dueño jugó contra el PC: 0 distintas, sin esperas, 60 fps.
+  - **Arreglos de sus pruebas:**
+    - SELECT separaba las partidas: la semilla de `rand` del redibujo;
+    - el invitado reintenta si el anfitrión aún no escucha;
+    - los menús se oyen;
+    - retraso de 4 a 2 VBlank;
+    - START del 2 salta la introducción y pausa a los dos;
+    - en pausa cada uno ve su avión, con el menú y sin parpadeo.
+- **Pendiente:** que el 1 reaparezca en cooperativo; los avisos de fijado
+  del 2 suenan en los dos; volver a sincronizar si las partidas se separan.
+- **`SIN RESOLVER`:** si los enemigos disparan al 2.
+- **Siguiente:** paso 8:
+  - menú Crear / Unirse en el APK;
+  - búsqueda del anfitrión en la red local;
+  - Wi-Fi entre dos aparatos (Retroid y S24).
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

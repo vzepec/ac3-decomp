@@ -13,7 +13,9 @@
 
 #include "ac3_rerender.h"
 #include "psx_gte.h"
+#include "psx_libc.h"
 #include "psx_libetc.h"
+#include "psx_libpad.h"
 #include "psx_libgte.h"
 #include "psx_mem.h"
 
@@ -56,6 +58,8 @@ typedef struct {
                                             * a la 63) y lo siguiente del HUD (FUN_80062924) */
     uint32_t map_link, hud_counts, hud_sprites;   /* el mapa grande (cuadrado mantenido): FUN_8003c5f4 enlaza sus baldosas;
                                                    * su numero en *DAT_800BB970 + 0xC, ellas en *DAT_800BB974 + 0x518 */
+    uint32_t menu_draw[2];   /* (etapa 10, paso 7) los menus sobre la mision parada, que se dibujan tras FUN_80033910: el de
+                              * la pausa (FUN_80034808, desde FUN_80033e20) y el de FUN_8003422c (FUN_80034d78) */
 } CoopAddr;
 #define NORDERS 5
 
@@ -85,7 +89,7 @@ static const CoopAddr ADDR[] = {
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
      0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
-     0x8003C5F4u, 0x800BB970u, 0x800BB974u},
+     0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}},
 };
 
 static const CoopAddr *A;
@@ -383,8 +387,10 @@ static void log_step(uint32_t e0, uint32_t e1) {
     }
 }
 
+static int g_flight_vb = -100;   /* (etapa 10, paso 7) el ultimo VBlank con paso de vuelo del jugador 1 */
 static void after_player(RCpu *c) {
     if (g_busy) return;
+    g_flight_vb = VSync(-1);
     uint32_t st = rd32(g_state_ptr), tab = rd32(A->ent_table);
     uint32_t e0 = rd32(tab), e1 = rd32(tab + 4);
     static int from = -1;   /* AC3_COOP_DESDE=v (prueba): el jugador 2 aparece desde ese VBlank */
@@ -844,16 +850,36 @@ static uint8_t g_s1_ram[PSX_RAM_SIZE], g_s1_scr[0x400];
 static PsxGte g_s1_gte;
 static int g_s1_ok, g_view2 = -1;
 static uint32_t g_s1_sp;   /* la pila de FUN_80033910 en S1 */
+static unsigned int g_s1_seed;   /* (etapa 10, paso 7) la semilla de rand en S1: esta fuera de la RAM, y el dibujo de la
+                                  * vista exterior llama a rand; sin volver a la del final, el aparato que dibuja al 2 se
+                                  * separaba del otro al pulsar SELECT */
 static int view2_on(void) {
     if (g_view2 < 0) g_view2 = (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) || getenv("AC3_COOP_AUTOPRUEBA");
     return g_view2;
 }
+/* (etapa 10, paso 7) el menu sobre la mision de este paso (funcion y argumentos): el redibujo, que solo repite
+ * FUN_80033910, lo vuelve a dibujar encima (sin el, en la pausa del aparato del 2 no salia el menu) */
+static uint32_t g_menu_fn, g_menu_a0;   /* (los dos: f(*(g_state + 0xC), puntero de primitivas) -> el nuevo puntero) */
+static void menu_note(const RCpu *c, uint32_t fn) {
+    if (!g_busy && !g_rebuilding && g_s1_ok) { g_menu_fn = fn; g_menu_a0 = c->r[4]; }
+}
+static void menu0_hook(RCpu *c) { menu_note(c, A->menu_draw[0]); }
+static void menu1_hook(RCpu *c) { menu_note(c, A->menu_draw[1]); }
 static void draw_start_hook(RCpu *c) {
-    if (g_busy || !view2_on() || !g_draw_sp || c->r[31] < A->mission_draw || c->r[31] >= A->mission_draw + 0x400) return;
+    if (g_busy || !view2_on() || c->r[31] < A->mission_draw || c->r[31] >= A->mission_draw + 0x400) return;
+    /* (etapa 10, paso 7) en pausa no hay paso de vuelo, pero la imagen tambien es la del jugador 2 (su avion, parado):
+     * g_state + 0 bit 0x20000000, la pausa (con el, FUN_80033e20 lleva al menu de pausa; puesto ya en la primera imagen
+     * de la pausa), o g_render + 0 bit 0x40, menu sobre la mision (lo ponen FUN_800345f0 y FUN_80034c38 tras el dibujo
+     * y lo quita esta funcion, FUN_8007a03c: con el solo, la primera imagen de la pausa salia como el jugador 1 y
+     * parpadeaba; medido: 0x02 en vuelo, 0x42 en pausa) */
+    if (!g_draw_sp && p2_active() && ((rd32(rd32(g_state_ptr)) & 0x20000000u) || (rd32(rd32(G_RENDER)) & 0x40))) g_draw_sp = c->r[29];
+    if (!g_draw_sp) return;
     memcpy(g_s1_ram, psx_ram, PSX_RAM_SIZE); memcpy(g_s1_scr, psx_scratch, sizeof g_s1_scr);
     g_s1_gte = *(PsxGte *)psx_gte_get_context();
     g_s1_sp = c->r[29];
+    g_s1_seed = psx_rand_seed();
     g_s1_ok = 1;
+    g_menu_fn = 0;
     ac3_rr_mute = 1;   /* (paso 6) el redibujo de las intermedias anota el del jugador 2, no este */
 }
 static uint8_t g_bars[8];
@@ -873,11 +899,13 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     }
     static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
     PsxGte *gc = (PsxGte *)psx_gte_get_context(), gte = *gc;
+    unsigned int seed = psx_rand_seed();
     struct timespec t0, t1, t2, t3;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     memcpy(ram, psx_ram, PSX_RAM_SIZE); memcpy(scr, psx_scratch, sizeof scr);
     memcpy(psx_ram, g_s1_ram, PSX_RAM_SIZE); memcpy(psx_scratch, g_s1_scr, sizeof scr);
     *gc = g_s1_gte;
+    psx_srand(g_s1_seed);
     g_draw_sp = 0; g_s1_ok = 0;
     uint32_t gr = rd32(G_RENDER), st = rd32(g_state_ptr), otm = rd32(gr + 0x10), otend = (otm + 0x3FFC) & 0xFFFFFF;
     uint32_t p = rd32(st + 8), guard = 0;
@@ -931,6 +959,12 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
         g_rebuilding = 0;
         if (!self && content) ent_content_swap(tab, pe0, pe1);
         if (!self) p2_end(&s);
+        if (g_menu_fn) {   /* el menu sobre la mision, ya con el estado del 1 (es de la partida); las primitivas, tras las del
+                            * redibujo */
+            g_rebuilding = 1;
+            guest_call(&cb, g_menu_fn, g_menu_a0, rd32(rd32(G_RENDER) + 0x14), 0);
+            g_rebuilding = 0;
+        }
         clock_gettime(CLOCK_MONOTONIC, &t1);
         if (getenv("AC3_COOP_TIEMPOS")) {   /* medicion: paquetes de la cadena (y si vuelve sobre si misma) */
             uint32_t a = ot & 0xFFFFFF, n = 0, first_rep = 0;
@@ -949,6 +983,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     clock_gettime(CLOCK_MONOTONIC, &t2);
     memcpy(psx_ram, ram, PSX_RAM_SIZE); memcpy(psx_scratch, scr, sizeof scr);
     *gc = gte;
+    psx_srand(seed);
     clock_gettime(CLOCK_MONOTONIC, &t3);
 #define MS(a, b) ((b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) * 1e-6)
     if (getenv("AC3_COOP_TIEMPOS"))   /* medicion: ms en reconstruir, dibujar y restaurar */
@@ -998,13 +1033,20 @@ int ac3_coop_install(const Ac3Version *v) {
     mipsi_set_hook(A->ai_release, ai_release_hook);
     mipsi_set_hook(A->hud_boxes, frnd_hook);
     mipsi_set_hook(A->hud_after_boxes, frnd_after_hook);
-    if (view2_on()) { mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
+    if (view2_on()) {
+        mipsi_set_hook(A->menu_draw[0], menu0_hook);
+        mipsi_set_hook(A->menu_draw[1], menu1_hook);
+        mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
     if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
     if (getenv("AC3_COOP_DBGSONIDO")) for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);
     return 0;
 }
 
 int ac3_coop_steps(void) { return g_steps; }
+uint16_t ac3_coop_p1_extra(uint16_t p2) {
+    int flying = VSync(-1) - g_flight_vb <= 4;   /* (el vuelo da un paso cada 2 VBlank) */
+    return flying ? (uint16_t)(p2 & PSX_PAD_START) : p2;
+}
 int ac3_coop_views(int *miss) { *miss = g_view_miss; return g_views; }
 int ac3_coop_orders(void) { return g_orders; }
 int ac3_coop_revives(void) { return g_revives; }

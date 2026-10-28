@@ -80,6 +80,7 @@
  * descomprime de el y todo el codigo del juego lo ejecuta el interprete (psx/recomp/mipsi.c) */
 #include "ac3_versions.h"
 #include "ac3_coop.h"
+#include "ac3_net.h"
 #include "ac3_rerender.h"
 #include "ac3_rr_async.h"
 #include "psx_acebin.h"
@@ -149,6 +150,10 @@ static struct {
      * mando fisico: el primero que se mueve es el del jugador 1), jugador=2 (los controles del aparato mueven al 2 desde
      * que vuela; el 1, con el mando suelto: para probarlo con un solo aparato) */
     volatile int dbg_coop, dbg_view, dbg_script2, dbg_pad2, dbg_player;
+    /* (etapa 10, paso 7) el juego en red: red=1 anfitrion (jugador 1, escucha) o red=2 invitado (jugador 2, conecta a
+     * red_ip1.red_ip2.red_ip3.red_ip4, 127.0.0.1 si no: con adb reverse, el PC por el cable); red_puerto (7070) y
+     * retraso (2 VBlank; manda el del anfitrion). Se leen al arrancar */
+    volatile int dbg_net, dbg_net_port, dbg_net_delay, dbg_net_ip[4];
     volatile int pad1_dev, pad2_dev;   /* los mandos fisicos de cada jugador (-1: aun ninguno) */
     volatile float p2_lx, p2_ly, p2_rx, p2_ry;
     volatile uint16_t p2_buttons, p2_keys;
@@ -168,7 +173,7 @@ static struct {
 static void dbg_read(void) {
     FILE *f = G.dbg_path[0] ? fopen(G.dbg_path, "r") : NULL;
     int s = -1, t = -1, o = -1, fl = -1, md = -1, gp = -1, rb = -1, sp = -1, dd = -1, cam = 0, pal = 0, alb = 0, inter = -1, btn = 0, tap = 0, hs = 0, sc = 0, mi = 0;
-    int co = 0, vi = 0, s2 = 0, p2 = 0, pl = 0;
+    int co = 0, vi = 0, s2 = 0, p2 = 0, pl = 0, rd = 0, rp = 7070, rr = 2, ip[4] = {127, 0, 0, 1};
     if (f) {
         char k[32];
         int v;
@@ -205,6 +210,10 @@ static void dbg_read(void) {
             else if (!strcmp(k, "guion2")) s2 = v;       /* el mando del jugador 2, el guion GUION2 */
             else if (!strcmp(k, "mando2")) p2 = v;       /* el mando del jugador 2, un segundo mando fisico */
             else if (!strcmp(k, "jugador")) pl = v;      /* 2: los controles del aparato, para el jugador 2 */
+            else if (!strcmp(k, "red")) rd = v;          /* (etapa 10) 1 anfitrion, 2 invitado (al arrancar) */
+            else if (!strcmp(k, "red_puerto")) rp = v;
+            else if (!strcmp(k, "retraso")) rr = v;
+            else if (!strncmp(k, "red_ip", 6) && k[6] >= '1' && k[6] <= '4' && !k[7]) ip[k[6] - '1'] = v;
         }
         fclose(f);
     }
@@ -220,6 +229,8 @@ static void dbg_read(void) {
     G.dbg_btn = btn;
     G.dbg_hash = hs; G.dbg_script = sc; G.dbg_mission = mi;
     G.dbg_coop = co; G.dbg_view = vi; G.dbg_script2 = s2; G.dbg_pad2 = p2; G.dbg_player = pl;
+    G.dbg_net = rd; G.dbg_net_port = rp; G.dbg_net_delay = rr;
+    for (int i = 0; i < 4; i++) G.dbg_net_ip[i] = ip[i];
     if (dd != G.dbg_dump && dd > 0) G.dbg_dump = -2;   /* volcar=N (otro N, otra vez): la proxima lista de la GPU */
     else if (dd != G.dbg_dump) G.dbg_dump = dd;
     if (md >= 0 && md <= 3 && md != G.dbg_mode) G.gfx_mode = md;
@@ -451,7 +462,8 @@ static void frame_wait(void) {
     next += 1.0 / g_refresh;
     double slack = next - t;
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
-    if (g_dev_nav) { next = t; slack = 0; }   /* hacia la mision elegida: a toda velocidad */
+    if (g_dev_nav && !G.dbg_net) { next = t; slack = 0; }   /* hacia la mision elegida: a toda velocidad (en red no: el ritmo es
+                                                             * el del anfitrion, y los menus se oyen) */
 #endif
     if (slack > 0) usleep((useconds_t)(slack * 1e6));
     /* cada 50 VBlank: uso del hilo del juego y numero de intermedias adaptativo. Se baja si los
@@ -517,7 +529,7 @@ static void frame_wait(void) {
     psx_spu_render(psx_spu(), pcm, g_spf);
     uint32_t wpos = G.ring_w;
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
-    if (!g_dev_nav)   /* (acelerado no se oye) */
+    if (!g_dev_nav || G.dbg_net)   /* (acelerado no se oye) */
 #endif
     if (wpos - G.ring_r <= 16384 - (uint32_t)g_spf) {
         for (int i = 0; i < g_spf; i++) {
@@ -578,7 +590,9 @@ static void frame_wait(void) {
     static int tap_left;
     if (G.dbg_tap) { pad |= (uint16_t)G.dbg_tap; if (++tap_left >= 6) { G.dbg_tap = 0; tap_left = 0; } }
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
-    if (g_dev_nav) { pad = dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }
+    if (g_dev_nav) { pad = G.dbg_net == 2 ? 0 : dev_buttons(VSync(-1)); tact = 0; lx = ly = ry = 0; }   /* (el invitado no
+                                                                                                    * navega: los menus
+                                                                                                    * son del anfitrion) */
     /* (etapa 9, paso 1) guion=1: el mando lo pone solo el guion de tools/misiones.py (GUION, por VBlank),
      * como en el PC: dos ejecuciones con el mismo guion deben dar la misma partida. guion=2: un misil mas en el
      * VBlank 3000 (el control de tools/determinismo.py: debe salir otra partida) */
@@ -609,7 +623,8 @@ static void frame_wait(void) {
 #endif
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
     /* (etapa 9, paso 6) jugador=2: desde que el 2 vuela, los controles del aparato son suyos (puerto 2); el 1, suelto */
-    int p2_local = G.dbg_coop && G.dbg_player == 2 && ac3_coop_steps() > 0;
+    int p2_local = (G.dbg_coop && G.dbg_player == 2 && ac3_coop_steps() > 0) || (G.dbg_net == 2 && !G.dbg_script2);   /* (paso 7: el
+                                                                                                                    * invitado, siempre) */
     if (p2_local) psx_pad_set(0, 0, 0x80, 0x80, 0x80, 0x80);
 #else
     const int p2_local = 0;
@@ -620,7 +635,7 @@ static void frame_wait(void) {
 pad_done:
     /* (etapa 9, paso 6) el mando del jugador 2 (puerto 2): guion2=1, el guion GUION2 de tools/coop_vista.py (por VBlank, como
      * AC3_GUION2 en el PC); mando2=1, el segundo mando fisico */
-    if (G.dbg_coop && !(G.dbg_player == 2 && ac3_coop_steps() > 0)) {
+    if (G.dbg_coop && !(G.dbg_player == 2 && ac3_coop_steps() > 0) && !(G.dbg_net == 2 && !G.dbg_script2)) {
         if (G.dbg_script2) {
             static const struct { int v, d; uint16_t m; uint8_t lx, ly; } g2[] = {
                 {2700, 120, 0, 0xFF, 0x80}, {2900, 60, 0, 0x80, 0xFF}, {3000, 60, PSX_PAD_CROSS, 0x80, 0x80}, {3100, 120, 0, 0x00, 0x80},
@@ -639,6 +654,24 @@ pad_done:
         } else if (G.dbg_pad2)
             psx_pad_set(1, (uint16_t)(G.p2_buttons | G.p2_keys), to_axis(G.p2_lx), to_axis(G.p2_ly), to_axis(G.p2_rx), to_axis(G.p2_ry));
         else psx_pad_set(1, 0, 0x80, 0x80, 0x80, 0x80);
+    }
+    if (ac3_net_active()) {   /* (etapa 10, paso 7) en red: el mando de este jugador (lo puesto en su puerto) por la red, y
+                               * los de los dos para este VBlank */
+        NetPad mine, p1, p2;
+        psx_pad_peek(ac3_net_is_host() ? 0 : 1, &mine.buttons, &mine.lx, &mine.ly, &mine.rx, &mine.ry);
+        ac3_net_frame(VSync(-1), &mine, &p1, &p2);
+        p1.buttons |= ac3_coop_p1_extra(p2.buttons);   /* (menus e introducciones: tambien los del 2) */
+        psx_pad_set(0, p1.buttons, p1.lx, p1.ly, p1.rx, p1.ry);
+        psx_pad_set(1, p2.buttons, p2.lx, p2.ly, p2.rx, p2.ry);
+        if (ac3_net_hash_due(VSync(-1))) ac3_net_hash(VSync(-1), ac3_net_ram_hash());
+        static int last_log;
+        if (VSync(-1) - last_log >= 1800) {   /* cada 30 s: como va */
+            int cmp, dif, first, waits;
+            double ms;
+            ac3_net_stats(&cmp, &dif, &first, &waits, &ms);
+            LOG("red: VBlank %d, %d huellas comparadas, %d distintas (primera %d), %d esperas (%.0f ms)", VSync(-1), cmp, dif, first, waits, ms);
+            last_log = VSync(-1);
+        }
     }
 #endif
     static uint32_t img[640 * 512];
@@ -770,6 +803,12 @@ static void *game_thread(void *arg) {
             LOG("coop: el segundo avion, vista del jugador %d, mando del 2: %s", G.dbg_view == 2 ? 2 : 1,
                 G.dbg_player == 2 ? "los controles del aparato" : G.dbg_script2 ? "guion" : G.dbg_pad2 ? "segundo mando fisico" : "ninguno");
         }
+    }
+    if (G.dbg_net == 1 || G.dbg_net == 2) {   /* (etapa 10, paso 7) en red: conectar antes del VBlank 0 */
+        char ip[32];
+        snprintf(ip, sizeof ip, "%d.%d.%d.%d", G.dbg_net_ip[0], G.dbg_net_ip[1], G.dbg_net_ip[2], G.dbg_net_ip[3]);
+        if (ac3_net_open(G.dbg_net == 1, ip, G.dbg_net_port, G.dbg_net_delay, MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0, 300))
+            LOG("red: sin conexion; se juega solo");
     }
 #endif
 #else
@@ -965,7 +1004,8 @@ static int32_t on_input(struct android_app *app, AInputEvent *e) {
         if (AKeyEvent_getAction(e) == AKEY_EVENT_ACTION_DOWN) {
             G.keys |= m;
             /* L3+R3: modo de imagen (60 fps + 16:9 -> 60 fps + 4:3 -> el original) */
-            if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0) {
+            if ((G.keys & (PSX_PAD_L3 | PSX_PAD_R3)) == (PSX_PAD_L3 | PSX_PAD_R3) && AKeyEvent_getRepeatCount(e) == 0 && !ac3_net_active()) {
+                /* (etapa 10: no en red: 16:9 y 4:3 dan otra partida) */
                 /* 16:9 -> 4:3 -> original (1, software a 16:9, y 4-6, de medida: ya no estan en el ciclo) */
                 static const int next[7] = {2, 2, 3, 0, 0, 0, 0};
                 G.gfx_mode = next[G.gfx_mode];

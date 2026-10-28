@@ -22,6 +22,12 @@ void psx_pad_set(int port, uint16_t buttons, uint8_t lx, uint8_t ly, uint8_t rx,
     P.pad[port].lx = lx; P.pad[port].ly = ly; P.pad[port].rx = rx; P.pad[port].ry = ry;
 }
 
+void psx_pad_peek(int port, uint16_t *buttons, uint8_t *lx, uint8_t *ly, uint8_t *rx, uint8_t *ry) {
+    if (port != 0 && port != 1) return;
+    *buttons = P.pad[port].buttons;
+    *lx = P.pad[port].lx; *ly = P.pad[port].ly; *rx = P.pad[port].rx; *ry = P.pad[port].ry;
+}
+
 static int dbg(const char *f);
 extern int VSync(int);
 
