@@ -162,7 +162,8 @@ static void net_summary(void) {
     int cmp, dif, first, waits;
     double ms;
     ac3_net_stats(&cmp, &dif, &first, &waits, &ms);
-    printf("red: %d huellas comparadas, %d distintas%s; %d esperas (%.0f ms)\n", cmp, dif, dif ? " (las partidas se separaron)" : "", waits, ms);
+    printf("red: %d huellas comparadas, %d distintas%s; %d esperas (%.0f ms); ping %.1f ms\n", cmp, dif,
+           dif ? " (las partidas se separaron)" : "", waits, ms, ac3_net_ping_ms());
     if (dif) printf("red: la primera distinta, en el VBlank %d\n", first);
 }
 #ifdef AC3_LIBRE
@@ -516,6 +517,7 @@ static void parse_script(const char *s, ScriptItem *script, int *nscript_out) {
 /* AC3_MISSION=N: al entrar en la funcion que arranca la mision, la mision actual del estado de
  * la partida (g_state + 0x390) pasa a ser N; el juego carga entonces mission_records[N] */
 static int g_force_mission = -1;
+static uint32_t g_disc_id;   /* (etapa 10, paso 8) la huella de ACE.BIN, para el saludo de la red */
 static int g_mission_frame = -1;   /* fotograma en que el juego arranco la ultima mision */
 /* AC3_WIN=f:sig:res[,f:sig:res...]: f fotogramas despues de arrancar la mision, lo que hacen las ordenes
  * 3 y 1 del guion de mision (EU FUN_80053704 / US FUN_800538ec) con la mision en vuelo: nodo + 0x23 = sig
@@ -871,6 +873,7 @@ int main(int argc, char **argv) {
     memcpy(psx_ram + (ab.load & 0x1FFFFFu), ace, n);
     psx_gte_tables_init(ace, n);
     printf("modo libre: version %s, ACE.BIN del disco (%zu bytes)\n", V->name, n);
+    g_disc_id = ac3_net_disc_id(ace, n);
 #else
     FILE *f = fopen(argv[2], "rb");
     if (!f) { puts("no se abre ACE.BIN"); return 1; }
@@ -1008,9 +1011,19 @@ int main(int argc, char **argv) {
         int host = !strcmp(getenv("AC3_RED"), "anfitrion");
         int port = getenv("AC3_RED_PUERTO") ? atoi(getenv("AC3_RED_PUERTO")) : 7070;
         int delay = getenv("AC3_RED_RETRASO") ? atoi(getenv("AC3_RED_RETRASO")) : 2;
-        if (ac3_net_open(host, getenv("AC3_RED_IP") ? getenv("AC3_RED_IP") : "127.0.0.1", port, delay,
-                         getenv("AC3_WIDE") ? AC3_NET_OPT_WIDE : 0,
+        /* (paso 8) el anfitrion dice su mision (AC3_MISSION) y el invitado, si no tiene una, carga la suya;
+         * AC3_RED_NOMBRE: el nombre en la lista de partidas */
+        NetInfo mine = {(getenv("AC3_WIDE") ? AC3_NET_OPT_WIDE : 0) | (getenv("AC3_COOP") ? AC3_NET_OPT_COOP : 0), g_disc_id, getenv("AC3_MISSION") ? atoi(getenv("AC3_MISSION")) : -1, "", ""},
+                theirs;
+        snprintf(mine.name, sizeof mine.name, "%s", getenv("AC3_RED_NOMBRE") ? getenv("AC3_RED_NOMBRE") : "PC");
+        if (mine.mission >= 0) snprintf(mine.label, sizeof mine.label, "%02d", mine.mission);
+        if (ac3_net_open(host, getenv("AC3_RED_IP") ? getenv("AC3_RED_IP") : "127.0.0.1", port, delay, &mine, &theirs,
                          getenv("AC3_RED_ESPERA") ? atoi(getenv("AC3_RED_ESPERA")) : 300)) return 1;   /* (s esperando al otro) */
+        if (!host && theirs.mission >= 0 && !getenv("AC3_MISSION")) {
+            printf("red: el anfitrion eligio la mision %d\n", theirs.mission);
+            g_force_mission = theirs.mission;
+            mipsi_set_hook(V->mission_start, force_mission);
+        }
         g_net = 1;
         atexit(net_summary);
         setenv("AC3_COMO_APK", "1", 1);

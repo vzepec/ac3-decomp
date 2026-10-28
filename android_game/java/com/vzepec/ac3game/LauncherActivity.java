@@ -26,6 +26,14 @@ import android.widget.ScrollView;
 import android.widget.TextView;
 
 import java.io.File;
+import java.net.DatagramPacket;
+import java.net.DatagramSocket;
+import java.net.InetSocketAddress;
+import java.net.SocketTimeoutException;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 
 /**
  * Menu de inicio (etapa 7, paso 7): Jugar, Cambiar disco, Opciones, Acerca de y Salir, el aviso de
@@ -54,6 +62,9 @@ public class LauncherActivity extends Activity {
     static final String KEY_HZ = "hz";              /* 60 o 120 imagenes por segundo, si la pantalla llega (etapa 8, paso 12) */
     static final String KEY_RELAUNCH = "relaunch";  /* actualizacion pedida desde el menu (UpdatedReceiver) */
     static final String KEY_UPDATED = "updated";    /* recien actualizada: avisarlo una vez */
+    static final String KEY_LAST_IP = "net_last_ip";   /* (etapa 10, paso 8) la ultima IP escrita a mano */
+    static final int NET_PORT = 7070;   /* TCP de la partida y UDP de los anuncios (psx/recomp/ac3_net.c) */
+    static final int BEACON_MAGIC = 0x4C334341;   /* "AC3L" */
 
     private static final int BG = 0xFF0B1220, PANEL = 0xFF16213A, ACCENT = 0xFF3FA9F5, TEXT = 0xFFE8EEF8,
                              DIM = 0xFF8C9AB5, WARN = 0xFFFFB347;
@@ -253,6 +264,12 @@ public class LauncherActivity extends Activity {
         LinearLayout first = row(play, update);
         first.setPadding(0, dp(6), 0, 0);
         col.addView(first);
+        if (coopAvailable()) {   /* (etapa 10, paso 8) de momento solo en el APK de desarrollo */
+            Button coop = gridButton(t("Co-op (experimental)", "Cooperativo (experimental)"), v -> coop());
+            LinearLayout.LayoutParams lp = (LinearLayout.LayoutParams) coop.getLayoutParams();
+            lp.width = dp(2 * COL + GAP);
+            col.addView(row(coop));
+        }
         col.addView(row(gridButton(t("Change disc", "Cambiar disco"), v -> { pickThenPlay = false; pickDisc(); }),
                         gridButton(t("Options", "Opciones"), v -> options())));
         col.addView(row(gridButton(t("About", "Acerca de"), v -> about()),
@@ -343,6 +360,127 @@ public class LauncherActivity extends Activity {
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(KEY_URI, uri.toString()).commit();
         refreshDisc();
         if (pickThenPlay) { pickThenPlay = false; play(); }
+    }
+
+    /* ------------------------------------------------------------- cooperativo en red (etapa 10, paso 8) */
+
+    private boolean coopAvailable() {
+        return getPackageName().endsWith(".dev");
+    }
+
+    private volatile boolean scanning;
+
+    /** Crear una partida (elige la mision; los demas la ven en su lista) o unirse a una de la red. */
+    private void coop() {
+        Uri u = savedDisc();
+        if (u == null || discName(u) == null) {
+            status(t("Choose your disc image first", "Elige primero la imagen de tu disco"));
+            return;
+        }
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(t("Co-op (experimental)", "Cooperativo (experimental)"))
+                .setMessage(t("Two players on the same Wi-Fi network (or one sharing a hotspot), each with their own device and "
+                              + "the same disc image. Whoever creates the game chooses the mission; the other one joins it.",
+                              "Dos jugadores en la misma red Wi-Fi (o uno compartiendo su zona Wi-Fi), cada uno con su aparato y "
+                              + "la misma imagen del disco. Quien crea la partida elige la misión; el otro se une."))
+                .setPositiveButton(t("Create game", "Crear partida"), (d, w) -> startNet(1, null))
+                .setNeutralButton(t("Join", "Unirse"), (d, w) -> join())
+                .setNegativeButton(t("Back", "Volver"), null)
+                .show();
+    }
+
+    private void startNet(int role, String ip) {
+        Intent i = new Intent(this, MainActivity.class);
+        i.putExtra(MainActivity.EXTRA_NET, role);
+        if (ip != null) i.putExtra(MainActivity.EXTRA_IP, ip);
+        startActivity(i);
+    }
+
+    private static String cstr(byte[] b, int off, int len) {
+        int n = 0;
+        while (n < len && b[off + n] != 0) n++;
+        return new String(b, off, n, StandardCharsets.UTF_8);
+    }
+
+    /** Las partidas de la red: se escuchan los anuncios (UDP, cada segundo, del que crea) mientras la lista esta abierta;
+     *  la ultima opcion es escribir la IP (si la red no deja pasar los anuncios). */
+    private void join() {
+        final ArrayList<String> ips = new ArrayList<>();
+        final android.widget.ArrayAdapter<String> ad = new android.widget.ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
+        ad.add(t("Enter the IP…", "Escribir la IP…"));
+        AlertDialog dlg = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(t("Games on your network (searching…)", "Partidas en tu red (buscando…)"))
+                .setAdapter(ad, (d, which) -> {
+                    if (which < ips.size()) startNet(2, ips.get(which));
+                    else manualIp();
+                })
+                .setNegativeButton(t("Back", "Volver"), null)
+                .create();
+        dlg.setOnDismissListener(d -> scanning = false);
+        dlg.show();
+        scanning = true;
+        android.net.wifi.WifiManager wm = (android.net.wifi.WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+        final android.net.wifi.WifiManager.MulticastLock lock = wm != null ? wm.createMulticastLock("ac3coop") : null;
+        if (lock != null) { lock.setReferenceCounted(false); lock.acquire(); }   /* algunos Wi-Fi tiran la difusion sin el */
+        new Thread(() -> {
+            try (DatagramSocket s = new DatagramSocket(null)) {
+                s.setReuseAddress(true);
+                s.setBroadcast(true);
+                s.bind(new InetSocketAddress(NET_PORT));
+                s.setSoTimeout(500);
+                byte[] buf = new byte[512];
+                while (scanning) {
+                    DatagramPacket p = new DatagramPacket(buf, buf.length);
+                    try {
+                        s.receive(p);
+                    } catch (SocketTimeoutException e) {
+                        continue;
+                    }
+                    /* el anuncio (ac3_net.c, Beacon): magic, version, puerto y NetInfo (opts, disc, mision, nombre, etiqueta) */
+                    ByteBuffer bb = ByteBuffer.wrap(buf, 0, p.getLength()).order(ByteOrder.LITTLE_ENDIAN);
+                    if (p.getLength() < 104 || bb.getInt(0) != BEACON_MAGIC) continue;
+                    int ver = bb.getInt(4);
+                    String name = cstr(buf, 24, 32), label = cstr(buf, 56, 48), ip = p.getAddress().getHostAddress();
+                    String line = name + " · " + (label.isEmpty() ? t("game menus", "menús del juego") : label) + "  (" + ip + ")"
+                                  + (ver != 2 ? "  [" + t("other version", "otra versión") + "]" : "");
+                    runOnUiThread(() -> {
+                        if (ips.contains(ip)) return;
+                        ips.add(ip);
+                        ad.insert(line, ips.size() - 1);
+                        dlg.setTitle(t("Games on your network", "Partidas en tu red"));
+                    });
+                }
+            } catch (Exception e) {
+                Log.w(TAG, "cooperativo: no se pueden escuchar los anuncios: " + e);
+            } finally {
+                if (lock != null) lock.release();
+            }
+        }).start();
+    }
+
+    private void manualIp() {
+        SharedPreferences p = getSharedPreferences(PREFS, MODE_PRIVATE);
+        android.widget.EditText ed = new android.widget.EditText(this);
+        ed.setInputType(android.text.InputType.TYPE_CLASS_PHONE);   /* numeros y puntos */
+        ed.setText(p.getString(KEY_LAST_IP, "192.168."));
+        ed.setSelection(ed.getText().length());
+        ed.setTextColor(TEXT);
+        LinearLayout box = new LinearLayout(this);
+        box.setPadding(dp(20), dp(8), dp(20), 0);
+        box.addView(ed, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+        new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                .setTitle(t("IP of whoever created the game", "IP de quien creó la partida"))
+                .setMessage(t("It is shown on their screen while they wait", "Sale en su pantalla mientras espera"))
+                .setView(box)
+                .setPositiveButton(t("Join", "Unirse"), (d, w) -> {
+                    String ip = ed.getText().toString().trim();
+                    if (!ip.matches("\\d{1,3}(\\.\\d{1,3}){3}")) { status(t("That is not an IP", "Eso no es una IP")); return; }
+                    p.edit().putString(KEY_LAST_IP, ip).commit();
+                    startNet(2, ip);
+                })
+                .setNegativeButton(t("Back", "Volver"), null)
+                .show();
+        ed.requestFocus();
     }
 
     /* ------------------------------------------------------------- actualizador */

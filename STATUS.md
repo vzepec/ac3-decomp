@@ -194,10 +194,19 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
 - **Pendiente:** que el 1 reaparezca en cooperativo; los avisos de fijado
   del 2 suenan en los dos; volver a sincronizar si las partidas se separan.
 - **`SIN RESOLVER`:** si los enemigos disparan al 2.
-- **Siguiente:** paso 8:
-  - menú Crear / Unirse en el APK;
-  - búsqueda del anfitrión en la red local;
-  - Wi-Fi entre dos aparatos (Retroid y S24).
+- **Siguiente:** paso 8 (abajo).
+
+**Etapa 10, paso 8 (rama `etapa-10-paso-8`, en curso): el menú Cooperativo y el Wi-Fi** (`docs/16-etapa10.md`).
+- **Hecho:**
+  - en el lanzador del APK de desarrollo: Crear (se elige la misión y se
+    espera) y Unirse (la lista de partidas de la red, o la IP a mano);
+  - quien crea se anuncia por UDP;
+  - el saludo lleva el disco, la misión, el nombre y las opciones, y quien
+    se une las adopta;
+  - el ping va en el contador.
+  - PC↔Retroid por Wi-Fi en los dos sentidos: 0 distintas.
+- **Siguiente:** Retroid ↔ S24 por Wi-Fi (los dos por USB para instalar y
+  ver el registro); decidir si el menú pasa al APK publicable.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

@@ -5,6 +5,31 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-28 — Etapa 10, paso 8 (en curso): menú Cooperativo, anuncio por UDP, saludo con disco y misión, ping
+
+- **En el lanzador** del APK de desarrollo, «Cooperativo»:
+  - Crear: se elige la misión y un diálogo espera, con la IP;
+  - Unirse: la lista de partidas de la red, o escribir la IP.
+- **Quien crea se anuncia** por UDP cada segundo en el puerto 7070, a la
+  difusión de cada red.
+- **El saludo, versión 2:**
+  - lleva la huella de ACE.BIN (con la europea en un lado, se rechaza),
+    la misión, el nombre y las opciones (ahora también el cooperativo);
+  - quien se une adopta la misión y el modo de imagen.
+- **Por Wi-Fi, en los dos sentidos (PC y Retroid):** 0 huellas distintas.
+- **Ping** en el contador («PING n MS»): 14-25 ms por Wi-Fi, incluido
+  hasta un VBlank del otro.
+- **Fallo encontrado con el primer intento por el menú:** separadas desde
+  el VBlank 60. `dbg_read` aplicaba el cooperativo del menú tarde, y el
+  invitado no tenía el segundo avión. Arreglado, y el cooperativo entra en
+  las opciones del saludo para que se avise.
+- **Reproducir:**
+  - `python3 tools/red.py "<US>" <dir> --eu "<EU>"`;
+  - `MENU=1 VB=4000 tools/movil_red.sh <serie> <dir> 1`.
+- **Pendiente:** Retroid ↔ S24 por Wi-Fi.
+
+---
+
 ## 2026-10-28 — Etapa 10, paso 7: lockstep en red; SELECT separaba las partidas (la semilla de rand); la pausa desde el 2
 
 - **Lockstep por TCP** (`psx/recomp/ac3_net.c`, igual en el PC y en el APK):

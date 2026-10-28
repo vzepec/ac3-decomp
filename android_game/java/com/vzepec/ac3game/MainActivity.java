@@ -83,6 +83,55 @@ public class MainActivity extends NativeActivity {
         nativeSetDisplayHz(hz);
     }
 
+    /** Implementado en game_main.c: (etapa 10, paso 8) la red elegida en el menu Cooperativo: 1 crear, 2 unirse a ip;
+     *  name, el nombre de este aparato en la lista de partidas del otro. */
+    private static native void nativeSetNet(int role, String ip, String name);
+
+    static final String EXTRA_NET = "net_role", EXTRA_IP = "net_ip";
+
+    private AlertDialog netDialog;
+
+    /** (paso 8) lo llama el codigo nativo mientras espera al otro: un dialogo con Cancelar (cierra el juego). */
+    public void netWait(final String msg) {
+        runOnUiThread(() -> {
+            if (netDialog != null) netDialog.dismiss();
+            netDialog = new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("Cooperativo / Co-op")
+                    .setMessage(msg)
+                    .setCancelable(false)
+                    .setNegativeButton(android.R.string.cancel, (d, w) -> finish())
+                    .create();
+            netDialog.show();
+        });
+    }
+
+    /** (paso 8) conectado: fuera el dialogo; un aviso breve con el nombre del otro. */
+    public void netDone(final String other) {
+        runOnUiThread(() -> {
+            if (netDialog != null) { netDialog.dismiss(); netDialog = null; }
+            android.widget.Toast.makeText(this, "Conectado con / Connected to " + other, android.widget.Toast.LENGTH_SHORT).show();
+        });
+    }
+
+    /** (paso 8) el otro se fue a mitad de partida: se sigue solo. */
+    public void netLost(final String unused) {
+        runOnUiThread(() -> android.widget.Toast.makeText(this, "El otro jugador se ha desconectado: sigues solo\n"
+                + "The other player disconnected: you continue alone", android.widget.Toast.LENGTH_LONG).show());
+    }
+
+    /** (paso 8) sin conexion: el motivo y de vuelta al menu. */
+    public void netFail(final String why) {
+        runOnUiThread(() -> {
+            if (netDialog != null) { netDialog.dismiss(); netDialog = null; }
+            new AlertDialog.Builder(this, android.R.style.Theme_DeviceDefault_Dialog_Alert)
+                    .setTitle("Sin conexión / No connection")
+                    .setMessage(why)
+                    .setCancelable(false)
+                    .setPositiveButton(android.R.string.ok, (d, w) -> finish())
+                    .show();
+        });
+    }
+
     /** Implementado en game_main.c (solo en el APK de desarrollo): la mision elegida en la lista. */
     private static native void nativeSetMission(int n);
 
@@ -115,6 +164,8 @@ public class MainActivity extends NativeActivity {
         pickRefreshRate();
         rumbleOn = p.getBoolean(LauncherActivity.KEY_RUMBLE, true);
         if (rumbleOn) pickVibrator();
+        int role = getIntent().getIntExtra(EXTRA_NET, 0);
+        if (role != 0) nativeSetNet(role, getIntent().getStringExtra(EXTRA_IP), Build.MODEL);
         if (savedInstanceState == null && !openSavedDisc()) {
             pickDisc();
         }

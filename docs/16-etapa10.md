@@ -8,7 +8,7 @@ simula la partida entera, y lo único que viaja es el mando de cada jugador.
 | Paso | Qué | Estado |
 |---|---|---|
 | 7 | Lockstep por TCP (`psx/recomp/ac3_net.c`): PC↔PC y PC↔Retroid por el cable; saltar la introducción, pausa compartida | ✅ |
-| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | |
+| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | 🔄 menú, anuncio, saludo y ping: PC↔Retroid por Wi-Fi en los dos sentidos; falta Retroid↔S24 |
 
 Solo código nuestro: sockets POSIX, iguales en el PC y en Android. No hay
 servidor: uno escucha (el anfitrión) y el otro conecta (el invitado).
@@ -148,7 +148,79 @@ esperas en el cable.
   avisos de fijado del 2 se oyen en los dos aparatos.
 - **`SIN RESOLVER`:** si los enemigos disparan al 2.
 
+## Paso 8: el menú Cooperativo y el Wi-Fi (rama `etapa-10-paso-8`)
+
+### El menú
+
+En el lanzador, **Cooperativo (experimental)**. De momento solo sale en el
+APK de desarrollo (`.dev`), porque el cooperativo vive allí. Tiene dos
+opciones:
+
+- **Crear partida:**
+  - se elige la misión en la lista;
+  - un diálogo muestra «Esperando a otro jugador», con la IP del aparato
+    y la misión, y un botón Cancelar.
+- **Unirse:**
+  - la lista de partidas de la red, que se llena con los anuncios
+    («nombre · misión (IP)»);
+  - al final de la lista, «Escribir la IP…», por si la red no deja pasar
+    los anuncios.
+  - Quien se une no elige misión: le llega en el saludo.
+
+Al conectar sale un aviso con el nombre del otro. Si el otro se va a mitad
+de partida, otro aviso: «sigues solo». Si no se conecta, se explica el
+motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
+`depurar.txt` (`red=`) sigue mandando si está.
+
+### El protocolo, versión 2
+
+- **Saludo:** lleva un `NetInfo`:
+  - las opciones: 16:9 y, desde el paso 8, el cooperativo;
+  - la huella de ACE.BIN (FNV-1a): con otro disco, se rechaza;
+  - la misión de quien crea (-1: los menús del juego);
+  - el nombre del aparato (`Build.MODEL`; en el PC, `AC3_RED_NOMBRE`);
+  - el texto de la misión.
+- **Lo que adopta quien se une:** la misión y el modo de imagen de quien
+  crea (16:9 → modo 0; 4:3 → 2, o 3 si ya estaba en el original). En el
+  PC, si no tiene `AC3_MISSION`, también la misión.
+- **Anuncio:** mientras espera, quien crea envía cada segundo un datagrama
+  UDP (`AC3L`, la versión, el puerto y el `NetInfo`) al puerto 7070:
+  - a la difusión de cada red con difusión, y a 255.255.255.255;
+  - en el PC llega una copia por red: con Docker, cuatro.
+  - Quien busca escucha con el cerrojo de multidifusión de Android, sin el
+    cual algunos Wi-Fi tiran la difusión. Permisos normales, que no se le
+    preguntan al usuario: `ACCESS_WIFI_STATE` y
+    `CHANGE_WIFI_MULTICAST_STATE`.
+- **Ping:**
+  - cada 30 VBlank, un mensaje de tipo 3 con la hora; el otro lo devuelve
+    como tipo 4;
+  - se muestra la media de los 8 últimos: en el contador («PING n MS»),
+    en el registro cada 30 s y en el resumen del PC;
+  - incluye hasta un VBlank del otro (0-17 ms), que lo devuelve cuando
+    lee la red.
+
+### Lo que se encontró
+
+- **La primera vez desde el menú, las partidas se separaron en el VBlank
+  60:**
+  - `dbg_read` ponía el cooperativo del menú después de copiar `co`/`vi`;
+    el invitado jugaba sin el segundo avión;
+  - arreglado, y desde entonces el cooperativo va en las opciones del
+    saludo: si un lado lo tiene y el otro no, se avisa.
+
+### Resultados
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |
+| PC crea, Retroid se une por Wi-Fi desde el menú (`MENU=1 tools/movil_red.sh`) | ve «PC · 01 (192.168.1.34)»; 66-74 huellas, 0 distintas; ping 14-25 ms |
+| Retroid crea (misión 1 de la lista), PC se une por Wi-Fi | el PC oye su anuncio («Retroid Pocket Flip2», «01 Transport»), adopta la misión; 74 huellas, 0 distintas |
+| Retroid ↔ S24 por Wi-Fi | pendiente |
+
 **Reproducir:**
-- `python3 tools/red.py "<US>" <dir>` (red, control, vistas);
+- `python3 tools/red.py "<US>" <dir> [--eu "<EU>"]` (red, control, vistas,
+  anuncio, disco);
+- `MENU=1 VB=4000 tools/movil_red.sh <serie> <dir> 1` (PC↔aparato por Wi-Fi
+  desde el menú);
 - `VB=4500 tools/movil_red.sh <serie> <dir> 1` (PC↔aparato por el cable;
   `VB=0` y `GUION=0` para jugar).

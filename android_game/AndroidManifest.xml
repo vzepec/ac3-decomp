@@ -11,6 +11,10 @@
          APK nuevo; Android pide confirmacion para instalarlo y solo acepta la misma firma -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- (etapa 10, paso 8) el cooperativo en red local: oir los anuncios de las partidas (difusion UDP; algunos Wi-Fi la
+         tiran sin el cerrojo de multidifusion) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- vibracion del DualShock en el motor del aparato o del mando (etapa 7, paso 9) -->
     <uses-permission android:name="android.permission.VIBRATE" />
 

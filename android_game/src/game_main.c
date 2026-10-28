@@ -154,6 +154,10 @@ static struct {
      * red_ip1.red_ip2.red_ip3.red_ip4, 127.0.0.1 si no: con adb reverse, el PC por el cable); red_puerto (7070) y
      * retraso (2 VBlank; manda el del anfitrion). Se leen al arrancar */
     volatile int dbg_net, dbg_net_port, dbg_net_delay, dbg_net_ip[4];
+    /* (etapa 10, paso 8) la red elegida en el menu Cooperativo (MainActivity.nativeSetNet): 1 crear, 2 unirse a ui_ip;
+     * depurar.txt (red=) manda si esta */
+    volatile int ui_net;
+    char ui_ip[64], ui_name[32];
     volatile int pad1_dev, pad2_dev;   /* los mandos fisicos de cada jugador (-1: aun ninguno) */
     volatile float p2_lx, p2_ly, p2_rx, p2_ry;
     volatile uint16_t p2_buttons, p2_keys;
@@ -216,6 +220,10 @@ static void dbg_read(void) {
             else if (!strncmp(k, "red_ip", 6) && k[6] >= '1' && k[6] <= '4' && !k[7]) ip[k[6] - '1'] = v;
         }
         fclose(f);
+    }
+    if (!rd && G.ui_net) {   /* (paso 8) del menu Cooperativo: el cooperativo, y la vista del 2 en el que se une */
+        rd = G.ui_net; co = 1; vi = rd == 2 ? 2 : 0;
+        if (rd == 2) sscanf(G.ui_ip, "%d.%d.%d.%d", &ip[0], &ip[1], &ip[2], &ip[3]);
     }
     if (s != G.dbg_scale || t != G.dbg_true || o != G.dbg_only || fl != G.dbg_filter || md != G.dbg_mode)
         LOG("depurar: escala %d, color24 %d, solo %d, filtro %d, modo %d", s, t, o, fl, md);
@@ -281,6 +289,19 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetOptions(JNI
     touchpad_set_mode(touch >= 0 && touch <= 2 ? touch : 0);
     G.rumble_extra = rumble_extra;
     LOG("opciones: contadores %d, resolucion interna x%d, filtro %d, mando tactil %d", stats, G.scale, G.filter, touch);
+}
+
+/* (etapa 10, paso 8) el menu Cooperativo: 1 crear una partida, 2 unirse a la de ip; name, el del aparato (Build.MODEL),
+ * para la lista de partidas del otro. Antes de abrir el disco */
+JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetNet(JNIEnv *env, jclass cls, jint role, jstring ip, jstring name) {
+    (void)cls;
+    const char *i = ip ? (*env)->GetStringUTFChars(env, ip, NULL) : NULL, *n = name ? (*env)->GetStringUTFChars(env, name, NULL) : NULL;
+    snprintf(G.ui_ip, sizeof G.ui_ip, "%s", i ? i : "");
+    snprintf(G.ui_name, sizeof G.ui_name, "%s", n ? n : "");
+    if (i) (*env)->ReleaseStringUTFChars(env, ip, i);
+    if (n) (*env)->ReleaseStringUTFChars(env, name, n);
+    G.ui_net = role == 1 || role == 2 ? role : 0;
+    LOG("red: menu cooperativo: %s %s (%s)", G.ui_net == 1 ? "crear" : G.ui_net == 2 ? "unirse a" : "nada", G.ui_ip, G.ui_name);
 }
 
 /* ------------------------------------------------------------------ hilo del juego */
@@ -395,6 +416,20 @@ static void dev_show_list(void) {
     (*env)->DeleteLocalRef(env, cl);
     (*vm)->DetachCurrentThread(vm);
 }
+/* (etapa 10, paso 8) MainActivity.<metodo>(String) desde cualquier hilo (los dialogos de la red) */
+static void java_str(const char *method, const char *arg) {
+    JavaVM *vm = G.app->activity->vm;
+    JNIEnv *env;
+    if ((*vm)->AttachCurrentThread(vm, &env, NULL) != JNI_OK) return;
+    jobject act = G.app->activity->clazz;
+    jclass cl = (*env)->GetObjectClass(env, act);
+    jmethodID m = (*env)->GetMethodID(env, cl, method, "(Ljava/lang/String;)V");
+    jstring js = (*env)->NewStringUTF(env, arg ? arg : "");
+    if (m) (*env)->CallVoidMethod(env, act, m, js);
+    (*env)->DeleteLocalRef(env, js);
+    (*env)->DeleteLocalRef(env, cl);
+    (*vm)->DetachCurrentThread(vm);
+}
 JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetMission(JNIEnv *env, jclass cls, jint n) {
     (void)env; (void)cls;
     g_dev_mission = n;
@@ -404,7 +439,7 @@ JNIEXPORT void JNICALL Java_com_vzepec_ac3game_MainActivity_nativeSetMission(JNI
 /* al arrancar la mision (la primera vez): la elegida en g_state + 0x390, y el mando vuelve al jugador */
 static void dev_force_mission(RCpu *c) {
     (void)c;
-    if (g_dev_mission < 0) return;
+    if (g_dev_mission < 0) { g_dev_nav = 0; return; }   /* (paso 8: el que se une a una partida sin mision elegida) */
     uint32_t st = *(uint32_t *)psx_ptr(R->g_state_ptr);
     int16_t *m = (int16_t *)psx_ptr(st + 0x390);
     LOG("desarrollo: el juego arranca la mision %d en el VBlank %d; se carga la %d", *m, VSync(-1), g_dev_mission);
@@ -655,6 +690,11 @@ pad_done:
             psx_pad_set(1, (uint16_t)(G.p2_buttons | G.p2_keys), to_axis(G.p2_lx), to_axis(G.p2_ly), to_axis(G.p2_rx), to_axis(G.p2_ry));
         else psx_pad_set(1, 0, 0x80, 0x80, 0x80, 0x80);
     }
+    static int lost_told;
+    if (ac3_net_lost() && !lost_told) {   /* (paso 8) el otro se fue: se sigue solo (su avion, suelto) */
+        lost_told = 1;
+        if (G.ui_net) java_str("netLost", "");
+    }
     if (ac3_net_active()) {   /* (etapa 10, paso 7) en red: el mando de este jugador (lo puesto en su puerto) por la red, y
                                * los de los dos para este VBlank */
         NetPad mine, p1, p2;
@@ -669,7 +709,8 @@ pad_done:
             int cmp, dif, first, waits;
             double ms;
             ac3_net_stats(&cmp, &dif, &first, &waits, &ms);
-            LOG("red: VBlank %d, %d huellas comparadas, %d distintas (primera %d), %d esperas (%.0f ms)", VSync(-1), cmp, dif, first, waits, ms);
+            LOG("red: VBlank %d, %d huellas comparadas, %d distintas (primera %d), %d esperas (%.0f ms); ping %.1f ms", VSync(-1), cmp, dif,
+                first, waits, ms, ac3_net_ping_ms());
             last_log = VSync(-1);
         }
     }
@@ -805,10 +846,34 @@ static void *game_thread(void *arg) {
         }
     }
     if (G.dbg_net == 1 || G.dbg_net == 2) {   /* (etapa 10, paso 7) en red: conectar antes del VBlank 0 */
-        char ip[32];
+        int host = G.dbg_net == 1;
+        char ip[32], ips[128], msg[256];
         snprintf(ip, sizeof ip, "%d.%d.%d.%d", G.dbg_net_ip[0], G.dbg_net_ip[1], G.dbg_net_ip[2], G.dbg_net_ip[3]);
-        if (ac3_net_open(G.dbg_net == 1, ip, G.dbg_net_port, G.dbg_net_delay, MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0, 300))
+        /* (paso 8) el saludo: el disco, la mision elegida por el que crea (y su nombre, para la lista de partidas) */
+        NetInfo mine = {(MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0) | (G.dbg_coop ? AC3_NET_OPT_COOP : 0), ac3_net_disc_id(g_ace, g_ab.size),
+                        host ? g_dev_mission : -1, "", ""},
+                theirs;
+        snprintf(mine.name, sizeof mine.name, "%s", G.ui_name[0] ? G.ui_name : "AC3 Recomp");
+        if (host && g_dev_mission >= 0) snprintf(mine.label, sizeof mine.label, "%s", g_dev_names[g_dev_mission]);
+        ac3_net_local_ips(ips, sizeof ips);
+        if (host) snprintf(msg, sizeof msg, "Esperando a otro jugador / Waiting for another player\n\n%s\n%s", ips[0] ? ips : "sin red / no network",
+                           mine.label);
+        else snprintf(msg, sizeof msg, "Conectando con / Connecting to %s…", ip);
+        if (G.ui_net) java_str("netWait", msg);
+        if (ac3_net_open(host, ip, G.dbg_net_port, G.dbg_net_delay, &mine, &theirs, G.ui_net ? (host ? 3600 : 60) : 300)) {
             LOG("red: sin conexion; se juega solo");
+            if (G.ui_net) {   /* (desde el menu: sin el otro no hay partida) */
+                java_str("netFail", ac3_net_error());
+                for (;;) sleep(1);
+            }
+        } else {
+            if (!host && theirs.mission >= 0) { g_dev_mission = theirs.mission; LOG("red: el que crea eligio la mision %d", theirs.mission); }
+            if (!host && !(theirs.opts & AC3_NET_OPT_WIDE) != !MODE_WIDE(G.gfx_mode)) {   /* el modo de imagen del que crea */
+                G.gfx_mode = (theirs.opts & AC3_NET_OPT_WIDE) ? 0 : G.gfx_mode == 3 ? 3 : 2;
+                LOG("red: imagen a %s, como el que crea", (theirs.opts & AC3_NET_OPT_WIDE) ? "16:9" : "4:3");
+            }
+            if (G.ui_net) java_str("netDone", theirs.name);
+        }
     }
 #endif
 #else
@@ -1233,6 +1298,8 @@ void android_main(struct android_app *app) {
 #if defined(AC3_LIBRE) && defined(AC3_DEV)
                 dbg_read();   /* (etapa 9, paso 1) mision=N en depurar.txt: la elige sin mostrar la lista */
                 if (g_dev_state == 0 && G.dbg_mission > 0) { g_dev_mission = G.dbg_mission - 1; g_dev_nav = 1; g_dev_state = 2; }
+                /* (etapa 10, paso 8) el que se une no elige: la mision llega en el saludo del que crea */
+                if (g_dev_state == 0 && G.dbg_net == 2) { g_dev_mission = -1; g_dev_nav = 1; g_dev_state = 2; }
                 if (g_dev_state == 0) { dev_names(); g_dev_state = 1; dev_show_list(); }   /* arranca al elegir */
 #else
                 start_game();
@@ -1327,7 +1394,7 @@ void android_main(struct android_app *app) {
         static double c_t0;
         static uint32_t c_last, c_vb0;
         static int c_new, c_fps, c_vel;
-        static char line1[48], line2[48], line3[48];
+        static char line1[48], line2[48], line3[48], line_net[48];   /* (etapa 10, paso 8) line_net: el ping en red */
         static double c_hw_ms, c_swap_ms;   /* GPU: ms de CPU en el dibujo y en eglSwapBuffers, por imagen */
         /* medicion (paso 3): vueltas de este bucle (una por refresco si va bien), la mas larga, las de
          * mas de 20 ms, imagenes reales saltadas que se dibujan igual, y el tiempo de la GPU de una
@@ -1352,6 +1419,14 @@ void android_main(struct android_app *app) {
             const char *md = mds[G.gfx_mode];
             if (G.st_nfrac) snprintf(line2, sizeof line2, "INT %d  CPU %d%%  %s", G.st_nfrac, G.st_cpu, md);
             else snprintf(line2, sizeof line2, "INT -  CPU %d%%  %s", G.st_cpu, md);
+#ifdef AC3_LIBRE
+            line_net[0] = 0;
+            if (ac3_net_active()) {
+                double p = ac3_net_ping_ms();
+                if (p >= 0) snprintf(line_net, sizeof line_net, "PING %d MS", (int)lrint(p));
+                else snprintf(line_net, sizeof line_net, "PING -");
+            } else if (ac3_net_lost()) snprintf(line_net, sizeof line_net, "RED PERDIDA");
+#endif
             if (G.running)
                 LOG("fps %d, velocidad %d%%, intermedias %d, hilo del juego %d%% (cpu%d), pasos %d (saltados %d, sin parejas %d), "
                     "ms por paso: juego %.1f, hilo de dibujo 0 %.1f (redibujo %.1f); modo %s", c_fps, c_vel, G.st_nfrac, G.st_cpu,
@@ -1464,15 +1539,20 @@ void android_main(struct android_app *app) {
             unsigned tex = psx_hw_texture(&tw, &th);
             psx_present_texture(tex, tw, th, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, scale > 1);
             if (G.show_stats && line1[0]) {   /* el contador encima, como textura con transparencia */
-                static uint32_t ov[128 * 29];
+                static uint32_t ov[128 * 38];
+                int oh = line_net[0] ? 38 : 29;   /* (en red, una linea mas: el ping) */
                 memset(ov, 0, sizeof ov);
-                draw_text(ov, 128, 29, 1, 1, line1);
-                draw_text(ov, 128, 29, 1, 10, line2);
+                draw_text(ov, 128, oh, 1, 1, line1);
+                draw_text(ov, 128, oh, 1, 10, line2);
+                if (line_net[0]) draw_text(ov, 128, oh, 1, 19, line_net);
                 /* (la tercera linea, GL y SWAP, solo va al registro) */
-                psx_present_overlay(ov, 128, 29, hw_w, hw_h);
+                psx_present_overlay(ov, 128, oh, hw_w, hw_h);
             }
         } else if (sw && sh) {
-            if (G.show_stats && line1[0]) { draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2); }
+            if (G.show_stats && line1[0]) {
+                draw_text(G.show, sw, sh, 4, 4, line1); draw_text(G.show, sw, sh, 4, 13, line2);
+                if (line_net[0]) draw_text(G.show, sw, sh, 4, 22, line_net);
+            }
             psx_present_frame(G.show, sw, sh, G.w, G.h, wide ? PSX_FIT_169 : PSX_FIT_43, 0);
         } else { glViewport(0, 0, G.w, G.h); glClearColor(0, 0, 0, 1); glClear(GL_COLOR_BUFFER_BIT); }
         touchpad_draw();   /* el mando virtual, encima de todo */

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""red — el juego en red por lockstep, en el PC (etapa 10, paso 7).
+"""red — el juego en red por lockstep, en el PC (etapa 10, pasos 7 y 8).
 
-Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Tres pruebas, todas en la mision 1 (la primera de la
-campana; la 0 es la de prueba) y con el cooperativo (AC3_COOP=1):
+Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mision 1 (la primera de la campana; la
+0 es la de prueba) y con el cooperativo (AC3_COOP=1):
 
-- red: dos procesos conectados por TCP en este PC (AC3_RED=anfitrion / invitado, puerto 7071). El anfitrion lleva el
+- red: dos procesos conectados por TCP en este PC (AC3_RED=anfitrion / invitado, puerto 7071). El anfitrion elige la
+  mision (AC3_MISSION=1) y el invitado, sin ella, la recibe en el saludo (paso 8). El anfitrion lleva el
   guion de los menus; el invitado (jugador 2, con su vista: AC3_COOP_VER=2) salta la introduccion con START, cambia de
   vista (SELECT), pausa la partida con START y la reanuda el jugador 1. Debe dar: la misma huella de la RAM en cada
   VBlank en los dos (AC3_RAMHASH), 0 huellas distintas en el protocolo, el vuelo antes del VBlank 3000 (sin START, en
@@ -13,14 +14,21 @@ campana; la 0 es la de prueba) y con el cooperativo (AC3_COOP=1):
   debe avisar y contar huellas distintas (sin este caso positivo, "0 distintas" no probaria nada).
 - vistas: sin red, la partida dibujando desde el jugador 1 y desde el 2 (AC3_COOP_VER=1 / 2) con SELECT del 2 y la
   pausa y el menu del 1: la misma huella en cada VBlank (la semilla de rand del redibujo y la pausa vista desde el 2).
+- anuncio (paso 8): mientras el anfitrion espera, su anuncio por UDP (el que lee la lista de partidas del APK): se
+  escucha en el puerto 7071 y debe llegar cada segundo con su puerto, su disco, su mision y su nombre.
+- disco (paso 8): el invitado con otro disco (la imagen europea, tercer argumento): el saludo debe rechazarlo (el caso
+  positivo de la comprobacion del disco).
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas ...]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco ...] [--eu <imagen_EU>]
 """
 import os
 import re
+import socket
+import struct
 import subprocess
 import sys
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'tools'))
@@ -36,13 +44,13 @@ G2 = '2700:start:6,3100:select:6,3300:lder:60,3500:start:6'
 G1 = G0 + ',3800:start:6'
 
 
-def run(d, env, guion, frames=FRAMES):
+def run(d, env, guion, frames=FRAMES, disc=None):
     os.makedirs(d, exist_ok=True)
     e = dict(os.environ, **{k: v for k, v in env.items() if v is not None})
     for k in [k for k, v in env.items() if v is None]:   # None: sin la variable (AC3_WIDE vale con solo existir)
         e.pop(k, None)
     log = open(os.path.join(d, 'log.txt'), 'w')
-    return subprocess.Popen([EXE, DISC, '-', str(frames), d, '0', guion], env=e, stdout=log, stderr=subprocess.STDOUT,
+    return subprocess.Popen([EXE, disc or DISC, '-', str(frames), d, '0', guion], env=e, stdout=log, stderr=subprocess.STDOUT,
                             cwd=ROOT)
 
 
@@ -54,7 +62,7 @@ def pair(out, host_env, guest_env, g2=G2, g1=G1):
     """anfitrion e invitado conectados; devuelve los dos directorios"""
     h, g = os.path.join(out, 'anfitrion'), os.path.join(out, 'invitado')
     ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_RAMHASH=os.path.join(h, 'huella.bin'), **host_env), g1)
-    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_COOP_VER='2', AC3_GUION2=g2,
+    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_COOP_VER='2', AC3_GUION2=g2, AC3_MISSION=None,
                      AC3_RAMHASH=os.path.join(g, 'huella.bin'), **guest_env), G0)
     ph.wait()
     pg.wait()
@@ -83,10 +91,59 @@ def test_net(out):
     same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
     cmp, dif = net_line(h)
     fv, s, sr = flight(h), steps(h), steps(hr)
-    ok = same and cmp > 0 and dif == 0 and 0 < fv < 3000 and sr - s == 150
-    print('red: huellas de cada VBlank %s; protocolo: %d comparadas, %d distintas; vuelo desde el VBlank %d (START del 2); '
-          'pasos de vuelo %d, sin pausa %d (la pausa del 2, quitada por el 1: %d menos) -> %s' % (
-              'iguales' if same else 'DISTINTAS', cmp, dif, fv, s, sr, sr - s, 'bien' if ok else 'MAL'), flush=True)
+    adopted = 'el anfitrion eligio la mision 1' in log_of(g)
+    pm = re.search(r'ping ([\d.]+) ms', log_of(h))
+    ok = same and cmp > 0 and dif == 0 and 0 < fv < 3000 and sr - s == 150 and adopted
+    print('red: mision del anfitrion en el invitado: %s; huellas de cada VBlank %s; protocolo: %d comparadas, %d distintas; '
+          'vuelo desde el VBlank %d (START del 2); pasos de vuelo %d, sin pausa %d (la pausa del 2, quitada por el 1: %d menos);'
+          ' ping %s ms -> %s' % ('si' if adopted else 'NO', 'iguales' if same else 'DISTINTAS', cmp, dif, fv, s, sr, sr - s,
+                                 pm.group(1) if pm else '-', 'bien' if ok else 'MAL'), flush=True)
+    return ok
+
+
+def test_beacon(out):
+    """el anuncio del anfitrion mientras espera: magic, version, puerto, NetInfo (opts, disc, mision, nombre, etiqueta)"""
+    us = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    us.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    us.bind(('', 7071))
+    us.settimeout(0.5)
+    h = os.path.join(out, 'anuncio')
+    p = run(h, dict(BASE, AC3_RED='anfitrion', AC3_RED_ESPERA='4', AC3_RED_NOMBRE='prueba'), G0, 10)
+    got, t0 = [], time.time()
+    while time.time() - t0 < 6 and p.poll() is None:
+        try:
+            data, src = us.recvfrom(256)
+        except socket.timeout:
+            continue
+        if len(data) >= 12 + 92 and data[:4] == b'AC3L':
+            ver, port, opts, disc, mission = struct.unpack_from('<IIIIi', data, 4)
+            name = data[24:56].split(b'\0')[0].decode(errors='replace')
+            got.append((time.time() - t0, ver, port, opts, disc, mission, name))
+    p.wait()
+    us.close()
+    ok = len(got) >= 3 and all(g[1:3] == (2, 7071) and g[5] == 1 and g[6] == 'prueba' for g in got)
+    gaps = [b[0] - a[0] for a, b in zip(got, got[1:])]
+    print('anuncio: %d anuncios en ~4 s (cada %.1f s); version %s, puerto %s, disco %s, mision %s, nombre %s -> %s' % (
+        len(got), sum(gaps) / len(gaps) if gaps else 0, *(('%d' % got[0][1], '%d' % got[0][2], '%08x' % got[0][4],
+                                                             '%d' % got[0][5], got[0][6]) if got else ('-',) * 5),
+        'bien' if ok else 'MAL'), flush=True)
+    return ok
+
+
+def test_disc(out, eu):
+    if not eu:
+        print('disco: falta --eu <imagen_EU>')
+        return False
+    d = os.path.join(out, 'disco')
+    h, g = os.path.join(d, 'anfitrion'), os.path.join(d, 'invitado')
+    ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_RED_ESPERA='20'), G0, 10)
+    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_RED_ESPERA='20', AC3_MISSION=None), G0, 10, disc=eu)
+    ph.wait()
+    pg.wait()
+    msg = [l for l in log_of(g).split('\n') if 'otro disco' in l]
+    ok = bool(msg) and pg.returncode != 0
+    print('disco (invitado con la europea): %s -> %s' % (msg[0].replace('red: ', '') if msg else 'sin rechazo',
+                                                         'bien' if ok else 'MAL'), flush=True)
     return ok
 
 
@@ -127,8 +184,14 @@ def main():
     global DISC
     if len(sys.argv) < 3:
         sys.exit(__doc__)
-    DISC, out = sys.argv[1], sys.argv[2]
-    what = sys.argv[3:] or ['red', 'control', 'vistas']
+    args = sys.argv[1:]
+    eu = None
+    if '--eu' in args:
+        i = args.index('--eu')
+        eu = args[i + 1]
+        del args[i:i + 2]
+    DISC, out = args[0], args[1]
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio'] + (['disco'] if eu else [])
     ok = True
     if 'red' in what:
         ok = test_net(out) and ok
@@ -136,6 +199,10 @@ def main():
         ok = test_control(out) and ok
     if 'vistas' in what:
         ok = test_views(out) and ok
+    if 'anuncio' in what:
+        ok = test_beacon(out) and ok
+    if 'disco' in what:
+        ok = test_disc(out, eu) and ok
     return 0 if ok else 1
 
 
