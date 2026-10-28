@@ -1026,10 +1026,19 @@ int main(int argc, char **argv) {
             g_force_mission = theirs.mission;
             mipsi_set_hook(V->mission_start, force_mission);
         }
-        if (getenv("AC3_RED_MENUS")) {   /* (paso 8) como el menu Cooperativo del APK: sin tarjeta y la mision en la partida nueva */
-            psx_card_detach(0);
+        if (getenv("AC3_RED_MENUS")) {   /* (paso 8) como el menu Cooperativo del APK: la tarjeta del anfitrion en los dos y la
+                                          * mision en la partida nueva (al arrancar ya no se fuerza: solo se anota) */
+            static uint8_t card[128 * 1024];
+            if (host ? ac3_net_send_blob(psx_card_image(0), sizeof card) : ac3_net_recv_blob(card, sizeof card, 30)) {
+                printf("red: %s\n", ac3_net_error());
+                return 1;
+            }
+            if (!host && !(getenv("AC3_RED_TARJETA") && !atoi(getenv("AC3_RED_TARJETA"))))   /* (=0, control: la suya) */
+                psx_card_attach_image(0, card);
             ac3_coop_newgame(host ? mine.mission : theirs.mission);
-            puts("red: menus sin guion, sin tarjeta de memoria");
+            g_force_mission = -1;
+            mipsi_set_hook(V->mission_start, force_mission);
+            printf("red: menus sin guion, la tarjeta %s\n", host ? "de este" : "del anfitrion");
         }
         g_net = 1;
         atexit(net_summary);

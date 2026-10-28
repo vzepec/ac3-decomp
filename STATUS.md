@@ -210,7 +210,8 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
     autopiloto del 1 salía también en la pantalla del 2) está arreglado:
     el 2 tiene su copia del aviso del HUD.
   - menús sin guion: los jugadores eligen dificultad, avión y armas; la
-    misión elegida se pone en la partida nueva; sin tarjeta de memoria.
+    misión elegida se pone en la partida nueva; la tarjeta de quien crea
+    va a los dos, así que se puede cargar su partida guardada.
   - el dueño lo probó Retroid↔S24 con los menús a mano: «funciona
     perfecto».
 - **Siguiente:** decidir si el

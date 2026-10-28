@@ -21,12 +21,16 @@ Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mi
 - menus (paso 8): el modo del menu Cooperativo (AC3_RED_MENUS: sin tarjeta y la mision en la partida nueva). El
   anfitrion elige la 5 y recorre los menus con su guion: los dos deben poner la 5 en la partida nueva y el juego
   arrancar el mismo la 5 (no la 1 forzada al arrancar), con las huellas iguales.
+- tarjeta (paso 8): cargar una partida guardada en red. Primero se guarda una (partida nueva, menu de mision > SAVE,
+  archivo 1) en una tarjeta nueva; despues el anfitrion, con esa tarjeta, la carga (load > archivo 1) y el invitado tiene
+  una vacia: con AC3_RED_MENUS el anfitrion le envia la suya y las huellas deben ser iguales, sin tocar la del invitado.
+  Control: el invitado se queda con la suya (AC3_RED_TARJETA=0): deben separarse.
 - aviso (paso 8): el autopiloto (SELECT mantenido) del jugador 1 y, aparte, el del 2, sin red, dibujando desde el 1 y
   desde el 2: la barra azul "AUTOPILOT" (pixeles azules en la imagen 2850) solo en la vista de quien lo activa, y la
   misma partida desde las dos vistas. Antes del arreglo salia tambien en la vista del 2 cuando lo activaba el 1.
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|aviso ...] [--eu <imagen_EU>]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|tarjeta|aviso ...] [--eu <imagen_EU>]
 """
 import os
 import re
@@ -206,6 +210,59 @@ def test_menus(out):
     return ok
 
 
+SAVE = ('300:start:8,500:cruz:6,700:cruz:6,1100:derecha:6,1250:derecha:6,1400:cruz:6,1600:cruz:6,1800:cruz:6,'
+        '2000:cruz:6,2150:arriba:6,2250:cruz:6,2600:cruz:6')   # partida nueva, menu de mision > SAVE, archivo 1, si
+LOAD = '300:start:8,500:abajo:6,600:cruz:6,800:cruz:6,1200:cruz:6,1400:cruz:6,1600:cruz:6,1800:cruz:6,2000:cruz:6'
+
+
+def card_files(card):
+    d = open(card, 'rb').read()
+    return [d[b * 128 + 10:b * 128 + 30].split(b'\0')[0].decode() for b in range(1, 16)
+            if int.from_bytes(d[b * 128:b * 128 + 4], 'little') == 0x51]
+
+
+def test_card(out):
+    d = os.path.join(out, 'tarjeta')
+    os.makedirs(d, exist_ok=True)
+    saved = os.path.join(d, 'con_partida.mcd')
+    for f in (saved, os.path.join(d, 'vacia.mcd')):
+        if os.path.exists(f):
+            os.remove(f)
+    p = run(os.path.join(d, 'guardar'), dict(AC3_PAD_ID='73', AC3_CARD=saved), SAVE, 3000)   # (sin archivo: una nueva)
+    p.wait()
+    files = card_files(saved)
+    ok = bool(files)
+    for control in (False, True):
+        k = os.path.join(d, 'control' if control else 'bien')
+        h, g = os.path.join(k, 'anfitrion'), os.path.join(k, 'invitado')
+        os.makedirs(k, exist_ok=True)
+        hc, gc = os.path.join(k, 'anfitrion.mcd'), os.path.join(k, 'invitado.mcd')
+        open(hc, 'wb').write(open(saved, 'rb').read())
+        if os.path.exists(gc):
+            os.remove(gc)
+        ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_MISSION=None, AC3_RED_MENUS='1', AC3_CARD=hc,
+                         AC3_RAMHASH=os.path.join(h, 'huella.bin')), LOAD, 3000)
+        genv = dict(BASE, AC3_RED='invitado', AC3_MISSION=None, AC3_RED_MENUS='1', AC3_COOP_VER='2', AC3_CARD=gc,
+                    AC3_RAMHASH=os.path.join(g, 'huella.bin'))
+        if control:
+            genv['AC3_RED_TARJETA'] = '0'
+        time.sleep(0.5)
+        pg = run(g, genv, '', 3000)
+        ph.wait()
+        pg.wait()
+        same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
+        cmp, dif = net_line(h)
+        untouched = not card_files(gc)
+        good = (not same and dif > 0) if control else (same and dif == 0 and untouched)
+        ok = ok and good
+        print('tarjeta%s: guardada %s; el anfitrion la carga, el invitado con una vacia%s: %d comparadas, %d distintas; '
+              'tarjeta del invitado %s -> %s' % (' (control)' if control else '', ','.join(files) or 'NADA',
+                                                 ' que se queda' if control else ' (recibe la del anfitrion)', cmp, dif,
+                                                 'intacta' if untouched else 'CAMBIADA', 'bien' if good else 'MAL'),
+              flush=True)
+    return ok
+
+
 def blue_bar(ppm):
     """pixeles azules donde sale la barra "AUTOPILOT" (911 con ella, 0 sin ella; sin Pillow: el PPM a mano)"""
     data = open(ppm, 'rb').read()
@@ -258,7 +315,7 @@ def main():
         eu = args[i + 1]
         del args[i:i + 2]
     DISC, out = args[0], args[1]
-    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'aviso'] + (['disco'] if eu else [])
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'tarjeta', 'aviso'] + (['disco'] if eu else [])
     ok = True
     if 'red' in what:
         ok = test_net(out) and ok
@@ -272,6 +329,8 @@ def main():
         ok = test_disc(out, eu) and ok
     if 'menus' in what:
         ok = test_menus(out) and ok
+    if 'tarjeta' in what:
+        ok = test_card(out) and ok
     if 'aviso' in what:
         ok = test_hud_message(out) and ok
         ok = test_hud_message(out, control=True) and ok

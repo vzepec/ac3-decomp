@@ -876,11 +876,18 @@ static void *game_thread(void *arg) {
             }
             if (G.ui_net) {
                 java_str("netDone", theirs.name);
-                /* (paso 8) sin tarjeta: cada aparato tiene la suya y cargar una partida separaria las dos; los menus
-                 * los recorren los jugadores y la mision elegida se pone en la partida nueva */
-                psx_card_detach(0);
+                /* (paso 8) la tarjeta de quien crea, en los dos: cada aparato tiene la suya, el juego la lee al
+                 * arrancar y cargar una partida debe dar lo mismo. El que se une la recibe y la usa en memoria (no toca
+                 * la suya); lo que se guarde, en la de quien crea. Los menus los recorren los jugadores; la mision
+                 * elegida se pone en la partida nueva y ya no se fuerza al arrancar (una partida cargada sigue la suya) */
+                static uint8_t card[128 * 1024];
+                int ok = host ? ac3_net_send_blob(psx_card_image(0), sizeof card) : ac3_net_recv_blob(card, sizeof card, 30);
+                if (ok) { java_str("netFail", ac3_net_error()); for (;;) sleep(1); }
+                if (!host) psx_card_attach_image(0, card);
                 ac3_coop_newgame(g_dev_mission);
-                LOG("red: menus sin guion, sin tarjeta de memoria; la mision %d en la partida nueva", g_dev_mission);
+                LOG("red: menus sin guion, la tarjeta de %s; la mision %d en la partida nueva", host ? "este aparato" : "quien crea",
+                    g_dev_mission);
+                g_dev_mission = -1;
             }
         }
     }

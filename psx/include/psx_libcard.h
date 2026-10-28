@@ -26,6 +26,9 @@ typedef struct {
  * Devuelve 0 si se cargo, 1 si se creo */
 int psx_card_attach(int port, const char *path);
 void psx_card_detach(int port);
+/* (etapa 10, paso 8) asocia una imagen de 128 KB que no es de un archivo (la tarjeta de quien crea la partida en red,
+ * recibida): lo que se guarde se queda en la memoria */
+void psx_card_attach_image(int port, const uint8_t *img);
 const uint8_t *psx_card_image(int port);
 
 /* ---- libcard ---- */

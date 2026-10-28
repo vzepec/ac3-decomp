@@ -184,10 +184,19 @@ vuelo.
     de saltos, no con `jal`;
   - la escritura de la demo del título (VBlank 1319, desde `800cb8f4`) no
     cuenta.
-- **Sin tarjeta de memoria** (`psx_card_detach(0)`): cada aparato tiene la
-  suya, y el juego la lee al arrancar. Con tarjeta en un lado y sin ella en
-  el otro, las partidas se separaron en el VBlank 120. Cargar una partida
-  separaría las dos.
+- **La tarjeta de memoria de quien crea, en los dos.** Cada aparato tiene la
+  suya, y el juego la lee al arrancar: con tarjeta en un lado y sin ella en
+  el otro, las partidas se separaron en el VBlank 120.
+  - Al conectar, quien crea envía sus 128 KB (`ac3_net_send_blob`) y quien
+    se une los usa en memoria (`psx_card_attach_image`), sin tocar su
+    archivo.
+  - Así se puede **cargar una partida guardada**: la de quien crea. Para
+    cargar la del otro aparato, crea él.
+  - Lo que se guarde va a la tarjeta de quien crea; en el otro se queda en
+    la memoria.
+  - La misión elegida ya no se fuerza al arrancar, para que una partida
+    cargada siga la suya: solo se pone en la partida nueva.
+  - (Primero se probó sin tarjeta en los dos; cargar quedaba fuera.)
 - Es la opción `AC3_NET_OPT_MENUS` del saludo. En el PC, `AC3_RED_MENUS=1`.
 
 Al conectar sale un aviso con el nombre del otro. Si el otro se va a mitad
@@ -252,6 +261,7 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
 | `tools/red.py menus`: el anfitrión elige la 5, los dos con `AC3_RED_MENUS` | partida nueva en el VBlank 704 con la 5 en los dos; el juego arranca la 5; huellas iguales |
 | Retroid crea Scramble desde el menú, el PC se une (`AC3_RED_MENUS`), menús recorridos a mano | el menú de misión muestra «SCRAMBLE»; partida nueva en el VBlank 1131 en los dos; el juego arranca la 5 en el 4218; 0 distintas |
 | El dueño, Retroid↔S24 con los menús a mano (Scramble) | «funciona perfecto»: partida nueva en el VBlank 1052 y la misión 5 en el 2161 en los dos; 60 huellas, 0 distintas; ping 13-17 ms. La Retroid esperó al S24 en casi cada imagen (13 ms de media): la fase del lockstep, sin efecto en la partida |
+| `tools/red.py tarjeta`: se guarda una partida (menú de misión > SAVE) y el anfitrión la carga en red; el invitado tiene una tarjeta vacía | 49 huellas, 0 distintas, y la tarjeta del invitado intacta; control (`AC3_RED_TARJETA=0`, el invitado con la suya): 48 de 49 distintas |
 | `tools/red.py aviso`: autopiloto del 1 y del 2, desde las dos vistas | la barra «AUTOPILOT» (911 px) solo en la vista de quien lo activa, la misma partida; control (`AC3_COOP_AVISO=0`): sale en las dos |
 | El dueño jugando Retroid↔S24 por Wi-Fi desde el menú, misión 1, 11 minutos | 690 huellas, 0 distintas; Retroid 60 fps, S24 120; ping 17-21 ms |
 | `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |

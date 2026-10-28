@@ -50,6 +50,15 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   - `tools/red.py menus`; Retroid↔PC por Wi-Fi, 0 distintas.
   - el dueño, Retroid↔S24 con los menús a mano: «funciona perfecto» (0
     distintas, la misión 5 en los dos).
+- **Cargar una partida guardada en red** (lo preguntó el dueño):
+  - quien crea envía su tarjeta (128 KB) al conectar, y quien se une la usa
+    en memoria; se carga la partida de quien crea, y lo que se guarde va a
+    su tarjeta;
+  - la misión elegida ya no se fuerza al arrancar (una partida cargada
+    sigue la suya);
+  - `tools/red.py tarjeta`: guardada por guion (SAVE), cargada por el
+    anfitrión con el invitado en blanco, 0 distintas y su tarjeta intacta;
+    el control (el invitado con la suya) se separa.
 
 ---
 

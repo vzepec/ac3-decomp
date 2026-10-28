@@ -142,6 +142,15 @@ void ac3_net_local_ips(char *out, size_t n) {
 
 const char *ac3_net_error(void) { return g_err; }
 
+int ac3_net_send_blob(const void *p, size_t n) { return g_fd < 0 ? -1 : send_all(p, n); }
+int ac3_net_recv_blob(void *p, size_t n, int timeout_s) {
+    if (g_fd < 0 || recv_all(p, n, now_s() + timeout_s)) {
+        snprintf(g_err, sizeof g_err, "no llego la tarjeta de memoria del otro");
+        return -1;
+    }
+    return 0;
+}
+
 /* el anuncio, a la difusion de cada red con difusion y a la general (en una zona Wi-Fi, la del aparato que la da) */
 static void beacon(int us, int port, const NetInfo *mine) {
     Beacon b = {BEACON_MAGIC, NET_VERSION, (uint32_t)port, *mine};

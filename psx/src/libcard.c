@@ -80,6 +80,12 @@ int psx_card_attach(int port, const char *path) {
     return 1;
 }
 void psx_card_detach(int port) { if (port == 0 || port == 1) C[port].present = 0; }
+void psx_card_attach_image(int port, const uint8_t *img) {
+    if (port < 0 || port > 1) return;
+    C[port].present = 1;
+    C[port].path[0] = 0;   /* (card_flush no escribe sin archivo) */
+    memcpy(C[port].img, img, CARD_SIZE);
+}
 const uint8_t *psx_card_image(int port) { return port == 0 || port == 1 ? C[port].img : NULL; }
 
 /* "buXY:NOMBRE" -> puerto (X) y nombre */

@@ -15,7 +15,8 @@ typedef struct { uint16_t buttons; uint8_t lx, ly, rx, ry; } NetPad;   /* el man
 
 #define AC3_NET_OPT_WIDE 1u   /* opciones que cambian la partida y deben ser iguales en los dos: la imagen a 16:9 */
 #define AC3_NET_OPT_COOP 2u   /* (paso 8) y el cooperativo (el segundo avion; sin el, en el paso 8, se separaban en el VBlank 60) */
-#define AC3_NET_OPT_MENUS 4u  /* (paso 8) los menus sin guion: sin tarjeta de memoria y la mision en la partida nueva */
+#define AC3_NET_OPT_MENUS 4u  /* (paso 8) los menus sin guion: la tarjeta de quien crea en los dos y la mision en la partida
+                               * nueva */
 
 /* (paso 8) lo que cada uno dice de si en el saludo (y el anfitrion en su anuncio): las opciones, el disco (huella de
  * ACE.BIN: deben ser iguales), la mision que eligio el anfitrion (-1: ninguna, se va por los menus del juego), el
@@ -31,6 +32,10 @@ typedef struct {
  * otro). Espera hasta `timeout_s`. 0 si queda conectado; si no, ac3_net_error() dice por que */
 int ac3_net_open(int host, const char *ip, int port, int delay, const NetInfo *mine, NetInfo *theirs, int timeout_s);
 const char *ac3_net_error(void);
+/* (paso 8) justo tras conectar, antes del primer VBlank: el anfitrion envia n bytes (su tarjeta de memoria) y el
+ * invitado los recibe. 0 si bien */
+int ac3_net_send_blob(const void *p, size_t n);
+int ac3_net_recv_blob(void *p, size_t n, int timeout_s);
 /* la huella de ACE.BIN (FNV-1a de 32 bits): el mismo disco en los dos */
 uint32_t ac3_net_disc_id(const uint8_t *ace, size_t n);
 /* las IPv4 de este aparato (sin la de bucle), separadas por comas, para decirlas en pantalla */
