@@ -559,7 +559,8 @@ detrás del enemigo 2, misil en el VBlank 3220):
 | jugador 2 sin ella (`AC3_COOP_VISTA=0`) | sin blanco, 140 → 30 | sin blanco, 140 → 120 | sin blanco, 140 → 120 |
 
 (Vida del enemigo 2 en el VBlank 3600; 140 → 120 es un misil que pasa cerca
-sin acertar.)
+sin acertar. Desde el paso 6, con la IA que también persigue al 2, el
+control sin su vista a 0° da 140 → 120: el enemigo 2 maniobra contra él.)
 
 - El jugador 2 ya fija (recuadro en estado 2, `+0x18` = 2) y su misil sale
   con blanco y gira hacia el enemigo (`AC3_COOP_DBGMISIL`): girado 4° acierta
@@ -733,6 +734,52 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
   - medido (`AC3_COOP_DBGMAPA`, separados 30.000 y 10.000 unidades): el 1 ve
     al 2 a (+15, −5) casillas y el 2 al 1 a (−15, +5).
 
+### Temblor, IA y recuadro FRND (cuarta y quinta prueba)
+
+- **El avión del 1 temblaba al volar a su lado.** Las intermedias (etapa 8)
+  interpolaban la entidad 0 (`g_render+0x3C4`) y el arreglo de aviones de
+  la ranura 2 en adelante (`g_render+0x474 + k*0x5C`), pero no la ranura 1
+  (`g_render+0x41C`). La encuesta del dibujo estático (`AC3_RR_SURVEY`)
+  confirma que la lee y que cambia en 228 de 229 pasos. Ahora es un objeto
+  más (`AC3_RR_NFIELDS`, 34 objetos). Autoprueba t = 1: 0 de 80 distintas,
+  con y sin cooperativo. El dueño lo confirmó en la Retroid.
+- **Los enemigos no atacaban al 2** (`SIN RESOLVER` desde el paso 2):
+  - cada enemigo elige objetivo en `FUN_8004570c`: al jugador (ranura 0) si
+    le queda un perseguidor libre (`DAT_800C56A2/A3`) y, si no, el más
+    cercano de las ranuras 2..63. La 1, nunca;
+  - y cada paso suelta un objetivo distinto de 0 sin el bit 1 de sus
+    banderas (`DAT_800C58F0[k]`), que en la 1 está a 0 (`FUN_80045fc8`);
+  - además el jugador anota a quién persigue con el 0 fijo
+    (`FUN_8004599c(0, k)`, `FUN_80045a94(0)`): como el 2, en la fila del 1
+    de la tabla de persecuciones (`DAT_800C56A0`, 4 bytes por entidad);
+  - **arreglo, igual en los dos aparatos:** la fila de la 1 empieza libre y
+    su bit 1 va con su vida; lo que el 2 anota va a su fila; y cuando la
+    elección da el jugador (o nadie), es el 2 si está más cerca de ese
+    enemigo (o si es el único con perseguidor libre). `AC3_COOP_IA=0` lo
+    quita;
+  - medido (`AC3_COOP_DBGIA`, la tabla del juego): en las misiones 5, 9 y
+    13 los enemigos persiguen al 2 (sin el arreglo, nunca). Que además le
+    disparen está sin medir: la cuenta de misiles enemigos en vuelo da 0
+    también contra el 1 en el juego sin tocar (sin caso positivo).
+- **El recuadro azul FRND sobre el otro jugador** (idea del dueño, como el
+  aliado de la misión 3):
+  - el dibujo de los recuadros (`FUN_8003ef84`) recorre las 64 ranuras,
+    pero la 1 no tiene registros de pantalla ni de puntería (punteros nulos
+    en `DAT_800C50C0` / `DAT_800C57F0`) ni la bandera 0x1000, y la
+    proyección (`FUN_8003adb4`) va de la 2 a la 63;
+  - el aliado de la misión 3 (ranura 2): registro `00 00 01 19 ff 03 18 00
+    9c 00 78 00` (forma 1, etiqueta 0x19, **tipo 3 = FRND**, tamaño, x, y);
+    `FUN_80040154(3)` pinta la etiqueta (sprite de 18×6 en 136, 114);
+  - **arreglo:** al entrar en `FUN_8003ea48`, el otro jugador se proyecta
+    como lo hace el juego (matriz de la cámara, tamaño de `FUN_8003b1bc`) y,
+    si se ve, la ranura 1 recibe registros propios con el tipo FRND hasta lo
+    siguiente del HUD (`FUN_80062924`), cuando todo vuelve a como estaba.
+    `AC3_COOP_FRND=0` lo quita;
+  - comprobado en el PC: corchetes azules con «FRND» sobre el 2 en la
+    imagen del 1, y sobre el 1 en la del 2.
+- `NHOOK` pasa de 24 a 32: con la vista del 2, el APK usa 25 ganchos. Si se
+  llenara, ahora lo dice.
+
 ### Resultados
 
 - **Lockstep entre aparatos** (`tools/movil_coop.sh`, mismos mandos por
@@ -771,8 +818,8 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
   habría que decidir si reaparece.
 - Los avisos de fijado del 2 suenan en los dos aparatos, y cada uno oye lo
   que pasa junto al otro (el oyente es el más cercano).
-- `SIN RESOLVER`: a quién persiguen los enemigos; la transición de ruido en
-  la vista del 2.
+- `SIN RESOLVER`: si los enemigos le disparan (le persiguen, medido); la
+  transición de ruido en la vista del 2.
 
 **Reproducir:**
 - `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`

@@ -162,12 +162,13 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - segunda prueba: los sonidos con posición se oyen desde el jugador más
     cercano (su impacto ya suena) y cada uno ve al otro en el radar y en el
     mapa grande (cuadrado) como un punto azul.
-- **Pendiente:** probar jugando el mapa grande (el sonido y el radar ya,
-  bien); repetir con el S24 la prueba de dos aparatos con el mapa; los
-  avisos de fijado del 2 suenan en los dos; decidir si en cooperativo el 1
-  reaparece.
-- **`SIN RESOLVER`:** a quién persigue la IA; la transición de ruido al
-  empezar el vuelo no sale en su vista.
+  - el otro avión ya no tiembla (las intermedias interpolan la ranura 1);
+    los enemigos persiguen también al 2; recuadro azul FRND sobre el otro.
+- **Pendiente:** probar jugando la IA y el FRND; repetir con el S24 la
+  prueba de dos aparatos; los avisos de fijado del 2 suenan en los dos;
+  decidir si en cooperativo el 1 reaparece.
+- **`SIN RESOLVER`:** si los enemigos disparan al 2 (le persiguen, medido);
+  la transición de ruido al empezar el vuelo no sale en su vista.
 - **Siguiente:** etapa 10, pasos 7-8: el lockstep en red local
   (`recomp-net`) y el menú Crear / Unirse.
 

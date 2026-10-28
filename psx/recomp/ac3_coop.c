@@ -47,6 +47,13 @@ typedef struct {
     uint32_t radar_draw, blip_draw, radar_center, radar_range;   /* el dibujo del radar (FUN_8003d8c0: desde la ranura
                                                                    * 2), el de un punto (FUN_8003da58), su centro y giro
                                                                    * (*DAT_800BB978) y su alcance (DAT_800C569C) */
+    uint32_t ai_target, ai_register, ai_release, ai_rel, ent_flags;   /* (paso 6) la IA: la eleccion de objetivo de un
+                                                                       * enemigo (FUN_8004570c), el registro de quien
+                                                                       * persigue a quien (FUN_8004599c / FUN_80045a94,
+                                                                       * la tabla DAT_800C56A0: 4 bytes por entidad) y
+                                                                       * las banderas por entidad (DAT_800C58F0) */
+    uint32_t hud_boxes, hud_after_boxes;   /* (paso 6) los recuadros del HUD (FUN_8003ea48 -> FUN_8003ef84, de la ranura 0
+                                            * a la 63) y lo siguiente del HUD (FUN_80062924) */
     uint32_t map_link, hud_counts, hud_sprites;   /* el mapa grande (cuadrado mantenido): FUN_8003c5f4 enlaza sus baldosas;
                                                    * su numero en *DAT_800BB970 + 0xC, ellas en *DAT_800BB974 + 0x518 */
 } CoopAddr;
@@ -77,10 +84,14 @@ static const CoopAddr ADDR[] = {
       * copias del control (FUN_80070d34; el horizonte de la cabina), antes protegidas como del jugador 1 */
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
+     0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
      0x8003C5F4u, 0x800BB970u, 0x800BB974u},
 };
 
 static const CoopAddr *A;
+#define REL(k, i) (A->ai_rel + 4 * (uint32_t)(k) + (i))   /* (paso 6) la tabla de persecuciones: fila k, byte i */
+static int ai_on(void);
+static void ai_slot1(uint32_t e1);
 static uint32_t g_gp, g_state_ptr;
 static uint32_t g_mine[6], g_input2, g_alloc_end;
 /* (paso 4) sus copias del fogonazo de la metralleta (8 bytes) y de la punteria (registros por entidad y
@@ -95,6 +106,8 @@ static uint32_t g_gunfx2, g_aim2;
 static uint32_t g_cam2, g_pview2, g_scr2;
 #define BLIP_SIZE 0x10
 static uint32_t g_blip;   /* (paso 6) el registro del punto del otro jugador en el radar */
+#define FRND_SIZE 0x40
+static uint32_t g_frnd;   /* (paso 6) sus registros de pantalla (0xC bytes) y de punteria (0x34) para el recuadro FRND */
 static int g_busy, g_steps, g_orders, g_revives;
 static int g_rebuilding;   /* (paso 5) dentro del redibujo del jugador 2 */
 static uint32_t g_e1;
@@ -222,6 +235,7 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
         g_pview2 = p; p += PVIEW_MAX;
         g_scr2 = p; p += SCR_SIZE;
         g_blip = p; p += BLIP_SIZE;
+        g_frnd = p; p += FRND_SIZE;
         if (p > A->heap_limit) { printf("coop: sin memoria en el asignador del juego\n"); return -1; }
         wr32(st + HEAP_PTR, p);
         g_alloc_end = p;
@@ -243,6 +257,10 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
     wr32(e1 + 0x10, rd32(e0 + 0x10) + ((uint32_t)dz << 12));
     if (getenv("AC3_COOP_TRAS")) place_behind(e1, atoi(getenv("AC3_COOP_TRAS")), getenv("AC3_COOP_GIRO"));
     if (getenv("AC3_COOP_TRAS1")) place_behind(e0, atoi(getenv("AC3_COOP_TRAS1")), getenv("AC3_COOP_GIRO1"));   /* (paso 5) el 1 */
+    if (ai_on()) {   /* (paso 6) su fila de la tabla de persecuciones, libre (como FUN_80045b00) */
+        uint8_t *r1 = psx_ptr(REL(1, 0));
+        r1[0] = 0; r1[1] = r1[2] = r1[3] = 0xFF;
+    }
     printf("coop: entidad 1 (%08x) activa en el VBlank %d\n", e1, VSync(-1));
     return 0;
 }
@@ -374,6 +392,7 @@ static void after_player(RCpu *c) {
     if (VSync(-1) < from) return;
     if (!(rd32(e1) & ~0x3Fu) && coop_init(st, e0, e1)) return;
     g_e1 = e1;
+    ai_slot1(e1);
     /* (paso 4) derribado (vida < 1): pasados AC3_COOP_REVIVE pasos (150, 5 s) reaparece junto al jugador 1, como
      * al empezar; mientras, su paso sigue (los restos) */
     static int revive = -1, down;
@@ -530,6 +549,22 @@ static void camera_hook(RCpu *c) {
                (int32_t)rd32(ek + 8) >> 12, (int32_t)rd32(ek + 0xC) >> 12, (int32_t)rd32(ek + 0x10) >> 12,
                sr ? *(uint16_t *)psx_ptr(sr + 6) : 0, sr ? *(int16_t *)psx_ptr(sr + 8) : 0, sr ? *(int16_t *)psx_ptr(sr + 10) : 0);
     }
+    if (getenv("AC3_COOP_DBGIA") && g_steps % (getenv("AC3_COOP_DBGIA") ? atoi(getenv("AC3_COOP_DBGIA")) : 30) == 0) {   /* depuracion: cuantos persiguen a cada jugador, y sus vidas */
+        int n0 = 0, n1 = 0;
+        for (int k = 2; k < 64; k++) { uint8_t t = *(uint8_t *)psx_ptr(REL(k, 1)); n0 += t == 0; n1 += t == 1; }
+        uint32_t tab = rd32(A->ent_table);
+        int16_t h0, h1;
+        memcpy(&h0, psx_ptr(rd32(tab) + 0x4E), 2); memcpy(&h1, psx_ptr(rd32(tab + 4) + 0x4E), 2);
+        uint32_t b = rd32(A->weapons), mask = rd32(b + 0x552 * 4);
+        int m0 = 0, m1 = 0;   /* misiles en vuelo contra cada jugador (blanco en + 0x70) */
+        for (int k = 0; k < 32; k++) {
+            if (!(mask >> k & 1)) continue;
+            int32_t t = (int32_t)rd32(b + (0x32u + (uint32_t)k * 0x29u) * 4 + 0x70);
+            m0 += t == 0; m1 += t == 1;
+        }
+        printf("coop: VBlank %d persiguen al 1: %d (vida %d, misiles %d), al 2: %d (vida %d, misiles %d)\n", VSync(-1), n0, h0, m0, n1,
+               h1, m1);
+    }
     if (getenv("AC3_COOP_DBGCAM")) {   /* depuracion: angulos (+0x14..0x18) y modo de las dos camaras */
         uint32_t cam = rd32(rd32(G_RENDER) + 0x28);
         int16_t a1[3], a2[3];
@@ -649,6 +684,100 @@ static void radar_hook(RCpu *c) {
     b[6] = (uint8_t)(x + 0x2C);
     b[7] = (uint8_t)(y + 0x2E);
     guest_call(c, A->blip_draw, g_blip, 0, 0);
+}
+
+/* (paso 6) la IA. Cada enemigo elige objetivo en FUN_8004570c (uno por paso): al jugador (la ranura 0) si le queda un
+ * perseguidor libre (DAT_800C56A2/A3) y si no, el mas cercano de las ranuras 2..63: la 1, nunca. Y cada paso suelta un
+ * objetivo distinto de 0 sin el bit 1 de sus banderas (DAT_800C58F0[k]), que en la 1 esta a 0. Ademas el jugador anota
+ * a quien persigue con el 0 fijo (FUN_8004599c(0, k), FUN_80045a94(0)): como el 2, en la fila del 1.
+ * Ahora, igual en los dos aparatos: la fila de la 1 empieza libre y su bit 1 va con su vida; lo que el 2 anota va a su
+ * fila; y cuando la eleccion da el jugador (o nadie) a un enemigo, es el 2 si esta mas cerca de el (o si es el unico
+ * con perseguidor libre). AC3_COOP_IA=0 (prueba): como el juego */
+static int ai_on(void) {
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_IA") || atoi(getenv("AC3_COOP_IA")) != 0;
+    return on;
+}
+static void ai_slot1(uint32_t e1) {   /* el bit 1 de las banderas de la ranura 1, con su vida */
+    if (!ai_on()) return;
+    int16_t hp;
+    memcpy(&hp, psx_ptr(e1 + 0x4E), 2);
+    uint32_t f = A->ent_flags + 4;
+    wr32(f, hp > 0 && (rd32(e1) & 0x4000) ? rd32(f) | 1u : rd32(f) & ~1u);
+}
+static void ai_register_hook(RCpu *c) {
+    if (!ai_on() || !p2_active()) return;
+    if (g_busy) { if (c->r[4] == 0) c->r[4] = 1; return; }   /* lo que anota el 2, en su fila */
+    if (c->r[31] < A->ai_target || c->r[31] >= A->ai_register || (c->r[5] != 0 && c->r[5] != 0xFF)) return;
+    uint32_t k = c->r[4], tab = rd32(A->ent_table), ek = rd32(tab + 4 * k), e0 = rd32(tab), e1 = rd32(tab + 4);
+    int16_t hp2;
+    memcpy(&hp2, psx_ptr(e1 + 0x4E), 2);
+    if (k < 2 || k > 63 || !(rd32(ek) & 0x80) || hp2 < 1 || (~rd32(e1) & 0x4000)) return;   /* enemigo; el 2 vivo */
+    uint8_t *r1 = psx_ptr(REL(1, 0));
+    if ((r1[2] != 0xFF && r1[3] != 0xFF) || r1[1] == k) return;   /* sin perseguidor libre, o el 2 le persigue a el */
+    int64_t d2 = dist2(ek + 8, e1 + 8), d1 = dist2(ek + 8, e0 + 8);
+    if (d2 >= (int64_t)0x100000 * 0x100000) return;   /* el alcance de la busqueda del juego */
+    if (c->r[5] == 0xFF || d2 < d1) c->r[5] = 1;
+}
+static void ai_release_hook(RCpu *c) {
+    if (ai_on() && g_busy && p2_active() && c->r[4] == 0) c->r[4] = 1;
+}
+
+/* (paso 6) el recuadro azul FRND sobre el otro jugador, como el aliado de la mision 3. El dibujo de los recuadros
+ * (FUN_8003ef84) recorre las 64 ranuras, pero la 1 no tiene registro de pantalla ni de punteria (punteros nulos en
+ * DAT_800C50C0 / DAT_800C57F0) ni la bandera 0x1000, y la proyeccion (FUN_8003adb4) va de la 2 a la 63. Al entrar en
+ * FUN_8003ea48 se proyecta al otro jugador como ella (matriz de la camara, sin traslacion; tamano FUN_8003b1bc) y, si
+ * se ve, la ranura 1 recibe registros propios con el tipo FRND (+5 = 3: recuadro azul y la etiqueta de
+ * FUN_80040154(3)); al entrar en lo siguiente del HUD (FUN_80062924) todo vuelve a como estaba. Igual en los dos
+ * aparatos. AC3_COOP_FRND=0 (prueba): sin el */
+static struct { int on; uint32_t scr, aim, flags; } g_fr;
+static void frnd_hook(RCpu *c) {
+    (void)c;
+    g_fr.on = 0;
+    if ((g_busy && !g_rebuilding) || !p2_active()) return;
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_FRND") || atoi(getenv("AC3_COOP_FRND")) != 0;
+    uint32_t tab = rd32(A->ent_table), other = rd32(tab + 4), gr = rd32(G_RENDER), cam = rd32(gr + 0x28);
+    int16_t hp;
+    memcpy(&hp, psx_ptr(other + 0x4E), 2);
+    if (!on || (~rd32(other) & 0x4000) || hp < 1 || rd32(A->screen_ptrs + 4) || rd32(A->aim_ptrs + 4)) return;
+    SVECTOR v;
+    int32_t d[3];
+    for (int i = 0; i < 3; i++) {
+        d[i] = ((int32_t)rd32(other + 8 + 4 * i) - (int32_t)rd32(cam + 4 + 4 * i)) >> 12;
+        if ((uint32_t)(d[i] + 0x8000) >= 0x10000) return;
+    }
+    v.vx = (int16_t)d[0]; v.vy = (int16_t)d[1]; v.vz = (int16_t)d[2]; v.pad = 0;
+    PsxGte *gc = (PsxGte *)psx_gte_get_context(), gte = *gc;
+    MATRIX m;
+    memcpy(&m, psx_ptr(gr + 0x4C), sizeof m);
+    m.t[0] = m.t[1] = m.t[2] = 0;
+    SetRotMatrix(&m);
+    SetTransMatrix(&m);
+    int32_t sxy, p, flag, z = RotTransPers(&v, &sxy, &p, &flag);
+    *gc = gte;
+    int16_t sx = (int16_t)(sxy & 0xFFFF), sy = (int16_t)((uint32_t)sxy >> 16);
+    if (flag < 0 || (uint16_t)sx >= 0x141 || sy < 0 || sy >= 0xF1) return;   /* delante y en pantalla, como el juego */
+    int size = 2;   /* FUN_8003b1bc */
+    if (z <= 0x1000) { size = ((0x1000 - z) * (0x1000 - z) >> 12) * 3 >> 9; size = size < 2 ? 2 : size > 0x18 ? 0x18 : size; }
+    uint8_t *r = psx_ptr(g_frnd);
+    memset(r, 0, FRND_SIZE);
+    r[0] = 1; r[2] = 1; r[4] = 0xFF; r[5] = 3;   /* visible, recuadro de corchetes, FRND */
+    int16_t s16 = (int16_t)size;
+    memcpy(r + 6, &s16, 2); memcpy(r + 8, &sx, 2); memcpy(r + 10, &sy, 2);
+    g_fr.flags = rd32(A->ent_flags + 4);
+    wr32(A->ent_flags + 4, g_fr.flags | 0x1000);
+    wr32(A->screen_ptrs + 4, g_frnd);
+    wr32(A->aim_ptrs + 4, g_frnd + 0xC);   /* (su registro de punteria, a cero: sin la bandera 0x100) */
+    g_fr.on = 1;
+}
+static void frnd_after_hook(RCpu *c) {
+    (void)c;
+    if (!g_fr.on) return;
+    g_fr.on = 0;
+    wr32(A->ent_flags + 4, g_fr.flags);
+    wr32(A->screen_ptrs + 4, 0);
+    wr32(A->aim_ptrs + 4, 0);
 }
 
 /* (paso 6) el mapa grande (cuadrado mantenido): FUN_8003e0fc pone una baldosa de 2x2 por entidad (una sombra y luego el
@@ -865,6 +994,10 @@ int ac3_coop_install(const Ac3Version *v) {
     mipsi_set_hook(A->snd_rel, listener_hook);
     mipsi_set_hook(A->radar_draw, radar_hook);
     mipsi_set_hook(A->map_link, map_hook);
+    mipsi_set_hook(A->ai_register, ai_register_hook);
+    mipsi_set_hook(A->ai_release, ai_release_hook);
+    mipsi_set_hook(A->hud_boxes, frnd_hook);
+    mipsi_set_hook(A->hud_after_boxes, frnd_after_hook);
     if (view2_on()) { mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
     if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
     if (getenv("AC3_COOP_DBGSONIDO")) for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);

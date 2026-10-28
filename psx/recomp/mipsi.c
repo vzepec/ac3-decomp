@@ -30,7 +30,7 @@ uint64_t mipsi_steps;
 
 /* enganches: se llama a fn al entrar en la funcion `addr` (p. ej. forzar la mision que carga el
  * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta NHOOK; fn NULL lo quita */
-#define NHOOK 24   /* (etapa 9) los del cooperativo */
+#define NHOOK 32   /* (etapa 9) los del cooperativo (paso 6: en el APK con la vista del 2, 23) */
 static uint32_t g_hook_addr[NHOOK];
 static void (*g_hook_fn[NHOOK])(RCpu *);
 static int g_hook;
@@ -38,7 +38,7 @@ void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) {
     int k = -1;
     for (int i = 0; i < NHOOK; i++) if (g_hook_fn[i] && g_hook_addr[i] == addr) k = i;
     for (int i = 0; i < NHOOK && k < 0; i++) if (!g_hook_fn[i]) k = i;
-    if (k < 0) return;
+    if (k < 0) { fprintf(stderr, "mipsi: sin sitio para el gancho de %08x (NHOOK %d)\n", addr, NHOOK); return; }
     g_hook_addr[k] = addr; g_hook_fn[k] = fn;
     g_hook = 0;
     for (int i = 0; i < NHOOK; i++) g_hook |= g_hook_fn[i] != NULL;

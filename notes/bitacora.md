@@ -44,6 +44,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   baldosas se añaden al entrar en `FUN_8003c5f4`, con la cuenta del juego
   (`AC3_COOP_DBGMAPA`: posiciones opuestas y exactas). Con la sombra roja
   del juego se veía como un enemigo: ahora es un cuadrado azul opaco de 3×3.
+- **Cuarta y quinta prueba:**
+  - el otro avión temblaba porque las intermedias no interpolaban la
+    ranura 1 (`g_render+0x41C`, que el dibujo estático sí lee); ahora sí, y
+    el dueño lo confirmó;
+  - la IA nunca elegía la ranura 1 (`FUN_8004570c`) y la soltaba sin el
+    bit 1 de `DAT_800C58F0[1]`: ahora el 2 entra en la elección si está más
+    cerca (medido: le persiguen en las misiones 5, 9 y 13);
+  - recuadro FRND sobre el otro, con los registros de la ranura 1 puestos
+    solo mientras se dibujan los recuadros (el tipo 3 del aliado de la
+    misión 3).
 - **Reproducir:** `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`;
   en el PC, `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'
   AC3_COOP_VER=2` contra el mismo guion en el 1.
