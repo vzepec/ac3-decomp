@@ -260,6 +260,11 @@ static void pc_frame_wait(void) {
     if (g_spu_on) { static int16_t pcm[882 * 2]; psx_spu_render(psx_spu(), pcm, AC3_REFRESH == 50 ? 882 : 735); }
 #endif
     ac3_coop_frame();   /* (paso 8) la mision elegida en la partida nueva (AC3_RED_MENUS), antes del mando y la huella, como el APK */
+    static int lost_told;
+    if (ac3_net_lost() && !lost_told) {   /* (etapa 10) como el APK: si se fue el 2, su avion desaparece */
+        lost_told = 1;
+        if (ac3_net_is_host()) ac3_coop_remove_p2();
+    }
     if (ac3_net_active() || g_net) {   /* (paso 7) en red: el mando de este jugador (su guion) y el del otro, de la red */
         NetPad mine = ac3_net_is_host() ? script_eval(script, nscript, v) : script_eval(script2, nscript2, v), p1, p2;
         ac3_net_frame(v, &mine, &p1, &p2);
@@ -955,6 +960,7 @@ int main(int argc, char **argv) {
     }
     if (getenv("AC3_COOP")) {   /* etapa 9, paso 3: el segundo avion (mando del puerto 2: AC3_PAD2_ID=73, AC3_GUION2) */
         if (ac3_coop_install(V)) puts("AC3_COOP: esta version aun no tiene direcciones");
+        else if (getenv("AC3_COOP_LOCAL")) ac3_coop_set_local(atoi(getenv("AC3_COOP_LOCAL")));   /* (etapa 10, prueba) sin red */
         else atexit(coop_summary);
         if (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) psx_draw_redirect = ac3_coop_draw_p2;
         if (getenv("AC3_COOP_AUTOPRUEBA")) psx_draw_list_hook = coop_self_hook;
@@ -1041,6 +1047,7 @@ int main(int argc, char **argv) {
             printf("red: menus sin guion, la tarjeta %s\n", host ? "de este" : "del anfitrion");
         }
         g_net = 1;
+        ac3_coop_set_local(host ? 1 : 2);   /* (los sonidos del otro jugador no salen por aqui) */
         atexit(net_summary);
         setenv("AC3_COMO_APK", "1", 1);
 #ifdef AC3_LIBRE

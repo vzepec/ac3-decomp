@@ -178,8 +178,10 @@ void psx_spu_render(PsxSpu *s, int16_t *out, int frames) {
             smp = smp * v->level >> 15;
             if (i == 1) cap1 = smp;   /* captura: voces 1 y 3 tras la envolvente, antes del volumen */
             if (i == 3) cap3 = smp;
-            l += smp * vol(s->regs[i * 8]) >> 15;
-            r += smp * vol(s->regs[i * 8 + 1]) >> 15;
+            if (!(s->mute_out >> i & 1)) {
+                l += smp * vol(s->regs[i * 8]) >> 15;
+                r += smp * vol(s->regs[i * 8 + 1]) >> 15;
+            }
             uint32_t pitch = s->regs[i * 8 + 2];
             if (pitch > 0x4000) pitch = 0x4000;
             v->counter += pitch;

@@ -16,6 +16,8 @@
 #include "psx_libc.h"
 #include "psx_libetc.h"
 #include "psx_libpad.h"
+#include "psx_libspu.h"
+#include "psx_spu.h"
 #include "psx_libgte.h"
 #include "psx_mem.h"
 
@@ -120,6 +122,8 @@ static uint32_t g_blip;   /* (paso 6) el registro del punto del otro jugador en 
 static uint32_t g_frnd;   /* (paso 6) sus registros de pantalla (0xC bytes) y de punteria (0x34) para el recuadro FRND */
 static int g_busy, g_steps, g_orders, g_revives;
 static int g_msg2_ok;   /* (etapa 10, paso 8) el aviso del HUD del 2 ya tiene valor (hud_msg_in) */
+static int g_local, g_p1_window;   /* (etapa 10) el jugador de este aparato; dentro del paso de vuelo del 1 */
+static int g_p2_gone;              /* (etapa 10) el jugador 2 se desconecto: su avion ya no esta */
 static int g_rebuilding;   /* (paso 5) dentro del redibujo del jugador 2 */
 static uint32_t g_e1;
 
@@ -398,6 +402,8 @@ static void log_step(uint32_t e0, uint32_t e1) {
 static int g_flight_vb = -100;   /* (etapa 10, paso 7) el ultimo VBlank con paso de vuelo del jugador 1 */
 static void after_player(RCpu *c) {
     if (g_busy) return;
+    g_p1_window = 0;   /* (etapa 10) fin del paso de vuelo del 1: sus sonidos */
+    if (g_p2_gone) return;
     g_flight_vb = VSync(-1);
     uint32_t st = rd32(g_state_ptr), tab = rd32(A->ent_table);
     uint32_t e0 = rd32(tab), e1 = rd32(tab + 4);
@@ -1041,6 +1047,7 @@ static void snd_log(const RCpu *c, int k) {
 }
 #define SND_HOOK(k) static void snd_hook##k(RCpu *c) { snd_log(c, k); }
 SND_HOOK(0) SND_HOOK(1) SND_HOOK(2) SND_HOOK(3) SND_HOOK(4) SND_HOOK(5) SND_HOOK(6) SND_HOOK(7) SND_HOOK(8) SND_HOOK(9)
+static void dbg_keyon(uint32_t voices) { printf("coop: VBlank %d encendido de voces %06x%s\n", VSync(-1), voices, g_busy ? " (como el 2)" : ""); }
 static void (*const SND_HOOKS[10])(RCpu *) = {snd_hook0, snd_hook1, snd_hook2, snd_hook3, snd_hook4, snd_hook5, snd_hook6, snd_hook7,
                                               snd_hook8, snd_hook9};
 
@@ -1067,11 +1074,68 @@ int ac3_coop_install(const Ac3Version *v) {
         mipsi_set_hook(A->menu_draw[1], menu1_hook);
         mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
     if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
-    if (getenv("AC3_COOP_DBGSONIDO")) for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);
+    if (getenv("AC3_COOP_DBGSONIDO")) {
+        for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);
+        psx_spu_keyon_hook = dbg_keyon;
+    }
     return 0;
 }
 
 int ac3_coop_steps(void) { return g_steps; }
+
+/* (etapa 10) de quien es cada sonido. FUN_8002e2c0(sonido, voz) deja la peticion en el registro de la voz y el gestor la
+ * enciende despues (SpuSetKey, medido: un paso mas tarde); al pedirla se anota el contexto: el 2 (su paso y su vista,
+ * g_busy), el 1 (su paso de vuelo: de la entrada de FUN_800715fc a la de FUN_80044f70) o comun. Al encenderse, la voz
+ * queda con su dueno; sin peticion anotada, comun. Medido (AC3_COOP_DBGVOCES): metralleta 0x11 y misil 0xe, desde el paso
+ * de vuelo; tono de fijado 0x32, el del 2 desde su vista y el del 1 desde el HUD del dibujo */
+#define SND_REQ 0x8002E2C0u
+#define SND_LOCK 0x32u
+static uint8_t g_voice_req[24];   /* 0x80 | dueno (0 comun, 1, 2) de la peticion pendiente */
+static void p1_step_hook(RCpu *c) { (void)c; if (!g_busy) g_p1_window = 1; }
+static void voice_req_hook(RCpu *c) {
+    uint32_t v = c->r[5];
+    /* el tono de fijado (0x32) es siempre de un jugador: el del 1 se pide desde el HUD del dibujo, fuera de su paso */
+    int owner = g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK ? 1 : 0;
+    if (v < 24) g_voice_req[v] = (uint8_t)(0x80 | owner);
+    if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d peticion: sonido %x en la voz %u (%s) desde %08x\n", VSync(-1), c->r[4], v,
+                                            owner == 2 ? "jugador 2" : owner == 1 ? "jugador 1" : "comun", c->r[31]);
+}
+static void voice_on_hook(uint32_t voices) {
+    PsxSpu *s = psx_spu();
+    for (int i = 0; i < 24; i++) {
+        if (!(voices >> i & 1)) continue;
+        /* las voces 0-2: el motor (sonidos 0, 0x54 y 0x55, pedidos una vez al empezar el vuelo y puestos al dia en cada
+         * paso con FUN_8002dc60(0..2)); es uno, el del avion del 1, y se oye en los dos */
+        int owner = i < 3 ? 0 : g_voice_req[i] & 3;
+        g_voice_req[i] = 0;
+        if (owner && owner != g_local) s->mute_out |= 1u << i;
+        else s->mute_out &= ~(1u << i);
+        if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d voz %d del %s%s\n", VSync(-1), i, owner == 1 ? "jugador 1" : owner == 2 ? "jugador 2" : "comun",
+                                                  s->mute_out >> i & 1 ? " (no se oye aqui)" : "");
+    }
+}
+/* (etapa 10) el jugador 2 se fue: su entidad, inactiva (solo los bits de la ranura, como antes de crearla), con la vida a
+ * 0 y fuera de los blancos de la IA (como derribado); su paso ya no se da ni reaparece. Todos los ganchos miran p2_active */
+void ac3_coop_remove_p2(void) {
+    if (!A || g_p2_gone) return;
+    g_p2_gone = 1;
+    uint32_t e1 = rd32(rd32(A->ent_table) + 4);
+    if (e1 && (rd32(e1) & ~0x3Fu)) {
+        int16_t hp = 0;
+        memcpy(psx_ptr(e1 + 0x4E), &hp, 2);
+        wr32(e1, rd32(e1) & 0x3Fu);
+    }
+    if (ai_on()) wr32(A->ent_flags + 4, rd32(A->ent_flags + 4) & ~1u);
+    printf("coop: el jugador 2 se fue en el VBlank %d: su avion desaparece\n", VSync(-1));
+}
+
+void ac3_coop_set_local(int player) {
+    if (!A) return;
+    g_local = player;
+    mipsi_set_hook(A->player_step, p1_step_hook);
+    mipsi_set_hook(SND_REQ, voice_req_hook);
+    psx_spu_keyon_hook = voice_on_hook;
+}
 
 /* (etapa 10, paso 8) la mision elegida, en la partida nueva: se vigila la escritura de la mision actual (g_state +
  * 0x390, mipsi_watch_write) y solo cuenta la del sh de la partida nueva; en la siguiente espera del VBlank (la misma en

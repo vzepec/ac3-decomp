@@ -215,6 +215,10 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - el dueño lo probó Retroid↔S24 con los menús a mano: «funciona
     perfecto».
   - el dueño cargó su partida guardada en red (Retroid↔S24): 0 distintas.
+- **Tras el paso 8** (rama `etapa-10-paso-8-arreglos`): los disparos y el
+  tono de fijado del otro ya no se oyen en tu aparato (solo la salida de
+  audio; la partida igual); si el que se une se va, su avión desaparece; si
+  se va quien creó la partida, el otro vuelve al menú.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

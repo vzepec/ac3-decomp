@@ -147,8 +147,10 @@ void SpuSetVoiceAttr(const SpuVoiceAttr *a) {
     }
 }
 
+void (*psx_spu_keyon_hook)(uint32_t voices);
 void SpuSetKey(int32_t on_off, uint32_t voice_bit) {
     uint32_t v = voice_bit & 0xFFFFFF;
+    if (on_off == 1 && v && psx_spu_keyon_hook) psx_spu_keyon_hook(v);
     if (on_off == 0) {
         wr(0x18C, (uint16_t)v); wr(0x18E, (uint16_t)(v >> 16));
         L.keys &= ~v;

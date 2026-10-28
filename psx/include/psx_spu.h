@@ -45,6 +45,8 @@ typedef struct {
     uint32_t cd_r, cd_w;
     uint32_t samples;       /* muestras generadas (contador para pruebas) */
     uint32_t cap;           /* posicion de captura (0..0x1FF) en los 4 KB iniciales de la RAM */
+    uint32_t mute_out;      /* (etapa 10) voces que no van a la salida (siguen sonando para el programa: envolvente,
+                             * fin, captura): en red, los sonidos del otro jugador */
 } PsxSpu;
 
 void psx_spu_reset(PsxSpu *s);

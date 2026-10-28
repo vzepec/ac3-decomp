@@ -25,12 +25,19 @@ Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mi
   archivo 1) en una tarjeta nueva; despues el anfitrion, con esa tarjeta, la carga (load > archivo 1) y el invitado tiene
   una vacia: con AC3_RED_MENUS el anfitrion le envia la suya y las huellas deben ser iguales, sin tocar la del invitado.
   Control: el invitado se queda con la suya (AC3_RED_TARJETA=0): deben separarse.
+- sonido (etapa 10): de quien es cada sonido. En red, el 1 dispara metralleta y misil y despues el 2
+  (AC3_COOP_DBGVOCES): cada aparato anota las voces del otro (metralleta 0x11 en la voz 4, misil 0xe en la 12) como "no
+  se oye aqui" y las suyas no; el motor (voces 0-2) nunca. Y sin red (AC3_COOP_LOCAL=2), el tono de fijado (0x32) del 1
+  en la mision 5: no se oye en el aparato del 2. Las huellas, iguales (solo cambia la salida de audio).
+- se_va (etapa 10): el invitado se cierra en el VBlank 3100 y el anfitrion sigue: su avion desaparece (el punto azul del
+  radar, junto al 1, antes si y despues no) y la partida sigue.
 - aviso (paso 8): el autopiloto (SELECT mantenido) del jugador 1 y, aparte, el del 2, sin red, dibujando desde el 1 y
   desde el 2: la barra azul "AUTOPILOT" (pixeles azules en la imagen 2850) solo en la vista de quien lo activa, y la
   misma partida desde las dos vistas. Antes del arreglo salia tambien en la vista del 2 cuando lo activaba el 1.
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|tarjeta|aviso ...] [--eu <imagen_EU>]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|tarjeta|sonido|se_va|aviso ...]
+                         [--eu <imagen_EU>]
 """
 import os
 import re
@@ -79,6 +86,18 @@ def pair(out, host_env, guest_env, g2=G2, g1=G1):
     return h, g
 
 
+def same_until_close(h, g):
+    """las huellas de los dos, hasta que uno cierra (despues, si el que sigue es el anfitrion, quita el avion del 2)"""
+    lost = [int(m) for d in (h, g) for m in re.findall(r'(?:cerro la conexion|conexion perdida al enviar) \(VBlank (\d+)\)',
+                                                        log_of(d))]
+    a = open(os.path.join(h, 'huella.bin'), 'rb').read()
+    b = open(os.path.join(g, 'huella.bin'), 'rb').read()
+    n = min(len(a), len(b)) // (35 * 8)
+    if lost:
+        n = min(n, min(lost) - 2)
+    return n > 0 and a[:n * 35 * 8] == b[:n * 35 * 8]
+
+
 def net_line(d):
     m = re.search(r'red: (\d+) huellas comparadas, (\d+) distintas', log_of(d))
     return (int(m.group(1)), int(m.group(2))) if m else (0, -1)
@@ -98,7 +117,7 @@ def test_net(out):
     h, g = pair(os.path.join(out, 'red'), {}, {})
     # la referencia sin pausa: el mismo guion del 2 sin su START en vuelo, y el 1 sin el suyo
     hr, _ = pair(os.path.join(out, 'red_sin_pausa'), {}, {}, g2=G2.rsplit(',', 1)[0], g1=G0)
-    same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
+    same = same_until_close(h, g)
     cmp, dif = net_line(h)
     fv, s, sr = flight(h), steps(h), steps(hr)
     adopted = 'el anfitrion eligio la mision 1' in log_of(g)
@@ -199,7 +218,7 @@ def test_menus(out):
                      AC3_RAMHASH=os.path.join(g, 'huella.bin')), G0, 3000)
     ph.wait()
     pg.wait()
-    same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
+    same = same_until_close(h, g)
     ng = [re.search(r'partida nueva en el VBlank (\d+): la mision (\d+)', log_of(x)) for x in (h, g)]
     st = [re.search(r'el juego arranca la (\d+)', log_of(x)) for x in (h, g)]
     ok = same and all(ng) and all(m.group(2) == '5' for m in ng) and all(st) and all(m.group(1) == '5' for m in st)
@@ -250,7 +269,7 @@ def test_card(out):
         pg = run(g, genv, '', 3000)
         ph.wait()
         pg.wait()
-        same = open(os.path.join(h, 'huella.bin'), 'rb').read() == open(os.path.join(g, 'huella.bin'), 'rb').read()
+        same = same_until_close(h, g)
         cmp, dif = net_line(h)
         untouched = not card_files(gc)
         good = (not same and dif > 0) if control else (same and dif == 0 and untouched)
@@ -261,6 +280,78 @@ def test_card(out):
                                                  'intacta' if untouched else 'CAMBIADA', 'bien' if good else 'MAL'),
               flush=True)
     return ok
+
+
+def voices(d):
+    """(voz, dueno, silenciada) de cada encendido anotado"""
+    return [(int(v), w, bool(m)) for v, w, m in
+            re.findall(r'voz (\d+) del (jugador 1|jugador 2|comun)( \(no se oye aqui\))?', log_of(d))]
+
+
+def test_sound(out):
+    d = os.path.join(out, 'sonido')
+    h, g = os.path.join(d, 'anfitrion'), os.path.join(d, 'invitado')
+    ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_COOP_DBGVOCES='1', AC3_RAMHASH=os.path.join(h, 'huella.bin')),
+             G0 + ',2700:start:6,2850:cruz:30,2950:circulo:4', 3300)
+    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_MISSION=None, AC3_COOP_VER='2', AC3_COOP_DBGVOCES='1',
+                     AC3_GUION2='3050:cruz:30,3150:circulo:4', AC3_RAMHASH=os.path.join(g, 'huella.bin')), G0, 3300)
+    ph.wait()
+    pg.wait()
+    ok = same_until_close(h, g)
+    for d2, me, other in ((h, 'jugador 1', 'jugador 2'), (g, 'jugador 2', 'jugador 1')):
+        vs = voices(d2)
+        mine_ok = any(v in (4, 12) and w == me and not m for v, w, m in vs)
+        other_muted = [v for v, w, m in vs if w == other and m]
+        other_heard = [v for v, w, m in vs if w == other and not m and v >= 3]
+        engine_muted = [v for v, w, m in vs if v < 3 and m]
+        good = mine_ok and 4 in other_muted and 12 in other_muted and not other_heard and not engine_muted
+        ok = ok and good
+        print('sonido: el aparato del %s: los suyos se oyen %s; del %s sin oir: voces %s; del %s oidas: %s; motor silenciado: %s -> %s'
+              % (me, 'si' if mine_ok else 'NO', other, sorted(set(other_muted)), other, sorted(set(other_heard)) or 'ninguna',
+                 'si' if engine_muted else 'no', 'bien' if good else 'MAL'), flush=True)
+    # el tono de fijado del 1 (mision 5, detras del enemigo 2: coop_vista misil), en el aparato del 2
+    k = os.path.join(d, 'fijado')
+    p = run(k, dict(AC3_PAD_ID='73', AC3_MISSION='5', AC3_COOP='1', AC3_PAD2_ID='73', AC3_COOP_DESDE='3150',
+                    AC3_COOP_DIST='600', AC3_COOP_TRAS1='2', AC3_COOP_LOCAL='2', AC3_COOP_DBGVOCES='1'),
+            G0 + ',3220:circulo:4', 3400)
+    p.wait()
+    lock = re.findall(r'peticion: sonido 32 en la voz (\d+) \((\w+ ?\d?)\)', log_of(k))
+    vs = voices(k)
+    lv = {int(v) for v, w in lock}
+    good = bool(lock) and all(w == 'jugador 1' for v, w in lock) and all(m for v, w, m in vs if v in lv and w == 'jugador 1')
+    ok = ok and good
+    print('sonido: tono de fijado (0x32) del 1 en el aparato del 2: %d peticiones del %s, sin oir: %s -> %s' % (
+        len(lock), ','.join(sorted({w for v, w in lock})) or '-', 'si' if good else 'NO', 'bien' if good else 'MAL'), flush=True)
+    return ok
+
+
+def radar_blue(ppm):
+    """pixeles del punto azul del otro jugador en el radar (49, 156-206, 255)"""
+    data = open(ppm, 'rb').read()
+    parts = data.split(b'\n', 3)
+    w, h = map(int, parts[1].split())
+    px = parts[3]
+    n = 0
+    for y in range(8, 78):
+        for x in range(8, 75):
+            r, g, b = px[(y * w + x) * 3:(y * w + x) * 3 + 3]
+            n += b > 200 and r < 100 and g > 120
+    return n
+
+
+def test_leave(out):
+    d = os.path.join(out, 'se_va')
+    h, g = os.path.join(d, 'anfitrion'), os.path.join(d, 'invitado')
+    ph = run(h, dict(BASE, AC3_RED='anfitrion', AC3_COOP_POS='0,400'), G0 + ',2700:start:6', 3400, shots=50)
+    pg = run(g, dict(BASE, AC3_RED='invitado', AC3_MISSION=None, AC3_COOP_VER='2', AC3_COOP_POS='0,400'), G0, 3100)
+    ph.wait()
+    pg.wait()
+    m = re.search(r'el jugador 2 se fue en el VBlank (\d+)', log_of(h))
+    before, after = radar_blue(os.path.join(h, 'f03000.ppm')), radar_blue(os.path.join(h, 'f03300.ppm'))
+    good = bool(m) and before > 0 and after == 0
+    print('se_va: el invitado cierra; el anfitrion lo quita en el VBlank %s; punto azul en el radar: %d px antes, %d despues -> %s'
+          % (m.group(1) if m else '-', before, after, 'bien' if good else 'MAL'), flush=True)
+    return good
 
 
 def blue_bar(ppm):
@@ -315,7 +406,8 @@ def main():
         eu = args[i + 1]
         del args[i:i + 2]
     DISC, out = args[0], args[1]
-    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'tarjeta', 'aviso'] + (['disco'] if eu else [])
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'tarjeta', 'sonido', 'se_va', 'aviso'] + (
+        ['disco'] if eu else [])
     ok = True
     if 'red' in what:
         ok = test_net(out) and ok
@@ -331,6 +423,10 @@ def main():
         ok = test_menus(out) and ok
     if 'tarjeta' in what:
         ok = test_card(out) and ok
+    if 'sonido' in what:
+        ok = test_sound(out) and ok
+    if 'se_va' in what:
+        ok = test_leave(out) and ok
     if 'aviso' in what:
         ok = test_hud_message(out) and ok
         ok = test_hud_message(out, control=True) and ok

@@ -70,6 +70,8 @@ void SpuQuit(void);
 void SpuSetCommonAttr(const SpuCommonAttr *attr);
 void SpuSetVoiceAttr(const SpuVoiceAttr *arg);
 void SpuSetKey(int32_t on_off, uint32_t voice_bit);
+/* (etapa 10) si esta: se le avisa de cada encendido de voces (mascara), para saber de quien es cada sonido */
+extern void (*psx_spu_keyon_hook)(uint32_t voices);
 void SpuGetAllKeysStatus(char *status);
 uint16_t _spu_note2pitch(int cen_hi, int cen_lo, int note_hi, int note_lo);
 int32_t SpuSetTransferMode(int32_t mode);

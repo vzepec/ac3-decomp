@@ -276,3 +276,62 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
   desde el menú);
 - `VB=4500 tools/movil_red.sh <serie> <dir> 1` (PC↔aparato por el cable;
   `VB=0` y `GUION=0` para jugar).
+
+## Tras el paso 8: el sonido de cada jugador y quien se va (rama `etapa-10-paso-8-arreglos`)
+
+Dos cosas que vio el dueño jugando Retroid↔S24.
+
+### Los disparos del otro se oían en los dos
+
+El sonido es parte de la partida, porque el juego lee el estado de la SPU:
+no se puede dejar de reproducir en un aparato. Lo que se hace es no
+**mezclarlo en la salida**.
+
+- **Las voces:** `FUN_8002d8e4(sonido)` (o `FUN_8002d978`) pide un sonido.
+  `FUN_8002e2c0(sonido, voz)` lo deja en el registro de esa voz
+  (`DAT_800c4150 + voz*0x14`), y el gestor la enciende un paso después
+  con `SpuSetKey`. Medido con `AC3_COOP_DBGSONIDO`.
+- **De quién es:** al pedirlo se anota el contexto:
+  - el 2: su paso y su vista (`g_busy`);
+  - el 1: su paso de vuelo, de la entrada de `FUN_800715fc` a la de
+    `FUN_80044f70`; o el tono de fijado (`0x32`), que el 1 pide desde el
+    HUD del dibujo;
+  - si no, común.
+- **Al encenderse la voz** (`psx_spu_keyon_hook`), queda con su dueño; sin
+  petición anotada, común. En cada aparato, las voces del otro van a
+  `mute_out` de la SPU: no se suman a la salida, pero la envolvente, el fin
+  y la captura siguen igual, así que la partida no cambia (las huellas son
+  iguales).
+- **Medido** (`AC3_COOP_DBGVOCES`): metralleta `0x11` en la voz 4, misil
+  `0xe` en la 12, tono de fijado `0x32`.
+  - Las voces 0-2 son el motor (sonidos 0, `0x54` y `0x55`, pedidos al
+    empezar el vuelo en el paso del 1). Es uno, el del avión del 1, y se oye
+    en los dos.
+- `ac3_coop_set_local(1|2)` lo activa en red; en el PC, sin red,
+  `AC3_COOP_LOCAL`.
+
+### El avión de quien se iba seguía en la partida
+
+- **Si se va el que se une,** quien creó la partida quita su avión
+  (`ac3_coop_remove_p2`):
+  - entidad inactiva, con solo los bits de su ranura, como antes de
+    crearla;
+  - vida a 0 y fuera de los blancos de la IA, como derribado;
+  - su paso ya no se da ni reaparece. Todos los ganchos del cooperativo
+    miran `p2_active`, así que dejan de actuar.
+  - Sigue solo, con el aviso de siempre.
+- **Si se va quien creó la partida:** su avión es el del juego y sin él no
+  hay partida. El que se unió ve «El que creó la partida se ha
+  desconectado» y vuelve al menú.
+- En el PC, lo mismo para el anfitrión. Por eso `tools/red.py` compara las
+  huellas hasta que uno cierra: si el invitado acaba antes, el anfitrión
+  quita el avión en los últimos VBlank.
+
+### Resultados
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red.py sonido`, en red: dispara el 1 y después el 2 | cada aparato deja sin oír las voces 4 y 12 del otro y oye las suyas; el motor, en los dos; huellas iguales |
+| `tools/red.py sonido`: tono de fijado del 1 (misión 5), en el aparato del 2 | 8 peticiones, del jugador 1, sin oír |
+| `tools/red.py se_va`: el invitado se cierra en el VBlank 3100 | el anfitrión lo quita en el 3104; el punto azul del radar, 4 px antes y 0 después |
+| El resto de `tools/red.py` | igual |

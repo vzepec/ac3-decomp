@@ -32,6 +32,11 @@ uint16_t ac3_coop_p1_extra(uint16_t p2);
 /* (etapa 10, paso 8) los menus sin guion: la mision elegida se pone en la partida nueva (el menu de mision, el informe y
  * el avion ya son los suyos); ac3_coop_frame, en cada espera del VBlank */
 void ac3_coop_newgame(int mission);
+/* (etapa 10) en red: el jugador de este aparato (1 o 2). Los sonidos que pide el otro en su paso de vuelo (metralleta,
+ * misiles, sus avisos...) no se oyen aqui; la SPU los sigue procesando igual (la partida no cambia) */
+void ac3_coop_set_local(int player);
+/* (etapa 10) en red, si el jugador 2 se desconecta: su avion desaparece y el 1 sigue solo */
+void ac3_coop_remove_p2(void);
 void ac3_coop_frame(void);
 int ac3_coop_orders(void);   /* ordenes de modo ejecutadas tambien para el jugador 2 */
 int ac3_coop_revives(void);  /* reapariciones del jugador 2 */

@@ -5,6 +5,24 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-28 — Etapa 10, tras el paso 8: los disparos del otro no se oyen; el avión de quien se va desaparece
+
+- **Los disparos del otro se oían en los dos:**
+  - la voz de cada sonido se conoce al pedirlo (`FUN_8002e2c0(sonido,
+    voz)`) y se enciende un paso después;
+  - se anota el dueño por el contexto (el 2; el 1 en su paso de vuelo, o
+    su tono de fijado `0x32`);
+  - en cada aparato las voces del otro no van a la salida (`mute_out`),
+    pero la SPU las sigue procesando: la partida no cambia;
+  - el motor (voces 0-2) se oye en los dos.
+- **El avión de quien se iba seguía:**
+  - si se va el que se une, su entidad se desactiva, como antes de crearla;
+  - si se va quien creó la partida, el otro vuelve al menú con un aviso.
+- **Reproducir:** `python3 tools/red.py "<US>" <dir> sonido se_va`
+  (`AC3_COOP_DBGVOCES`, `AC3_COOP_LOCAL`).
+
+---
+
 ## 2026-10-28 — Etapa 10, paso 8 (en curso): menú Cooperativo, anuncio por UDP, saludo con disco y misión, ping
 
 - **En el lanzador** del APK de desarrollo, «Cooperativo»:

@@ -692,9 +692,13 @@ pad_done:
     }
     ac3_coop_frame();   /* (paso 8) la mision elegida en la partida nueva (si esta pedida) */
     static int lost_told;
-    if (ac3_net_lost() && !lost_told) {   /* (paso 8) el otro se fue: se sigue solo (su avion, suelto) */
+    if (ac3_net_lost() && !lost_told) {   /* (paso 8) el otro se fue */
         lost_told = 1;
-        if (G.ui_net) java_str("netLost", "");
+        if (ac3_net_is_host()) {   /* el 2: su avion desaparece y se sigue solo */
+            ac3_coop_remove_p2();
+            if (G.ui_net) java_str("netLost", "");
+        } else if (G.ui_net)   /* el 1 es el avion del juego: sin el no hay partida; de vuelta al menu */
+            java_str("netFail", "El que creó la partida se ha desconectado\nThe player who created the game disconnected");
     }
     if (ac3_net_active()) {   /* (etapa 10, paso 7) en red: el mando de este jugador (lo puesto en su puerto) por la red, y
                                * los de los dos para este VBlank */
@@ -874,6 +878,7 @@ static void *game_thread(void *arg) {
                 G.gfx_mode = (theirs.opts & AC3_NET_OPT_WIDE) ? 0 : G.gfx_mode == 3 ? 3 : 2;
                 LOG("red: imagen a %s, como el que crea", (theirs.opts & AC3_NET_OPT_WIDE) ? "16:9" : "4:3");
             }
+            ac3_coop_set_local(host ? 1 : 2);   /* (etapa 10) los sonidos del otro jugador no salen por este aparato */
             if (G.ui_net) {
                 java_str("netDone", theirs.name);
                 /* (paso 8) la tarjeta de quien crea, en los dos: cada aparato tiene la suya, el juego la lee al
