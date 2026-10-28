@@ -47,6 +47,8 @@ typedef struct { int base; int off; int kind; int group; } RrField;   /* base: 0
 #define NOBJ 32
 #define NFIELDS AC3_RR_NFIELDS
 static RrField FIELDS[NFIELDS];
+/* posicion del objeto k en g_render: 0 el de +0x3C4 (la entidad 0), 1..32 el arreglo, 33 la entidad 1 */
+static int obj_base(int k) { return k == 0 ? 0x3C4 : k <= NOBJ ? 0x474 + (k - 1) * 0x5C : 0x41C; }
 static void fields_init(void) {
     static const RrField cam[9] = {
         {1, 0x04, F_I32, 0}, {1, 0x08, F_I32, 0}, {1, 0x0C, F_I32, 0},   /* posición de la cámara */
@@ -57,8 +59,10 @@ static void fields_init(void) {
     /* objetos: posicion (+0, +4, +8) y orientacion (shorts en +0x10, +0x12 y +0x14). El de
      * g_render+0x3C4 tiene la misma forma: en la repeticion del final de mision (y la demostracion
      * del titulo) es el avion que sigue la camara, y lo dibuja el dibujo estatico (paso 3) */
-    for (int k = 0; k <= NOBJ; k++) {
-        int base = k == 0 ? 0x3C4 : 0x474 + (k - 1) * 0x5C, f = 9 + k * 6;
+    /* (etapa 9, paso 6) y el avion de la ranura 1 (g_render+0x414, el del otro jugador del cooperativo): sin el, entre
+     * pasos se quedaba quieto mientras la camara se movia; al volar a su lado, temblaba (lo vio el dueno) */
+    for (int k = 0; k <= NOBJ + 1; k++) {
+        int base = obj_base(k), f = 9 + k * 6;
         for (int j = 0; j < 3; j++) FIELDS[f + j] = (RrField){0, base + j * 4, F_I32, 2 + k};
         FIELDS[f + 3] = (RrField){0, base + 0x10, F_A16, 2 + k};
         FIELDS[f + 4] = (RrField){0, base + 0x12, F_A16, 2 + k};
@@ -161,7 +165,7 @@ static void mark0(RCpu *c) {
                 int f = 9 + k * 6;
                 int64_t dx = (int64_t)g_cur[f] - g_prev[f], dy = (int64_t)g_cur[f + 1] - g_prev[f + 1], dz = (int64_t)g_cur[f + 2] - g_prev[f + 2];
                 if (llabs(dx) + llabs(dy) + llabs(dz) < (1 << 18)) continue;
-                uint32_t b = G + (k == 0 ? 0x3C4 : 0x474 + (k - 1) * 0x5C);
+                uint32_t b = G + (uint32_t)obj_base(k);
                 fprintf(stderr, "obj vb %d k %d d %lld,%lld,%lld:", VSync(-1), k, (long long)dx, (long long)dy, (long long)dz);
                 for (int o = 0x18; o < 0x5C; o += 4) fprintf(stderr, " %08x", rd32(b + o));
                 fprintf(stderr, "\n");
