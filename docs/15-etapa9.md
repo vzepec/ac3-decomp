@@ -47,7 +47,7 @@ repetidor (datos móviles con CGNAT) sería lo último y opcional.
 | 9 | 2 | El avión del jugador: estructura, función de vuelo y todo lo que lo usa (cámara, HUD, radar, daño, fin de misión) | ✅ |
 | 9 | 3 | Un segundo avión con un segundo mando, en el PC, en la misma pantalla | ✅ vuela, se dibuja y dispara |
 | 9 | 4 | La IA elige entre los dos; daño, caída y reaparición del segundo | ✅ órdenes, caída y reaparición, disparo, daño y derribos; `SIN RESOLVER`: misiles guiados, estelas, IA |
-| 9 | 5 | Cada jugador con su vista sin romper el lockstep | |
+| 9 | 5 | Cada jugador con su vista sin romper el lockstep | ✅ en el PC: su cámara, su blanco y su fijado (misiles guiados) y su imagen, con la misma partida |
 | 10 | 6-7 | Lockstep en red local (recomp-net); menú Crear / Unirse | |
 | 11 | 8-9 | Internet (código para compartir); las 36 misiones en cooperativo | |
 
@@ -443,6 +443,9 @@ falla con y sin su puntería propia. Tampoco persigue forzando en su registro
 la marca de «en pantalla» que pone el HUD (`FUN_8003adb4`, `+0x20 |=
 0x60000`). Falta saber cómo elige blanco el disparo del jugador. Puede
 depender de la cámara y del HUD del jugador, que el 2 tendrá en el paso 5.
+**Resuelto en el paso 5:** esta prueba no tenía caso positivo (a 150 unidades
+nadie puede fijar). El fijado lo pone la lógica del HUD; con ella, sus
+misiles persiguen.
 
 ### Determinismo y estado
 
@@ -464,3 +467,151 @@ depender de la cámara y del HUD del jugador, que el 2 tendrá en el paso 5.
   misil nace bien (en su avión, banderas de la entidad 1 en `+0x6C`).
   Revisarlo en el paso 5, con la vista de cada uno.
 - **A quién persiguen los enemigos.**
+
+## Paso 5: la vista de cada jugador (rama `etapa-9-paso-5`)
+
+En el lockstep cada aparato simula la misma partida y dibuja a su jugador.
+Hacen falta dos cosas:
+- que lo que la vista decide y cambia la partida (blanco, fijado) exista
+  para los dos jugadores en los dos aparatos;
+- dibujar la imagen desde el jugador 2 sin tocar la partida.
+
+### Hallazgo: el fijado lo decide el HUD, durante el dibujo
+
+- **El paso de la cámara** (`FUN_80039f10`, al final del paso de vuelo)
+  elige el blanco:
+  - `DAT_800C568E`, con el cambio manual (`FUN_8003a658`) y el automático
+    (`FUN_8003a6f8`, `FUN_8003aa28`: la puntuación de cada entidad según su
+    distancia);
+  - devuelve el fijado (`DAT_800C5692`), que se guarda en
+    `DAT_800BBA78+0x18`.
+- **La lógica del HUD**, dentro del dibujo (`FUN_80039f8c`):
+  - `FUN_8003adb4` proyecta cada entidad con la matriz de la cámara (marca
+    «en pantalla» en `+0x20`: 0x10000 al alcance, 0x40000 delante, 0x60000
+    en el recuadro);
+  - `FUN_8003e9a0` y `FUN_8003ed34` llevan el recuadro del fijado
+    (`DAT_800BB890..97`: estado, entidad, tamaño, x, y) y, en el estado 2,
+    ponen el fijado.
+- **El misil del jugador** sale con `DAT_800BBA78+0x18` como blanco
+  (`FUN_800672d4`, cuarto argumento: -1 = sin blanco, va recto).
+
+Por eso los misiles del jugador 2 no perseguían: nadie hacía su paso de
+cámara ni su HUD. **Además, la prueba del paso 4 no tenía caso positivo:**
+- a 150 unidades **no se puede fijar**: la proyección desborda la división
+  de la GTE (H/SZ, bandera 17 → bit 31) y el blanco nunca cuenta como
+  delante, en la consola igual;
+- y en esa fase de la misión 0 el blanco lo impone el guion (entidad 0x20,
+  rama 0x800 de `FUN_8003a4cc`).
+
+Ni el jugador 1 fijaba ahí. Con la misión 5 a 600 unidades sí (abajo).
+
+### Cómo
+
+`psx/recomp/ac3_coop.c`:
+
+1. **Lo suyo de la vista**, en la RAM del juego y que se intercambia con su
+   contexto (`p2_begin` / `p2_end`):
+   - su cámara (0x200 bytes; antes se guardaba y se devolvía la del 1);
+     empieza como copia de la del 1 con los punteros a la entidad 0
+     cambiados a la 1;
+   - su estado del blanco y del fijado: `DAT_800C5680` (0x20 bytes),
+     `DAT_800BB890` (8), `DAT_800BB960` (4) y `DAT_800C57E0` (0x10);
+   - sus registros de pantalla (punteros en `DAT_800C50C0`, 0xC bytes).
+2. **Su vista en la simulación** (gancho a la entrada de `FUN_80039f10`),
+   en los dos aparatos y como el jugador 2:
+   - su paso de cámara, con sus argumentos;
+   - el ajuste de la cámara (`FUN_8007a03c`) y sus matrices (`FUN_80033214`);
+   - la lógica de su HUD (`FUN_8003adb4`, `FUN_8003e9a0`), sin la parte que
+     dibuja ni el contador de mensajes.
+
+   Lo que su HUD añade a la tabla de orden y a las primitivas se descarta.
+   Las matrices del 1 y la GTE vuelven a estar como antes.
+3. **La imagen desde su avión** (`ac3_coop_draw_p2`; en el PC,
+   `AC3_COOP_VER=2`):
+   - al empezar el dibujo del paso (entrada de `FUN_8007a03c` desde
+     `FUN_80033910`, justo tras la lógica: S1) se guardan la RAM, el
+     scratchpad y la GTE;
+   - en DrawOTag, se guarda el final del paso y se vuelve a S1;
+   - se quita de la cadena maestra la tabla de la misión;
+   - se vuelve a llamar a `FUN_80033910` como el jugador 2 con una lógica
+     vacía (`FUN_8003a2f8`, que repone las bandas de cine de
+     `g_render+0x28C`). Así se dibujan el mundo, los objetos y el HUD desde
+     él;
+   - se dibuja la lista y la RAM vuelve al final del paso.
+
+   **Desde S1 y no desde el final:** el HUD tiene sublistas fijas
+   (`0x8013B204`, doble búfer) que `FUN_80033910` no limpia. Dibujadas dos
+   veces, la cadena se cerraba en un ciclo (900 ms por imagen). Desde S1:
+   4.600 paquetes, unos 7 ms en total por imagen en el PC.
+
+### Resultados
+
+**Misiles guiados** (`tools/coop_vista.py misil`: misión 5, a 600 unidades
+detrás del enemigo 2, misil en el VBlank 3220):
+
+| | girado 0° | 4° | 6° |
+|---|---|---|---|
+| jugador 1 (control) | blanco 2, 140 → -20 | blanco 2, 140 → -20 | blanco 2, 140 → -20 |
+| jugador 2 con su vista | blanco 2, 140 → 30 | blanco 2, 140 → 30 | blanco 2, 140 → 120 |
+| jugador 2 sin ella (`AC3_COOP_VISTA=0`) | sin blanco, 140 → 30 | sin blanco, 140 → 120 | sin blanco, 140 → 120 |
+
+(Vida del enemigo 2 en el VBlank 3600; 140 → 120 es un misil que pasa cerca
+sin acertar.)
+
+- El jugador 2 ya fija (recuadro en estado 2, `+0x18` = 2) y su misil sale
+  con blanco y gira hacia el enemigo (`AC3_COOP_DBGMISIL`): girado 4° acierta
+  y sin su vista no.
+- A 6° su misil gira por el mismo camino que el del 1, unas 25 unidades al
+  lado (sale del otro ala), y no acierta. `SIN RESOLVER` si es solo eso.
+
+**La imagen desde el jugador 2** (capturas de la misión 0):
+- su altitud, su velocidad, su radar y su HUD;
+- al estrellarse, su cámara sigue sus restos con «BODY DAMAGE» en rojo
+  mientras el 1 sigue volando.
+
+**Lockstep:**
+- con la SPU, la huella de la RAM de los 4.001 VBlank es la misma dibujando
+  desde el jugador 1 o desde el 2 (`tools/coop_vista.py huella`);
+- en las 41 misiones (`tools/coop.py … --vista2`): 18.033 imágenes desde el
+  2, el jugador 1 igual que sin cooperativo, 0 fallos.
+
+**Autoprueba** (`AC3_COOP_AUTOPRUEBA`: el mismo redibujo como el jugador 1):
+- igual al original píxel a píxel salvo las 16 primeras imágenes de cada
+  vuelo;
+- es la transición de ruido con la que aparece la imagen, que se dibuja
+  fuera de la lista de la misión y en la vista del 2 no sale.
+
+### Opciones nuevas del binario del PC
+
+- `AC3_COOP_VER=2`: la imagen desde el jugador 2.
+- `AC3_COOP_VISTA=0`: sin su vista en la simulación.
+- `AC3_COOP_AUTOPRUEBA=1` (y `_VOLCAR=v`): el redibujo como el 1, comparado.
+- `AC3_COOP_TRAS1=k`, `AC3_COOP_GIRO1`: el jugador 1 detrás de la entidad k;
+  `AC3_COOP_DIST=u`: a u unidades (150 si no).
+- Medición:
+  - `AC3_COOP_BLANCO=n`: blanco y fijado de cada jugador;
+  - `AC3_COOP_MISIL=1`: blanco de cada misil lanzado;
+  - `AC3_COOP_DBGMISIL=1`: misiles en vuelo;
+  - `AC3_COOP_DBGHUD=k`: proyección del HUD del 1 sobre la entidad k;
+  - `AC3_COOP_SONDA_VISTA=v`: qué escribe su vista;
+  - `AC3_COOP_TIEMPOS=1`: tiempos y paquetes del redibujo.
+
+### Lo que falta
+
+- **En el aparato:**
+  - el redibujo está en el binario del PC; en el APK va en su DrawOTag;
+  - con las intermedias de 120 Hz, el redibujo de la etapa 8 guarda su S0
+    en el dibujo del 1 y habría que darle el del 2;
+  - en el aparato hay que medir el coste: 2 copias de 2 MB y un segundo
+    dibujo de la misión.
+- **Sonido:** los avisos del fijado del 2 suenan en los dos aparatos (son
+  de la partida: la SPU cuenta para el determinismo).
+- **`SIN RESOLVER`:**
+  - las estelas de sus misiles: en las dos vistas se ve una que nace junto
+    al radar, y no se ha podido decidir de dónde nace;
+  - a quién persiguen los enemigos;
+  - la transición de ruido en la vista del 2.
+
+**Reproducir:**
+- `python3 tools/coop_vista.py "<US>" <dir>`
+- `python3 tools/coop.py "<US>" <dir> 0-40 6 --vista2`

@@ -1,6 +1,6 @@
 # STATUS — estado actual del proyecto
 
-**Última actualización:** 2026-10-27 (etapa 9, paso 1: la partida es determinista, base del cooperativo en red; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
+**Última actualización:** 2026-10-27 (etapa 9, paso 5: la vista del jugador 2 en el PC, con la misma partida; publicada la `v1.13.2-alfa`; se trabaja con la versión americana)
 
 > Arranque en frío: `make brief`. Contrato: `CLAUDE.md` / `AGENTS.md`.
 > Flujo desde terminal: `docs/08-continuar-por-consola.md`.
@@ -17,7 +17,8 @@ juego desde el disco del usuario. Etapas 1-5 cerradas.
 (`docs/14-etapa8.md`). El mundo se redibuja con el código del juego en cada
 imagen intermedia, en un hilo de dibujo.
 **Etapa 9 — Juego en red (experimental): EN CURSO** (`docs/15-etapa9.md`, rama `etapa-9`). La campaña en
-cooperativo por lockstep, sin servidor propio. Paso 1 (determinismo) hecho.
+cooperativo por lockstep, sin servidor propio. Pasos 1-5 hechos en el PC: determinismo, el segundo avión, su
+combate y su vista.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -131,9 +132,25 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - sus misiles no persiguen;
   - las estelas de sus misiles nacen junto a la cámara del 1;
   - a quién persigue la IA.
-- **Siguiente:** paso 5, la vista propia del jugador 2: su cámara y su HUD,
-  sin romper el lockstep. Los misiles guiados probablemente dependen de
-  ello.
+- Los misiles guiados se resolvieron en el paso 5.
+
+**Etapa 9, paso 5 (rama `etapa-9-paso-5`): la vista de cada jugador, en el PC** (`tools/coop_vista.py`).
+- **Hecho:**
+  - su cámara, su blanco y su fijado son suyos, y su paso de cámara y la
+    lógica de su HUD van en la simulación: **sus misiles salen con blanco y
+    persiguen** (girado 4°, acierta; sin su vista, falla);
+  - la imagen desde su avión (`AC3_COOP_VER=2`): un redibujo en DrawOTag
+    que no toca la partida;
+  - la misma huella de la RAM dibujando desde el 1 o desde el 2 (con SPU), y
+    el 1 igual en las 41 misiones;
+  - corregido el paso 4: su prueba de misiles no tenía caso positivo.
+- **Pendiente:** llevarlo al APK (DrawOTag, intermedias de 120 Hz, coste en
+  el aparato); los avisos de fijado del 2 suenan en los dos.
+- **`SIN RESOLVER`:** las estelas de sus misiles; a quién persigue la IA; la
+  transición de ruido al empezar el vuelo no sale en su vista.
+- **Siguiente:** etapa 10, pasos 6-7: el lockstep en red local
+  (`recomp-net`) y el menú Crear / Unirse. Antes, llevar el cooperativo al
+  APK para probarlo en dos aparatos.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

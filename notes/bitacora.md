@@ -5,6 +5,41 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-27 — Etapa 9, paso 5: la vista del jugador 2; el fijado lo pone el HUD
+
+- **El fijado es cosa del HUD:**
+  - el paso de la cámara (`FUN_80039f10`) elige el blanco
+    (`DAT_800C568E`);
+  - la lógica del HUD, dentro del dibujo (`FUN_8003adb4`, `FUN_8003e9a0`,
+    `FUN_8003ed34`), lo fija (`DAT_800C5692` → `DAT_800BBA78+0x18`);
+  - el misil del jugador sale con ese blanco (`FUN_800672d4`; -1 = recto).
+- **Error del paso 4 corregido:** su prueba de misiles no tenía caso
+  positivo. A 150 unidades nadie puede fijar (la proyección desborda la
+  división de la GTE), y en esa fase de la misión 0 el guion impone el
+  blanco. Caso positivo nuevo: el jugador 1 en la misión 5, a 600 unidades.
+- **Hecho, en el PC:**
+  - su cámara, su estado del blanco y del fijado y sus registros de
+    pantalla son suyos;
+  - su paso de cámara y la lógica de su HUD se hacen en la simulación, en
+    los dos aparatos;
+  - su misil sale con blanco y gira: girado 4° acierta, sin su vista falla.
+- **Su imagen:**
+  - se redibuja en DrawOTag desde S1 (al empezar el dibujo del paso) con
+    `FUN_80033910` y una lógica vacía, y la RAM vuelve después;
+  - redibujar desde el final cerraba la cadena en un ciclo: las sublistas
+    fijas del HUD.
+- **Lockstep:** la misma huella de la RAM dibujando desde el 1 o desde el 2
+  (con SPU, 4.001 VBlank). En las 41 misiones con `--vista2`, el 1 igual y
+  0 fallos.
+- **Autoprueba:** el redibujo como el 1 da el original salvo las 16
+  primeras imágenes del vuelo (la transición de ruido, fuera de la lista).
+- **`SIN RESOLVER`:** las estelas de sus misiles; a quién persigue la IA; a
+  6° su misil gira pero no explota.
+- **Reproducir:** `python3 tools/coop_vista.py "<US>" <dir>`;
+  `python3 tools/coop.py "<US>" <dir> 0-40 6 --vista2`.
+
+---
+
 ## 2026-10-27 — Etapa 9, paso 4: el combate del jugador 2
 
 - **Órdenes de la misión:** las cinco que cambian el modo del jugador se

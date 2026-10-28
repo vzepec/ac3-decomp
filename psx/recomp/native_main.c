@@ -158,7 +158,36 @@ static void force_win_log(void);
  * tools/determinismo.py las compara). AC3_SPU=1: la SPU avanza un VBlank de audio en cada VBlank,
  * como en el APK (game_main.c); sin ella, SpuGetAllKeysStatus no cambia en el PC */
 static FILE *g_ramhash;
-static void coop_summary(void) { printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
+/* (etapa 9, paso 5) AC3_COOP_VER=2: la imagen desde el avion del jugador 2 (la partida, igual) */
+static int g_coop_view_n, g_coop_view_miss;
+static void coop_draw_cb(uint32_t ot, void *u) { psx_gpu_draw_list((PsxGpu *)u, ot); }
+static void coop_view_hook(PsxGpu *g, uint32_t ot) {
+    if (ac3_coop_draw_p2(ot, coop_draw_cb, g) == 0) g_coop_view_n++;
+    else { g_coop_view_miss++; psx_gpu_draw_list(g, ot); }
+}
+/* AC3_COOP_AUTOPRUEBA=1: en cada imagen, el original y el redibujo como el jugador 1 (ac3_coop_draw_p2), comparados */
+static int g_coop_self_n, g_coop_self_bad;
+static void save_vram(const PsxGpu *g, const char *name);
+static void coop_self_hook(PsxGpu *g, uint32_t ot) {
+    static PsxGpu a, b;
+    a = *g; b = *g;
+    psx_gpu_draw_list(&a, ot);
+    if (ac3_coop_draw_p2(ot, coop_draw_cb, &b) == 0) {
+        int nd = 0;
+        for (int y = g->area_y1; y <= g->area_y2; y++)
+            for (int x = g->area_x1; x <= g->area_x2; x++) nd += a.vram[y * 1024 + x] != b.vram[y * 1024 + x];
+        g_coop_self_n++;
+        if (nd && g_coop_self_bad++ < 20) printf("coop: autoprueba en el VBlank %d: %d pixeles distintos\n", last_vcount, nd);
+        if (nd && getenv("AC3_COOP_AUTOPRUEBA_VOLCAR") && last_vcount >= atoi(getenv("AC3_COOP_AUTOPRUEBA_VOLCAR")) && shots) {
+            save_vram(&a, "auto_original.ppm"); save_vram(&b, "auto_redibujo.ppm"); unsetenv("AC3_COOP_AUTOPRUEBA_VOLCAR");
+        }
+    }
+    *g = a;
+}
+static void coop_summary(void) {
+    if (g_coop_self_n) printf("coop: autoprueba: %d imagenes, %d distintas del original\n", g_coop_self_n, g_coop_self_bad);
+    if (g_coop_view_n || g_coop_view_miss) printf("coop: %d imagenes desde el jugador 2, %d como el original\n", g_coop_view_n, g_coop_view_miss);
+    printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
 static int g_spu_on;
 static void ram_hash(void) {
     uint64_t h[35];
@@ -867,6 +896,8 @@ int main(int argc, char **argv) {
     if (getenv("AC3_COOP")) {   /* etapa 9, paso 3: el segundo avion (mando del puerto 2: AC3_PAD2_ID=73, AC3_GUION2) */
         if (ac3_coop_install(V)) puts("AC3_COOP: esta version aun no tiene direcciones");
         else atexit(coop_summary);
+        if (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) psx_draw_list_hook = coop_view_hook;
+        if (getenv("AC3_COOP_AUTOPRUEBA")) psx_draw_list_hook = coop_self_hook;
     }
     if (getenv("AC3_RAMHASH") && !(g_ramhash = fopen(getenv("AC3_RAMHASH"), "wb"))) puts("AC3_RAMHASH: no se crea el archivo");
     if (getenv("AC3_SPU")) { g_spu_on = 1; psx_audio_connect(); }

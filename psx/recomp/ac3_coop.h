@@ -9,7 +9,12 @@
  * la entidad 1 (copia de la 0 la primera vez), se le reservan sus seis bloques con el asignador del
  * juego, se traduce el mando del puerto 2 con la funcion del juego, se cambia el contexto (entidad
  * 0 <-> 1, los seis punteros, la entrada) y se vuelve a llamar al paso del jugador. Despues, todo
- * vuelve a ser del jugador 1. Solo codigo nuestro: direcciones y llamadas al codigo del disco. */
+ * vuelve a ser del jugador 1. Solo codigo nuestro: direcciones y llamadas al codigo del disco.
+ *
+ * (paso 5) Su vista: su camara, su blanco y su fijado y sus registros de pantalla son suyos (se intercambian con su
+ * contexto); en la simulacion, en los dos aparatos, se hacen para el su paso de camara y la logica de su HUD (sin ellos
+ * sus misiles salen sin blanco). Y la imagen desde su avion (ac3_coop_draw_p2) se redibuja en DrawOTag sin tocar la
+ * partida: cada aparato puede dibujar a su jugador con la misma partida. */
 #ifndef AC3_COOP_H
 #define AC3_COOP_H
 
@@ -22,5 +27,8 @@ int ac3_coop_steps(void);
 int ac3_coop_orders(void);   /* ordenes de modo ejecutadas tambien para el jugador 2 */
 int ac3_coop_revives(void);  /* reapariciones del jugador 2 */
 uint32_t ac3_coop_entity(void);
+/* (paso 5) en DrawOTag (ot: la lista del paso): reconstruye la lista desde el avion del jugador 2, la pasa a draw y deja
+ * la RAM, el scratchpad y la GTE como estaban. -1 (sin hacer nada) si en este VBlank no hubo paso de vuelo con el 2 */
+int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u);
 
 #endif

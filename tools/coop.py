@@ -10,9 +10,11 @@ ranura 1, sus propios bloques y el mando del puerto 2; psx/recomp/ac3_coop.c). P
   movido y si su rumbo cambio (obedece a su mando), y si el jugador 1 sale igual que sin el 2.
 Las misiones con una introduccion larga (1, 12, 16, 29, 32) aun no vuelan en el VBlank 3600: se anotan
 aparte (con --vblank 8000 aparece en todas).
+Con --vista2 (paso 5), la ejecucion con el jugador 2 dibuja desde su avion (AC3_COOP_VER=2): el jugador 1
+debe salir igual (el redibujo no toca la partida) y se anota cuantas imagenes se dibujaron desde el 2.
 
 Uso:
-    python3 tools/coop.py <imagen_US> <salida> [misiones] [procesos] [--vblank V]
+    python3 tools/coop.py <imagen_US> <salida> [misiones] [procesos] [--vblank V] [--vista2]
     p. ej. python3 tools/coop.py "Rom/...(USA).bin" psx/build/coop 0-40 4
 """
 import os
@@ -29,12 +31,14 @@ GUION2 = '2700:lder:120,2900:laba:60,3100:lizq:120,3300:larr:60,3500:lder5:200'
 E0 = 0x80134F68 - 0x80134BAC   # entidad 0 respecto a g_render (la 1 va 0x58 despues)
 
 
-def run(exe, disc, d, m, vb, coop):
+def run(exe, disc, d, m, vb, coop, vista2=False):
     os.makedirs(d, exist_ok=True)
     env = dict(os.environ, AC3_PAD_ID='73', AC3_MISSION=str(m),
                AC3_DUMPMEM='%d,80000000,200000,%s' % (vb, os.path.join(d, 'ram.bin')))
     if coop:
         env.update(AC3_COOP='1', AC3_PAD2_ID='73', AC3_GUION2=GUION2, AC3_COOP_LOG='100')
+        if vista2:
+            env['AC3_COOP_VER'] = '2'
     with open(os.path.join(d, 'log.txt'), 'w') as log:
         p = subprocess.Popen([exe, disc, '-', str(vb + 1), d, '0', misiones.GUION], env=env, stdout=log,
                              stderr=subprocess.STDOUT, cwd=ROOT)
@@ -51,8 +55,12 @@ def entity(ram, e):
 
 def main():
     opts, args, i = sys.argv[1:], [], 0
-    vb = 3600
+    vb, vista2 = 3600, False
     while i < len(opts):
+        if opts[i] == '--vista2':
+            vista2 = True
+            i += 1
+            continue
         if opts[i] == '--vblank':
             vb = int(opts[i + 1])
             i += 2
@@ -72,7 +80,7 @@ def main():
         while jobs and len(running) < nproc:
             m, c = jobs.pop(0)
             d = os.path.join(out, str(m), 'con' if c else 'sin')
-            running.append((m, c, d, run(exe, disc, d, m, vb, c)))
+            running.append((m, c, d, run(exe, disc, d, m, vb, c, vista2)))
         m, c, d, p = running.pop(0)
         code = p.wait()
         log = open(os.path.join(d, 'log.txt'), errors='replace').read()
@@ -90,6 +98,8 @@ def main():
             p1s, p1c, p2 = entity(r0, gr + E0), entity(r1, gr + E0), entity(r1, gr + E0 + 0x58)
             act = re.search(r'entidad 1 \(\w+\) activa en el VBlank (\d+)', log1)
             steps = re.search(r'coop: (\d+) pasos', log1)
+            views = re.search(r'coop: (\d+) imagenes desde el jugador 2', log1)
+            vtxt = '; %s imagenes desde el 2' % views.group(1) if views else ''
             p2log = [l for l in log1.split('\n') if 'jugador 2 pos' in l]
             ry0 = int(p2log[0].split(' ang ')[1].split()[1]) if p2log else 0
             moved = sum(abs(a - b) for a, b in zip(p2['pos'], p1c['pos']))
@@ -100,10 +110,10 @@ def main():
                       % (m, vb, 'igual' if p1s['bytes'] == p1c['bytes'] else 'distinto'), flush=True)
                 continue
             print('mision %2d: %s; jugador 2 desde el VBlank %s, %s pasos, vida %d, rumbo %d -> %d, a %d del 1; '
-                  'jugador 1 %s que sin el 2' % (
+                  'jugador 1 %s que sin el 2%s' % (
                       m, 'bien' if ok else 'MAL (salida %s, %d fallos)' % (c1, f1), act.group(1) if act else '-',
                       steps.group(1) if steps else '0', p2['vida'], ry0, p2['ry'], moved,
-                      'igual' if p1s['bytes'] == p1c['bytes'] else 'distinto'), flush=True)
+                      'igual' if p1s['bytes'] == p1c['bytes'] else 'distinto', vtxt), flush=True)
     print('%d misiones: %d bien' % (len(ms), len(ms) - bad))
     return 1 if bad else 0
 

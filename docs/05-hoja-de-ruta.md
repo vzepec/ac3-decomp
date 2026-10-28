@@ -213,6 +213,8 @@ los dos), sin servidor propio para red local, zona Wi-Fi o IP directa.
 Precedente: el cooperativo de Mega Man X4 Recompiled (`recomp-net`, MIT).
 Etapa 9: dos aviones en un aparato; 10: red local; 11: Internet y las 36
 misiones. Requisito comprobado en el paso 1: la partida es determinista.
+En el PC (pasos 3-5) el segundo avión ya vuela, combate, persigue con sus
+misiles y tiene su propia imagen, con la misma partida en los dos.
 
 ---
 

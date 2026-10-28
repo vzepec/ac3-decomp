@@ -1,12 +1,15 @@
-/* Etapa 9, paso 3: el segundo avion por cambio de contexto (ver ac3_coop.h). */
+/* Etapa 9, pasos 3-5: el segundo avion por cambio de contexto y su vista (ver ac3_coop.h). */
 #include "ac3_coop.h"
 
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
+#include "psx_gte.h"
 #include "psx_libetc.h"
+#include "psx_libgte.h"
 #include "psx_mem.h"
 
 typedef struct {
@@ -25,6 +28,16 @@ typedef struct {
     uint32_t fx_base, fx_wind;   /* DAT_800BB958 (estado de efectos), DAT_800BB878 */
     uint32_t view[4][2];     /* estado de la vista y la partida del jugador 1 que el paso del 2 no debe tocar
                               * (direccion, bytes); la camara y g_render aparte */
+    uint32_t cam_step, cam_prep, cam_matrix;   /* (paso 5) el paso de la camara (FUN_80039f10: blanco), su ajuste
+                                                * (FUN_8007a03c) y sus matrices (FUN_80033214) */
+    uint32_t hud_proj, hud_lock;   /* la parte de logica del HUD: proyeccion de las entidades (FUN_8003adb4) y fijado
+                                    * (FUN_8003e9a0) */
+    uint32_t screen_ptrs;    /* los registros de pantalla de cada entidad (punteros en DAT_800C50C0) */
+    uint32_t pview[6][2];    /* el estado del blanco y del fijado del jugador (direccion, bytes): uno por jugador */
+    uint32_t mission_draw, noop;   /* el dibujo de la mision (FUN_80033910: la logica que recibe y luego el dibujo) y una
+                                    * funcion que no hace nada (FUN_8003a2f8: devuelve -1) */
+    uint32_t missile_launch, weapons;   /* el lanzamiento de un misil (FUN_800672d4) y el estado de las armas (DAT_800BBA60:
+                                         * misiles en + (0x32 + k * 0x29) * 4, mascara en + 0x552 * 4) */
 } CoopAddr;
 #define NORDERS 5
 
@@ -46,7 +59,12 @@ static const CoopAddr ADDR[] = {
      0x80083CFCu, {0x80081AD0u, 0x80083BACu, 0x80083AACu, 0x8008EB78u}, 0x800BB958u, 0x800BB878u,
      /* 0x800BE60C: jugador derribado (0 -> 1 al caer el 2); 0x800BB868: canales de sonido del motor
       * (FUN_8003012c los apaga); 0x800C6508..14: copias del control (FUN_80070d34) */
-     {{0x800BE60Cu, 4}, {0x800BB868u, 4}, {0x800C6508u, 0x10}, {0, 0}}},
+     {{0x800BE60Cu, 4}, {0x800BB868u, 4}, {0x800C6508u, 0x10}, {0, 0}},
+     0x80039F10u, 0x8007A03Cu, 0x80033214u, 0x8003ADB4u, 0x8003E9A0u, 0x800C50C0u,
+     /* DAT_800C5680..9F: blanco elegido (568e), fijado (5692), colores...; DAT_800BB890: el recuadro del fijado (estado,
+      * entidad, tamano, x, y); DAT_800BB960: pasos con el mismo blanco; DAT_800C57E0..EF */
+     {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0, 0}, {0, 0}},
+     0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u},
 };
 
 static const CoopAddr *A;
@@ -57,6 +75,11 @@ static uint32_t g_mine[6], g_input2, g_alloc_end;
 #define GUNFX_SIZE 8
 #define AIM_SIZE (64 * 0x34 + 0x14)
 static uint32_t g_gunfx2, g_aim2;
+/* (paso 5) su camara (0x200 bytes), su estado del blanco y del fijado (pview) y sus registros de pantalla */
+#define PVIEW_MAX 0x80
+#define SCR_REC 0xC
+#define SCR_SIZE (64 * SCR_REC)
+static uint32_t g_cam2, g_pview2, g_scr2;
 static int g_busy, g_steps, g_orders, g_revives;
 static uint32_t g_e1;
 
@@ -92,6 +115,45 @@ static void aim_init(void) {
     memcpy(psx_ptr(g_aim2), psx_ptr(lo), hi - lo);
     memcpy(psx_ptr(g_aim2) + (hi - lo), psx_ptr(A->aim_vec), 0x14);
 }
+/* (paso 5) lo de la vista que es de cada jugador: la camara (g_render + 0x28 apunta a ella), el estado del blanco y del
+ * fijado (pview) y los registros de pantalla de cada entidad (punteros en DAT_800C50C0, 0xC bytes, contiguos: la
+ * proyeccion del HUD). Los del jugador 2 viven aparte y se intercambian con su contexto */
+static int scr_range(uint32_t *lo, uint32_t *hi) {
+    *lo = 0xFFFFFFFFu; *hi = 0;
+    for (int k = 0; k < 64; k++) {
+        uint32_t p = rd32(A->screen_ptrs + 4 * k);
+        if (!p) continue;
+        if (p < *lo) *lo = p;
+        if (p + SCR_REC > *hi) *hi = p + SCR_REC;
+    }
+    return *hi > *lo && *hi - *lo <= SCR_SIZE;
+}
+static void xswap(uint32_t a, uint32_t b, uint32_t n) {
+    uint8_t t[0x200], *p = psx_ptr(a), *q = psx_ptr(b);
+    while (n) {
+        uint32_t k = n < sizeof t ? n : sizeof t;
+        memcpy(t, p, k); memcpy(p, q, k); memcpy(q, t, k);
+        p += k; q += k; n -= k;
+    }
+}
+static void view2_swap(void) {
+    xswap(rd32(rd32(G_RENDER) + 0x28), g_cam2, 0x200);
+    uint32_t o = 0;
+    for (int i = 0; i < 6 && A->pview[i][1]; i++) { xswap(A->pview[i][0], g_pview2 + o, A->pview[i][1]); o += A->pview[i][1]; }
+    uint32_t lo, hi;
+    if (scr_range(&lo, &hi)) xswap(lo, g_scr2, hi - lo);
+}
+/* la primera vez y al reaparecer: como los del jugador 1, pero la camara sigue a su avion */
+static void view2_init(uint32_t e0, uint32_t e1) {
+    uint32_t cam = rd32(rd32(G_RENDER) + 0x28);
+    memcpy(psx_ptr(g_cam2), psx_ptr(cam), 0x200);
+    for (uint32_t o = 0; o < 0x200; o += 4)   /* los punteros a la entidad 0, a la 1 */
+        if (rd32(g_cam2 + o) == e0) wr32(g_cam2 + o, e1);
+    uint32_t o = 0;
+    for (int i = 0; i < 6 && A->pview[i][1]; i++) { memcpy(psx_ptr(g_pview2 + o), psx_ptr(A->pview[i][0]), A->pview[i][1]); o += A->pview[i][1]; }
+    uint32_t lo, hi;
+    if (scr_range(&lo, &hi)) memcpy(psx_ptr(g_scr2), psx_ptr(lo), hi - lo);
+}
 /* llamada a una funcion del juego por debajo de la pila de quien llama */
 static void guest_call(const RCpu *c, uint32_t addr, uint32_t a0, uint32_t a1, uint32_t a2) {
     RCpu cb;
@@ -106,6 +168,26 @@ static void guest_call(const RCpu *c, uint32_t addr, uint32_t a0, uint32_t a1, u
     rc_ret = ret;
 }
 
+/* prueba: la entidad e detras de la k (misma posicion y rumbo, AC3_COOP_DIST unidades atras, 150 si no; su velocidad) y
+ * girada giro grados (prueba de la punteria: un misil recto falla). (paso 5) A menos de unas 250 unidades no se puede
+ * fijar: la proyeccion del HUD desborda la division de la GTE (H / SZ) y el blanco no cuenta como en pantalla */
+static void place_behind(uint32_t e, int k, const char *giro) {
+    int dist = getenv("AC3_COOP_DIST") ? atoi(getenv("AC3_COOP_DIST")) : 150;
+    uint32_t ek = rd32(rd32(A->ent_table) + 4 * (uint32_t)k);
+    memcpy(psx_ptr(e + 8), psx_ptr(ek + 8), 12);
+    memcpy(psx_ptr(e + 0x18), psx_ptr(ek + 0x18), 6);
+    int16_t ry;
+    memcpy(&ry, psx_ptr(ek + 0x1A), 2);
+    double a = ry * (6.283185307179586 / 16384.0);
+    wr32(e + 8, rd32(e + 8) - (uint32_t)(int32_t)(sin(a) * (dist << 12)));
+    wr32(e + 0x10, rd32(e + 0x10) - (uint32_t)(int32_t)(cos(a) * (dist << 12)));
+    memcpy(psx_ptr(e + 0x38), psx_ptr(ek + 0x38), 12);
+    if (giro) {
+        int16_t r = (int16_t)(ry + atoi(giro) * 16384 / 360);
+        memcpy(psx_ptr(e + 0x1A), &r, 2);
+    }
+}
+
 /* la primera vez en cada mision (la entidad 1 inactiva): sus bloques (con el asignador del juego,
  * si se reinicio desde la ultima reserva) como copia de los del jugador 1, y la entidad 1 como
  * copia de la 0, un poco por delante y a la derecha */
@@ -117,6 +199,9 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
         g_input2 = p; p += INPUT_SIZE;
         g_gunfx2 = p; p += GUNFX_SIZE;
         g_aim2 = p; p += AIM_SIZE;
+        g_cam2 = p; p += 0x200;
+        g_pview2 = p; p += PVIEW_MAX;
+        g_scr2 = p; p += SCR_SIZE;
         if (p > A->heap_limit) { printf("coop: sin memoria en el asignador del juego\n"); return -1; }
         wr32(st + HEAP_PTR, p);
         g_alloc_end = p;
@@ -126,6 +211,7 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
     memcpy(psx_ptr(g_input2), psx_ptr(st + INPUT_OFF), INPUT_SIZE);
     memset(psx_ptr(g_gunfx2), 0, GUNFX_SIZE);
     aim_init();
+    view2_init(e0, e1);
     memcpy(psx_ptr(e1), psx_ptr(e0), ENT_SIZE);
     wr32(e1, (rd32(e0) & ~0x3Fu) | 1u);   /* ranura 1 */
     static int dx = -1, dz;
@@ -135,21 +221,8 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
     }
     wr32(e1 + 8, rd32(e0 + 8) + ((uint32_t)dx << 12));
     wr32(e1 + 0x10, rd32(e0 + 0x10) + ((uint32_t)dz << 12));
-    if (getenv("AC3_COOP_TRAS")) {   /* prueba: detras de la entidad k (misma posicion y rumbo, 150 unidades atras) */
-        uint32_t ek = rd32(rd32(A->ent_table) + 4 * (uint32_t)atoi(getenv("AC3_COOP_TRAS")));
-        memcpy(psx_ptr(e1 + 8), psx_ptr(ek + 8), 12);
-        memcpy(psx_ptr(e1 + 0x18), psx_ptr(ek + 0x18), 6);
-        int16_t ry;
-        memcpy(&ry, psx_ptr(ek + 0x1A), 2);
-        double a = ry * (6.283185307179586 / 16384.0);
-        wr32(e1 + 8, rd32(e1 + 8) - (uint32_t)(int32_t)(sin(a) * (150 << 12)));
-        wr32(e1 + 0x10, rd32(e1 + 0x10) - (uint32_t)(int32_t)(cos(a) * (150 << 12)));
-        memcpy(psx_ptr(e1 + 0x38), psx_ptr(ek + 0x38), 12);   /* su velocidad */
-        if (getenv("AC3_COOP_GIRO")) {   /* y girado tantos grados (prueba de la punteria: un misil recto falla) */
-            int16_t r = (int16_t)(ry + atoi(getenv("AC3_COOP_GIRO")) * 16384 / 360);
-            memcpy(psx_ptr(e1 + 0x1A), &r, 2);
-        }
-    }
+    if (getenv("AC3_COOP_TRAS")) place_behind(e1, atoi(getenv("AC3_COOP_TRAS")), getenv("AC3_COOP_GIRO"));
+    if (getenv("AC3_COOP_TRAS1")) place_behind(e0, atoi(getenv("AC3_COOP_TRAS1")), getenv("AC3_COOP_GIRO1"));   /* (paso 5) el 1 */
     printf("coop: entidad 1 (%08x) activa en el VBlank %d\n", e1, VSync(-1));
     return 0;
 }
@@ -187,16 +260,14 @@ static void swap_out(const Swap *s) {
  * iba a sus restos (modo 0x501, objetivo la entidad 1), g_render + 0 pasaba de 2 a 3 y 0x800BE60C a 1
  * (jugador derribado) y se apagaban los canales del motor del 1; en cada paso, sus copias del control
  * (0x800C6508) y g_render + 0x28C. Se guardan antes y vuelven despues (AC3_COOP_DIFF lo mide) */
-typedef struct { uint8_t cam[CAM_SIZE], gr0[4], gr28c[8], v[4][16]; uint32_t camp, gr; } ViewKeep;
+typedef struct { uint8_t gr0[4], gr28c[8], v[4][16]; uint32_t gr; } ViewKeep;
 static void view_save(ViewKeep *k) {
-    k->gr = rd32(G_RENDER); k->camp = rd32(k->gr + 0x28);
-    memcpy(k->cam, psx_ptr(k->camp), CAM_SIZE);
+    k->gr = rd32(G_RENDER);
     memcpy(k->gr0, psx_ptr(k->gr), 4);
     memcpy(k->gr28c, psx_ptr(k->gr + 0x28C), 8);
     for (int i = 0; i < 4 && A->view[i][1]; i++) memcpy(k->v[i], psx_ptr(A->view[i][0]), A->view[i][1]);
 }
 static void view_restore(const ViewKeep *k) {
-    memcpy(psx_ptr(k->camp), k->cam, CAM_SIZE);
     memcpy(psx_ptr(k->gr), k->gr0, 4);
     memcpy(psx_ptr(k->gr + 0x28C), k->gr28c, 8);
     for (int i = 0; i < 4 && A->view[i][1]; i++) memcpy(psx_ptr(A->view[i][0]), k->v[i], A->view[i][1]);
@@ -210,14 +281,14 @@ static int keep_view(void) {
 }
 static ViewKeep g_vk;
 static void p2_begin(Swap *s) {
-    if (keep_view()) view_save(&g_vk);
+    if (keep_view()) { view_save(&g_vk); view2_swap(); }   /* (paso 5) su camara y su blanco, en lugar de los del 1 */
     swap_in(s);
     g_busy = 1;
 }
 static void p2_end(const Swap *s) {
     g_busy = 0;
     swap_out(s);
-    if (keep_view()) view_restore(&g_vk);
+    if (keep_view()) { view2_swap(); view_restore(&g_vk); }
 }
 /* llamar a una funcion del juego como el jugador 2 */
 static void as_p2(const RCpu *c, uint32_t addr, uint32_t a0, uint32_t a1, uint32_t a2) {
@@ -339,6 +410,100 @@ static void after_player(RCpu *c) {
     log_step(e0, e1);
 }
 
+/* (paso 5) la vista del jugador 2 en la simulacion: lo que para el 1 hacen el final del paso de vuelo (el paso de la
+ * camara: el blanco elegido, FUN_80039f10) y la logica del HUD del dibujo (proyeccion de las entidades y fijado; sin ella
+ * sus misiles no persiguen), con su camara y su estado. Lo que el HUD anade a la tabla de orden y a las primitivas se
+ * descarta; las matrices de la camara del 1 y la GTE vuelven a estar como antes. a1: los argumentos del paso de la
+ * camara del 1 (6 palabras en su pila; las del 2, justo debajo de la pila de quien llama) */
+static void p2_view(const RCpu *c, uint32_t a1) {
+    uint32_t gr = rd32(G_RENDER), blk1 = rd32(A->ctx[4]), blk2 = g_mine[4];
+    uint32_t args = (c->r[29] - 0x40u) & ~7u, ot = rd32(gr + 0x10), prim = rd32(gr + 0x14);
+    static uint8_t ot_keep[0x4000];
+    uint8_t mat[0x40];
+    PsxGte *gc = (PsxGte *)psx_gte_get_context(), gte = *gc;
+    memcpy(psx_ptr(args), psx_ptr(a1), 0x18);
+    wr32(args, rd32(blk2 + 0x1C));
+    if (rd32(a1 + 4) == rd32(blk1 + 8) && rd32(a1 + 8) == rd32(blk1 + 0xC) && rd32(a1 + 0xC) == rd32(blk1 + 0x10))
+        for (int i = 1; i < 4; i++) wr32(args + 4 * i, rd32(blk2 + 4 + 4 * i));   /* +8, +0xC, +0x10 (FUN_80032e70) */
+    memcpy(mat, psx_ptr(gr + 0x2C), sizeof mat);
+    memcpy(ot_keep, psx_ptr(ot), sizeof ot_keep);
+    Swap s;
+    p2_begin(&s);
+    uint32_t cam = rd32(gr + 0x28);
+    guest_call(c, A->cam_step, args, 0, 0);
+    wr32(cam + 0xBC, rd32(args + 0x10));
+    wr32(blk2 + 0x18, rd32(args + 0x14));
+    guest_call(c, A->cam_prep, cam, 0, 0);
+    guest_call(c, A->cam_matrix, cam, gr + 0x2C, gr + 0x4C);
+    guest_call(c, A->hud_proj, 0, 0, 0);
+    guest_call(c, A->hud_lock, 0, 0, 0);
+    p2_end(&s);
+    memcpy(psx_ptr(ot), ot_keep, sizeof ot_keep);
+    wr32(gr + 0x14, prim);
+    memcpy(psx_ptr(gr + 0x2C), mat, sizeof mat);
+    *gc = gte;
+}
+/* medicion: los tramos de la RAM que cambian desde ram0, fuera de la pila, de lo propio del jugador 2 y de las tablas de
+ * orden y primitivas */
+static void print_writes(const RCpu *c, const uint8_t *ram0, const char *what) {
+    uint32_t lo = (c->r[29] - 0x2000u) & 0x1FFFFFu, gr = rd32(G_RENDER);
+    uint32_t x0 = rd32(gr + 0x18) & 0x1FFFFFu, x1 = (rd32(gr + 0x24) & 0x1FFFFFu) + 0x1F800;
+    int n = 0;
+    uint32_t run = 0, run_start = 0;
+    printf("coop: %s en el VBlank %d escribe:", what, VSync(-1));
+    for (uint32_t a = 0; a <= PSX_RAM_SIZE; a += 4) {
+        uint32_t A32 = 0x80000000u | a;
+        int d = a < PSX_RAM_SIZE && memcmp(ram0 + a, psx_ram + a, 4) && !(a >= lo && a < 0x200000u) && !(a >= x0 && a < x1) &&
+                !(A32 >= g_mine[0] && A32 < g_alloc_end);
+        if (d && !run) run_start = a;
+        if (d) run++;
+        else if (run) { if (n++ < 60) printf(" %08x+%x", 0x80000000u | run_start, run * 4); run = 0; }
+    }
+    printf(" (%d tramos)\n", n);
+}
+static uint32_t g_draw_sp;   /* (paso 5) la pila del paso de vuelo de este VBlank (0: sin paso; no se redibuja) */
+static void camera_hook(RCpu *c) {
+    if (g_busy || !p2_active()) return;
+    g_draw_sp = c->r[29];
+    static int on = -1, probe = -2;   /* AC3_COOP_VISTA=0 (prueba): sin la vista del 2 en la simulacion;
+                                       * AC3_COOP_SONDA_VISTA=v (medicion): que escribe en el VBlank v */
+    if (on < 0) on = !getenv("AC3_COOP_VISTA") || atoi(getenv("AC3_COOP_VISTA")) != 0;
+    if (probe == -2) probe = getenv("AC3_COOP_SONDA_VISTA") ? atoi(getenv("AC3_COOP_SONDA_VISTA")) : -1;
+    if (getenv("AC3_COOP_DBGHUD")) {   /* depuracion: la proyeccion del HUD del 1 sobre la entidad k */
+        int k = atoi(getenv("AC3_COOP_DBGHUD"));
+        uint32_t r = rd32(A->aim_ptrs + 4 * (uint32_t)k), cam = rd32(rd32(G_RENDER) + 0x28), e0 = rd32(rd32(A->ent_table)),
+                 ek = rd32(rd32(A->ent_table) + 4 * (uint32_t)k), sr = rd32(A->screen_ptrs + 4 * (uint32_t)k);
+        printf("coop: VBlank %d hud1 %d: f20 %08x f24 %d camara %d %d %d avion %d %d %d blanco %d %d %d pantalla %04x %d %d\n", VSync(-1), k,
+               r ? rd32(r + 0x20) : 0, r ? rd32(r + 0x24) : 0, (int32_t)rd32(cam + 4) >> 12, (int32_t)rd32(cam + 8) >> 12,
+               (int32_t)rd32(cam + 0xC) >> 12, (int32_t)rd32(e0 + 8) >> 12, (int32_t)rd32(e0 + 0xC) >> 12, (int32_t)rd32(e0 + 0x10) >> 12,
+               (int32_t)rd32(ek + 8) >> 12, (int32_t)rd32(ek + 0xC) >> 12, (int32_t)rd32(ek + 0x10) >> 12,
+               sr ? *(uint16_t *)psx_ptr(sr + 6) : 0, sr ? *(int16_t *)psx_ptr(sr + 8) : 0, sr ? *(int16_t *)psx_ptr(sr + 10) : 0);
+    }
+    if (getenv("AC3_COOP_DBGMISIL")) {   /* depuracion: los misiles activos (DAT_800BBA60 + (0x32 + k * 0x29) * 4) */
+        uint32_t b = rd32(A->weapons), mask = rd32(b + 0x552 * 4);
+        for (int k = 0; k < 32; k++) {
+            if (!(mask >> k & 1)) continue;
+            uint32_t m = b + (0x32u + (uint32_t)k * 0x29u) * 4;
+            printf("coop: VBlank %d misil %d: banderas %08x dueno %08x blanco %d pos %d %d %d\n", VSync(-1), k, rd32(m), rd32(m + 0x6C),
+                   (int32_t)rd32(m + 0x70), (int32_t)rd32(m + 0x1C) >> 12, (int32_t)rd32(m + 0x20) >> 12, (int32_t)rd32(m + 0x24) >> 12);
+        }
+    }
+    if (!on) return;
+    static uint8_t ram0[PSX_RAM_SIZE];
+    int pr = probe >= 0 && VSync(-1) >= probe;
+    if (pr) memcpy(ram0, psx_ram, PSX_RAM_SIZE);
+    p2_view(c, c->r[4]);
+    if (pr) { print_writes(c, ram0, "la vista del 2"); probe = -1; }
+    static int log_every = -1;   /* AC3_COOP_BLANCO=n (medicion): cada n pasos, el blanco y el fijado de cada jugador */
+    if (log_every < 0) log_every = getenv("AC3_COOP_BLANCO") ? atoi(getenv("AC3_COOP_BLANCO")) : 0;
+    if (log_every > 0 && g_steps % log_every == 0) {
+        const uint8_t *v1 = psx_ptr(A->pview[0][0]), *v2 = psx_ptr(g_pview2), *l1 = psx_ptr(A->pview[1][0]), *l2 = psx_ptr(g_pview2 + 0x20);
+        printf("coop: VBlank %d blanco 1: %02x fijado %02x recuadro %d/%02x | blanco 2: %02x fijado %02x recuadro %d/%02x | +0x18 %d %d\n",
+               VSync(-1), v1[0xE], v1[0x12], l1[0], l1[1], v2[0xE], v2[0x12], l2[0], l2[1], (int32_t)rd32(rd32(A->ctx[4]) + 0x18),
+               (int32_t)rd32(g_mine[4] + 0x18));
+    }
+}
+
 /* (paso 4) las ordenes de la mision que cambian el modo del jugador (piloto automatico del inicio, control,
  * fin de mision...: FUN_8003703c, FUN_80059e1c...) solo escriben el bloque del jugador 1: al entrar en una,
  * se ejecuta antes para el jugador 2 con los mismos argumentos */
@@ -372,6 +537,99 @@ static void effects_hook(RCpu *c) {
 ORDER_HOOK(0) ORDER_HOOK(1) ORDER_HOOK(2) ORDER_HOOK(3) ORDER_HOOK(4)
 static void (*const ORDER_HOOKS[NORDERS])(RCpu *) = {order_hook0, order_hook1, order_hook2, order_hook3, order_hook4};
 
+/* medicion (AC3_COOP_MISIL=1): el blanco con el que se lanza cada misil del jugador (FUN_800672d4, cuarto argumento: el
+ * fijado, DAT_800BBA78 + 0x18; -1 sin fijado: el misil va recto) y de quien es */
+static void missile_hook(RCpu *c) {
+    printf("coop: VBlank %d misil del jugador %d con blanco %d\n", VSync(-1), g_busy ? 2 : 1, (int32_t)c->r[7]);
+}
+
+/* (paso 5) la imagen desde el avion del jugador 2, sin tocar la partida. Al empezar el dibujo del paso (entrada de
+ * FUN_8007a03c llamada desde FUN_80033910, justo tras la logica: S1) se guardan la RAM, el scratchpad y la GTE. En
+ * DrawOTag (la lista maestra de 3 entradas del paso, g_state + 8..0x10) se guarda el estado del final del paso, se vuelve
+ * a S1, se quita de la cadena maestra la tabla de orden de la mision (FUN_80033910 la enlazo al empezar: la maestra apunta
+ * a su final, su entrada 0 a lo que seguia), se vuelve a llamar a FUN_80033910 con una logica vacia como el jugador 2 (su
+ * entidad en la 0, sus bloques, su camara, su blanco: limpia la tabla, la vuelve a enlazar y dibuja el mundo, los
+ * objetos y el HUD desde el), se dibuja la lista y todo vuelve al final del paso. Desde S1 y no desde el final: el HUD
+ * tiene sublistas fijas que no limpia FUN_80033910 (0x8013b204...); dibujadas dos veces, la cadena se cerraba en un ciclo.
+ * Lo que se dibuja fuera de la lista de la mision no sale (la transicion de ruido de las 16 primeras imagenes del vuelo:
+ * AC3_COOP_AUTOPRUEBA lo mide) */
+static uint8_t g_s1_ram[PSX_RAM_SIZE], g_s1_scr[0x400];
+static PsxGte g_s1_gte;
+static int g_s1_ok, g_view2 = -1;
+static uint32_t g_s1_sp;   /* la pila de FUN_80033910 en S1 */
+static int view2_on(void) {
+    if (g_view2 < 0) g_view2 = (getenv("AC3_COOP_VER") && atoi(getenv("AC3_COOP_VER")) == 2) || getenv("AC3_COOP_AUTOPRUEBA");
+    return g_view2;
+}
+static void draw_start_hook(RCpu *c) {
+    if (g_busy || !view2_on() || !g_draw_sp || c->r[31] < A->mission_draw || c->r[31] >= A->mission_draw + 0x400) return;
+    memcpy(g_s1_ram, psx_ram, PSX_RAM_SIZE); memcpy(g_s1_scr, psx_scratch, sizeof g_s1_scr);
+    g_s1_gte = *(PsxGte *)psx_gte_get_context();
+    g_s1_sp = c->r[29];
+    g_s1_ok = 1;
+}
+static int g_rebuilding;
+static uint8_t g_bars[8];
+/* la logica vacia del redibujo: FUN_80033910 pone a cero las bandas de cine (g_render + 0x28C..0x293: altos de los
+ * rectangulos negros de arriba y abajo) antes de la logica, que les da valor; aqui vuelven a ser las de S1 */
+static void noop_hook(RCpu *c) {
+    (void)c;
+    if (g_rebuilding) memcpy(psx_ptr(rd32(G_RENDER) + 0x28C), g_bars, sizeof g_bars);
+}
+int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
+    if (!A || !g_draw_sp || !g_s1_ok || !p2_active()) { g_draw_sp = 0; g_s1_ok = 0; return -1; }
+    static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
+    PsxGte *gc = (PsxGte *)psx_gte_get_context(), gte = *gc;
+    struct timespec t0, t1, t2, t3;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    memcpy(ram, psx_ram, PSX_RAM_SIZE); memcpy(scr, psx_scratch, sizeof scr);
+    memcpy(psx_ram, g_s1_ram, PSX_RAM_SIZE); memcpy(psx_scratch, g_s1_scr, sizeof scr);
+    *gc = g_s1_gte;
+    g_draw_sp = 0; g_s1_ok = 0;
+    uint32_t gr = rd32(G_RENDER), st = rd32(g_state_ptr), otm = rd32(gr + 0x10), otend = (otm + 0x3FFC) & 0xFFFFFF;
+    uint32_t p = rd32(st + 8), guard = 0;
+    while ((rd32(p | 0x80000000u) & 0xFFFFFF) != otend && (rd32(p | 0x80000000u) & 0xFFFFFF) != 0xFFFFFF && ++guard < 100000)
+        p = rd32(p | 0x80000000u) & 0xFFFFFF;
+    int r = -1;
+    if ((rd32(p | 0x80000000u) & 0xFFFFFF) == otend) {   /* (si no, la tabla de la mision no esta en la cadena) */
+        wr32(p | 0x80000000u, (rd32(p | 0x80000000u) & 0xFF000000u) | (rd32(otm) & 0xFFFFFF));
+        memcpy(g_bars, psx_ptr(gr + 0x28C), sizeof g_bars);
+        RCpu cb;
+        memset(&cb, 0, sizeof cb);
+        cb.r[29] = g_s1_sp;
+        static int self = -1;   /* AC3_COOP_AUTOPRUEBA=1 (prueba): el mismo redibujo, pero como el jugador 1 (igual al original) */
+        if (self < 0) self = getenv("AC3_COOP_AUTOPRUEBA") != NULL;
+        Swap s;
+        if (!self) p2_begin(&s);
+        g_rebuilding = 1;
+        guest_call(&cb, A->mission_draw, A->noop, 0, 0);
+        g_rebuilding = 0;
+        if (!self) p2_end(&s);
+        clock_gettime(CLOCK_MONOTONIC, &t1);
+        if (getenv("AC3_COOP_TIEMPOS")) {   /* medicion: paquetes de la cadena (y si vuelve sobre si misma) */
+            uint32_t a = ot & 0xFFFFFF, n = 0, first_rep = 0;
+            static uint8_t seen[PSX_RAM_SIZE / 4];
+            memset(seen, 0, sizeof seen);
+            while (a != 0xFFFFFF && n < 2000000) {
+                if (seen[(a & 0x1FFFFC) >> 2]++ && !first_rep) first_rep = a | 0x80000000u;
+                a = rd32(a | 0x80000000u) & 0xFFFFFF; n++;
+            }
+            printf("coop: cadena de %u paquetes%s (primer repetido %08x)\n", n, n >= 2000000 ? " o mas" : "", first_rep);
+        }
+        draw(ot, u);
+        r = 0;
+    } else clock_gettime(CLOCK_MONOTONIC, &t1);
+    clock_gettime(CLOCK_MONOTONIC, &t2);
+    memcpy(psx_ram, ram, PSX_RAM_SIZE); memcpy(psx_scratch, scr, sizeof scr);
+    *gc = gte;
+    clock_gettime(CLOCK_MONOTONIC, &t3);
+    if (getenv("AC3_COOP_TIEMPOS")) {   /* medicion: ms en reconstruir, dibujar y restaurar */
+#define MS(a, b) ((b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) * 1e-6)
+        printf("coop: VBlank %d redibujo %.2f ms, dibujo %.2f ms, restaurar %.2f ms\n", VSync(-1), MS(t0, t1), MS(t1, t2), MS(t2, t3));
+    }
+    return r;
+}
+
 int ac3_coop_install(const Ac3Version *v) {
     A = NULL;
     for (size_t i = 0; i < sizeof ADDR / sizeof ADDR[0]; i++)
@@ -382,6 +640,9 @@ int ac3_coop_install(const Ac3Version *v) {
     mipsi_set_hook(A->after_player, after_player);
     for (int k = 0; k < NORDERS; k++) mipsi_set_hook(A->orders[k], ORDER_HOOKS[k]);
     mipsi_set_hook(A->effects, effects_hook);
+    mipsi_set_hook(A->cam_step, camera_hook);
+    if (view2_on()) { mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
+    if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
     return 0;
 }
 
