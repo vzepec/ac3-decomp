@@ -251,6 +251,7 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
 |---|---|
 | `tools/red.py menus`: el anfitrión elige la 5, los dos con `AC3_RED_MENUS` | partida nueva en el VBlank 704 con la 5 en los dos; el juego arranca la 5; huellas iguales |
 | Retroid crea Scramble desde el menú, el PC se une (`AC3_RED_MENUS`), menús recorridos a mano | el menú de misión muestra «SCRAMBLE»; partida nueva en el VBlank 1131 en los dos; el juego arranca la 5 en el 4218; 0 distintas |
+| El dueño, Retroid↔S24 con los menús a mano (Scramble) | «funciona perfecto»: partida nueva en el VBlank 1052 y la misión 5 en el 2161 en los dos; 60 huellas, 0 distintas; ping 13-17 ms. La Retroid esperó al S24 en casi cada imagen (13 ms de media): la fase del lockstep, sin efecto en la partida |
 | `tools/red.py aviso`: autopiloto del 1 y del 2, desde las dos vistas | la barra «AUTOPILOT» (911 px) solo en la vista de quien lo activa, la misma partida; control (`AC3_COOP_AVISO=0`): sale en las dos |
 | El dueño jugando Retroid↔S24 por Wi-Fi desde el menú, misión 1, 11 minutos | 690 huellas, 0 distintas; Retroid 60 fps, S24 120; ping 17-21 ms |
 | `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |

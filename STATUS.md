@@ -211,7 +211,9 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
     el 2 tiene su copia del aviso del HUD.
   - menús sin guion: los jugadores eligen dificultad, avión y armas; la
     misión elegida se pone en la partida nueva; sin tarjeta de memoria.
-- **Siguiente:** que el dueño pruebe los menús y el autopiloto; decidir si el
+  - el dueño lo probó Retroid↔S24 con los menús a mano: «funciona
+    perfecto».
+- **Siguiente:** decidir si el
   menú pasa al APK publicable; cerrar la etapa 10 (fusionar en `etapa-10`).
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y

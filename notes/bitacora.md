@@ -48,6 +48,8 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   - **sin tarjeta de memoria:** el juego la lee al arrancar, y con tarjeta
     en un solo lado las partidas se separaban desde el VBlank 120;
   - `tools/red.py menus`; Retroid↔PC por Wi-Fi, 0 distintas.
+  - el dueño, Retroid↔S24 con los menús a mano: «funciona perfecto» (0
+    distintas, la misión 5 en los dos).
 
 ---
 
