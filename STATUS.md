@@ -160,11 +160,12 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
     al avión del 1, y «el avión del jugador» se dibuja desde la entidad 0
     por su dirección (tercera persona y estelas);
   - segunda prueba: los sonidos con posición se oyen desde el jugador más
-    cercano (su impacto ya suena) y cada uno ve al otro en el radar como un
-    punto azul.
-- **Pendiente:** probar jugando el sonido y el radar; los avisos de fijado
-  del 2 suenan en los dos; la caída del 1 termina la misión; si hay otro
-  mapa (pausa), sin el otro jugador.
+    cercano (su impacto ya suena) y cada uno ve al otro en el radar y en el
+    mapa grande (cuadrado) como un punto azul.
+- **Pendiente:** probar jugando el mapa grande (el sonido y el radar ya,
+  bien); repetir con el S24 la prueba de dos aparatos con el mapa; los
+  avisos de fijado del 2 suenan en los dos; decidir si en cooperativo el 1
+  reaparece.
 - **`SIN RESOLVER`:** a quién persigue la IA; la transición de ruido al
   empezar el vuelo no sale en su vista.
 - **Siguiente:** etapa 10, pasos 7-8: el lockstep en red local

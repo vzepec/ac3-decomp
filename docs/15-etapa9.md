@@ -716,6 +716,18 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
     `FUN_8003da58` (`AC3_COOP_RADAR=0` lo quita);
   - comprobado separándolos 8.000 unidades: cada uno ve al otro en el lado
     opuesto, a la escala del juego (el radar abarca unas 60.000 unidades).
+- **Mapa grande** (tercera prueba: se abre manteniendo cuadrado, bit 0x8000
+  de `g_state+0x128`, la X de la Retroid):
+  - lo hacen `FUN_8003e0fc` y `FUN_8003c5f4`, desde `FUN_8003c014`;
+  - `FUN_8003e0fc` pone una baldosa de 2×2 por entidad, otra vez desde la
+    ranura 2: una sombra y luego el color, azul para el bando del jugador
+    (0x40). Van en `*DAT_800BB974 + 0x518`, con su número en
+    `*DAT_800BB970 + 0xC`, y `FUN_8003c5f4` las enlaza;
+  - **arreglo:** al entrar en `FUN_8003c5f4`, las dos baldosas del otro
+    jugador con la misma cuenta (`FUN_8003e66c`: casillas de x >> 23 y -z >>
+    23, ventana de 128 alrededor del jugador);
+  - medido (`AC3_COOP_DBGMAPA`, separados 30.000 y 10.000 unidades): el 1 ve
+    al 2 a (+15, −5) casillas y el 2 al 1 a (−15, +5).
 
 ### Resultados
 
@@ -725,7 +737,10 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
     RAM en los 4.081 VBlank (misión 0);
   - al revés también;
   - tras los arreglos de la vista, en la misión 5: la misma en los 4.004;
-  - con el oyente y el radar nuevos, también.
+  - con el oyente y el radar nuevos, también;
+  - con el mapa, la Retroid dibujando desde el 1 y desde el 2 y el S24 de la
+    ronda anterior: la misma. En el PC, la misma huella con los dos
+    jugadores abriendo el mapa, y las 41 misiones bien.
 - **Coste del redibujo del 2**, de media por imagen y como máximo:
 
   | Aparato | Media | Máximo | CPU |
@@ -752,8 +767,6 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
   habría que decidir si reaparece.
 - Los avisos de fijado del 2 suenan en los dos aparatos, y cada uno oye lo
   que pasa junto al otro (el oyente es el más cercano).
-- El mapa grande se ha comprobado como el alcance largo del radar; si hay
-  otro mapa (pausa), falta verlo.
 - `SIN RESOLVER`: a quién persiguen los enemigos; la transición de ruido en
   la vista del 2.
 

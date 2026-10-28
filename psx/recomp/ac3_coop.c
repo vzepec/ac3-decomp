@@ -47,6 +47,8 @@ typedef struct {
     uint32_t radar_draw, blip_draw, radar_center, radar_range;   /* el dibujo del radar (FUN_8003d8c0: desde la ranura
                                                                    * 2), el de un punto (FUN_8003da58), su centro y giro
                                                                    * (*DAT_800BB978) y su alcance (DAT_800C569C) */
+    uint32_t map_link, hud_counts, hud_sprites;   /* el mapa grande (cuadrado mantenido): FUN_8003c5f4 enlaza sus baldosas;
+                                                   * su numero en *DAT_800BB970 + 0xC, ellas en *DAT_800BB974 + 0x518 */
 } CoopAddr;
 #define NORDERS 5
 
@@ -74,7 +76,8 @@ static const CoopAddr ADDR[] = {
       * entidad, tamano, x, y); DAT_800BB960: pasos con el mismo blanco; DAT_800C57E0..EF; (paso 6) 0x800C6508..17: las
       * copias del control (FUN_80070d34; el horizonte de la cabina), antes protegidas como del jugador 1 */
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
-     0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu},
+     0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
+     0x8003C5F4u, 0x800BB970u, 0x800BB974u},
 };
 
 static const CoopAddr *A;
@@ -648,6 +651,50 @@ static void radar_hook(RCpu *c) {
     guest_call(c, A->blip_draw, g_blip, 0, 0);
 }
 
+/* (paso 6) el mapa grande (cuadrado mantenido): FUN_8003e0fc pone una baldosa de 2x2 por entidad (una sombra y luego el
+ * color: azul las del bando del jugador, bandera 0x40), tambien desde la ranura 2, en las primitivas de *DAT_800BB974 +
+ * 0x518 (0x10 bytes; su numero en *DAT_800BB970 + 0xC), y FUN_8003c5f4 las enlaza. Al entrar en esta, las dos del otro
+ * jugador, con la misma cuenta (FUN_8003e66c: x >> 23 y -z >> 23 en una rejilla de 256, ventana de 128 alrededor del
+ * jugador) */
+static int map_cell(uint32_t e, int *x, int *y) {
+    int a = ((int32_t)rd32(e + 8) >> 23) + 0x80, b = (-(int32_t)rd32(e + 0x10) >> 23) + 0x80;
+    *x = a < 0 ? 0 : a > 0xFF ? 0xFF : a;
+    *y = b < 0 ? 0 : b > 0xFF ? 0xFF : b;
+    return 0;
+}
+static int map_origin(int v) { return v < 0x40 ? 0 : v > 0xC0 ? 0x80 : v - 0x40; }
+static void map_hook(RCpu *c) {
+    (void)c;
+    if ((g_busy && !g_rebuilding) || !p2_active()) return;
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_RADAR") || atoi(getenv("AC3_COOP_RADAR")) != 0;
+    uint32_t tab = rd32(A->ent_table), me = rd32(tab), other = rd32(tab + 4);
+    int16_t hp;
+    memcpy(&hp, psx_ptr(other + 0x4E), 2);
+    if (!on || (~rd32(other) & 0x4000) || hp < 1) return;
+    int mx, my, ox, oy;
+    map_cell(me, &mx, &my);
+    map_cell(other, &ox, &oy);
+    int px = ox - map_origin(mx), py = oy - map_origin(my);
+    if (getenv("AC3_COOP_DBGMAPA"))   /* depuracion: casillas del jugador y del otro, y el punto en la ventana */
+        printf("coop: VBlank %d mapa%s: yo %d,%d otro %d,%d punto %d,%d (yo en %d,%d)\n", VSync(-1), g_rebuilding ? " (redibujo)" : "", mx, my, ox,
+               oy, px, py, mx - map_origin(mx), my - map_origin(my));
+    if (px < 0 || py < 0 || px >= 0x80 || py >= 0x80) return;
+    uint32_t counts = rd32(A->hud_counts), base = rd32(A->hud_sprites) + 0x518, n = rd32(counts + 0xC);
+    uint8_t tile[0x10];
+    memcpy(tile, psx_ptr(base), sizeof tile);   /* plantilla: la primera baldosa (TILE: 3 palabras, codigo 0x60-0x63) */
+    if (n > 0x70 || tile[3] != 3 || (tile[7] & 0xFC) != 0x60) return;
+    for (int k = 0; k < 2; k++) {   /* la sombra (como la primera pasada del juego) y el punto azul */
+        uint8_t *t = psx_ptr(base + (n + (uint32_t)k) * 0x10);
+        memcpy(t + 3, tile + 3, 1);
+        t[4] = k ? 0 : 0xFF; t[5] = k ? 0 : 0x40; t[6] = k ? 0xFF : 0x40;
+        t[7] = k ? (uint8_t)(tile[7] | 2) : (uint8_t)(tile[7] & 0xFD);
+        int16_t x = (int16_t)(px + 0x60 - !k), y = (int16_t)(py + 0x38 - !k), w = 2;
+        memcpy(t + 8, &x, 2); memcpy(t + 10, &y, 2); memcpy(t + 12, &w, 2); memcpy(t + 14, &w, 2);
+    }
+    wr32(counts + 0xC, n + 2);
+}
+
 /* medicion (AC3_COOP_MISIL=1): el blanco con el que se lanza cada misil del jugador (FUN_800672d4, cuarto argumento: el
  * fijado, DAT_800BBA78 + 0x18; -1 sin fijado: el misil va recto) y de quien es */
 static void missile_hook(RCpu *c) {
@@ -817,6 +864,7 @@ int ac3_coop_install(const Ac3Version *v) {
     mipsi_set_hook(A->cam_step, camera_hook);
     mipsi_set_hook(A->snd_rel, listener_hook);
     mipsi_set_hook(A->radar_draw, radar_hook);
+    mipsi_set_hook(A->map_link, map_hook);
     if (view2_on()) { mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
     if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
     if (getenv("AC3_COOP_DBGSONIDO")) for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);
