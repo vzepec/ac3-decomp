@@ -8,7 +8,7 @@ simula la partida entera, y lo único que viaja es el mando de cada jugador.
 | Paso | Qué | Estado |
 |---|---|---|
 | 7 | Lockstep por TCP (`psx/recomp/ac3_net.c`): PC↔PC y PC↔Retroid por el cable; saltar la introducción, pausa compartida | ✅ |
-| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | 🔄 menú, anuncio, saludo y ping: PC↔Retroid por Wi-Fi en los dos sentidos; falta Retroid↔S24 |
+| 8 | Menú Crear / Unirse en el APK, búsqueda en la red local, Wi-Fi entre dos aparatos | 🔄 menú, anuncio, saludo y ping; PC↔Retroid y Retroid↔S24 por Wi-Fi con la misma partida; falta que el dueño lo juegue |
 
 Solo código nuestro: sockets POSIX, iguales en el PC y en Android. No hay
 servidor: uno escucha (el anfitrión) y el otro conecta (el invitado).
@@ -215,7 +215,7 @@ motivo (otro disco, otra versión, sin conexión) y se vuelve al menú.
 | `tools/red.py` (red con la misión del anfitrión, control, vistas, anuncio, disco) | todas bien; el invitado adopta la misión; con la europea, «el otro tiene otro disco» |
 | PC crea, Retroid se une por Wi-Fi desde el menú (`MENU=1 tools/movil_red.sh`) | ve «PC · 01 (192.168.1.34)»; 66-74 huellas, 0 distintas; ping 14-25 ms |
 | Retroid crea (misión 1 de la lista), PC se une por Wi-Fi | el PC oye su anuncio («Retroid Pocket Flip2», «01 Transport»), adopta la misión; 74 huellas, 0 distintas |
-| Retroid ↔ S24 por Wi-Fi | pendiente |
+| Retroid crea (misión 1), S24 se une por Wi-Fi desde el menú, sin el PC | el S24 ve «Retroid Pocket Flip2 · 01 Transport (192.168.1.20)»; 89-90 huellas, 0 distintas; ping 17-19 ms; las dos pantallas en el mismo punto (S24 a 120 Hz con 3 intermedias, Retroid a 60) |
 
 **Reproducir:**
 - `python3 tools/red.py "<US>" <dir> [--eu "<EU>"]` (red, control, vistas,

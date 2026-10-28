@@ -204,9 +204,10 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   - el saludo lleva el disco, la misión, el nombre y las opciones, y quien
     se une las adopta;
   - el ping va en el contador.
-  - PC↔Retroid por Wi-Fi en los dos sentidos: 0 distintas.
-- **Siguiente:** Retroid ↔ S24 por Wi-Fi (los dos por USB para instalar y
-  ver el registro); decidir si el menú pasa al APK publicable.
+  - PC↔Retroid por Wi-Fi en los dos sentidos y Retroid↔S24 sin el PC: 0
+    distintas.
+- **Siguiente:** que el dueño juegue Retroid↔S24; decidir si el menú pasa
+  al APK publicable.
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta

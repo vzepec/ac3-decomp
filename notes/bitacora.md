@@ -26,7 +26,9 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 - **Reproducir:**
   - `python3 tools/red.py "<US>" <dir> --eu "<EU>"`;
   - `MENU=1 VB=4000 tools/movil_red.sh <serie> <dir> 1`.
-- **Pendiente:** Retroid ↔ S24 por Wi-Fi.
+- **Retroid ↔ S24 por Wi-Fi, sin el PC:** la Retroid crea la misión 1 y el
+  S24 la encuentra en su lista. 89-90 huellas, 0 distintas; ping 17-19 ms.
+- **Pendiente:** que el dueño lo juegue.
 
 ---
 
