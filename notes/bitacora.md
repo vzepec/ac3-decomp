@@ -29,6 +29,16 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
     las estelas de sus misiles ya nacen en su avión.
 - **«MISSION FAILED» en las pruebas:** lo provocaba el guion del 1 (cae
   hacia el VBlank 3850), no el 2.
+- **Segunda prueba del dueño:** sin sonido al impactar y sin el otro en el
+  radar.
+  - El oyente de los sonidos con posición era la cámara del 1, y el sonido
+    es parte de la partida (el gestor da voces según la posición y el juego
+    lee su estado). Ahora es la cámara del jugador más cercano a cada
+    sonido, igual en los dos aparatos. El impacto del 2 (0x1B) se oye
+    desde él.
+  - El radar va de la ranura 2 a la 63. El otro jugador se añade como un
+    punto azul con el registro y el dibujante del juego.
+  - Partidas iguales entre aparatos también con esto.
 - **Reproducir:** `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`;
   en el PC, `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'
   AC3_COOP_VER=2` contra el mismo guion en el 1.

@@ -43,6 +43,10 @@ typedef struct {
                                     * funcion que no hace nada (FUN_8003a2f8: devuelve -1) */
     uint32_t missile_launch, weapons;   /* el lanzamiento de un misil (FUN_800672d4) y el estado de las armas (DAT_800BBA60:
                                          * misiles en + (0x32 + k * 0x29) * 4, mascara en + 0x552 * 4) */
+    uint32_t snd_rel;        /* (paso 6) la posicion de un sonido respecto al oyente (FUN_8002e488(salida, oyente, fuente)) */
+    uint32_t radar_draw, blip_draw, radar_center, radar_range;   /* el dibujo del radar (FUN_8003d8c0: desde la ranura
+                                                                   * 2), el de un punto (FUN_8003da58), su centro y giro
+                                                                   * (*DAT_800BB978) y su alcance (DAT_800C569C) */
 } CoopAddr;
 #define NORDERS 5
 
@@ -70,7 +74,7 @@ static const CoopAddr ADDR[] = {
       * entidad, tamano, x, y); DAT_800BB960: pasos con el mismo blanco; DAT_800C57E0..EF; (paso 6) 0x800C6508..17: las
       * copias del control (FUN_80070d34; el horizonte de la cabina), antes protegidas como del jugador 1 */
      {{0x800C5680u, 0x20}, {0x800BB890u, 8}, {0x800BB960u, 4}, {0x800C57E0u, 0x10}, {0x800C6508u, 0x10}, {0, 0}},
-     0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u},
+     0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu},
 };
 
 static const CoopAddr *A;
@@ -86,7 +90,10 @@ static uint32_t g_gunfx2, g_aim2;
 #define SCR_REC 0xC
 #define SCR_SIZE (64 * SCR_REC)
 static uint32_t g_cam2, g_pview2, g_scr2;
+#define BLIP_SIZE 0x10
+static uint32_t g_blip;   /* (paso 6) el registro del punto del otro jugador en el radar */
 static int g_busy, g_steps, g_orders, g_revives;
+static int g_rebuilding;   /* (paso 5) dentro del redibujo del jugador 2 */
 static uint32_t g_e1;
 
 static uint32_t rd32(uint32_t a) { uint32_t v; memcpy(&v, psx_ptr(a), 4); return v; }
@@ -211,6 +218,7 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
         g_cam2 = p; p += 0x200;
         g_pview2 = p; p += PVIEW_MAX;
         g_scr2 = p; p += SCR_SIZE;
+        g_blip = p; p += BLIP_SIZE;
         if (p > A->heap_limit) { printf("coop: sin memoria en el asignador del juego\n"); return -1; }
         wr32(st + HEAP_PTR, p);
         g_alloc_end = p;
@@ -584,6 +592,62 @@ static void effects_hook(RCpu *c) {
 ORDER_HOOK(0) ORDER_HOOK(1) ORDER_HOOK(2) ORDER_HOOK(3) ORDER_HOOK(4)
 static void (*const ORDER_HOOKS[NORDERS])(RCpu *) = {order_hook0, order_hook1, order_hook2, order_hook3, order_hook4};
 
+/* (paso 6) el oyente: los sonidos con posicion (explosiones, motores cercanos: FUN_8002f16c / f20c y el gestor de
+ * emisores FUN_8002f758) se calculan respecto a la camara del jugador 1 (oyente = camara + 4), asi que los impactos del
+ * 2 lejos del 1 no se oian. El oyente de cada sonido pasa a ser la camara del jugador mas cercano a el. El sonido es parte
+ * de la partida (el gestor da y quita voces segun la posicion, y el juego lee el estado de las voces): un oyente por
+ * aparato separaria las partidas; esta regla es la misma en los dos. AC3_COOP_OYENTE=0 (prueba): como el juego */
+static int64_t dist2(uint32_t a, uint32_t b) {
+    int64_t s = 0;
+    for (int i = 0; i < 3; i++) { int64_t d = ((int32_t)rd32(a + 4 * i) >> 12) - ((int32_t)rd32(b + 4 * i) >> 12); s += d * d; }
+    return s;
+}
+static void listener_hook(RCpu *c) {
+    if (g_busy || !p2_active()) return;
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_OYENTE") || atoi(getenv("AC3_COOP_OYENTE")) != 0;
+    uint32_t l1 = rd32(rd32(G_RENDER) + 0x28) + 4, l2 = g_cam2 + 4, src = c->r[6];
+    if (!on || c->r[5] != l1 || src < 0x80000000u) return;
+    if (dist2(src, l2) < dist2(src, l1)) {
+        c->r[5] = l2;
+        if (getenv("AC3_COOP_DBGOYENTE"))   /* depuracion: los sonidos que se oyen desde el 2, y desde donde se piden */
+            printf("coop: VBlank %d sonido desde la camara del 2 (a %lld; de la del 1, %lld) pedido desde %08x\n", VSync(-1),
+                   (long long)dist2(src, l2), (long long)dist2(src, l1), c->r[31]);
+    }
+}
+
+/* (paso 6) el radar: su dibujo (FUN_8003d8c0) y su logica (FUN_8003d46c) van de la ranura 2 a la 63, sin los dos
+ * jugadores. Al entrar en su dibujo, el otro jugador (la ranura 1 de la tabla: el 2 en la imagen del 1; el 1 en el
+ * redibujo del 2) como un punto azul mas, con su registro calculado como el juego (posicion respecto al centro y giro
+ * del radar, rumbo, si va por encima o por debajo) y dibujado con la funcion del juego. En los dos aparatos igual.
+ * AC3_COOP_RADAR=0 (prueba): como el juego */
+static void radar_hook(RCpu *c) {
+    if ((g_busy && !g_rebuilding) || !p2_active()) return;
+    static int on = -1;
+    if (on < 0) on = !getenv("AC3_COOP_RADAR") || atoi(getenv("AC3_COOP_RADAR")) != 0;
+    uint32_t tab = rd32(A->ent_table), me = rd32(tab), other = rd32(tab + 4), rc = rd32(A->radar_center);
+    int32_t range = (int32_t)rd32(A->radar_range);
+    int16_t hp;
+    memcpy(&hp, psx_ptr(other + 0x4E), 2);
+    if (!on || !rc || range <= 0 || (~rd32(other) & 0x4000) || hp < 1) return;
+    int32_t dx = ((int32_t)rd32(other + 8) >> 12) - (int32_t)rd32(rc), dz = (int32_t)rd32(rc + 4) - ((int32_t)rd32(other + 0x10) >> 12);
+    int32_t cs = (int32_t)rd32(rc + 8), sn = (int32_t)rd32(rc + 12);
+    int32_t x = ((dx * sn + dz * cs) >> 12 << 5) / range, y = ((-dx * cs + dz * sn) >> 12 << 5) / range;
+    if ((uint32_t)(x + 0x1F) >= 0x3F || (uint32_t)(y + 0x1F) >= 0x3F) return;
+    uint8_t *b = psx_ptr(g_blip);
+    memset(b, 0, BLIP_SIZE);
+    b[0] = range > 0x7FFF ? 9 : 1;   /* visible; con el alcance del mapa grande, como los demas puntos */
+    b[2] = 2;                         /* azul */
+    int32_t dy = ((int32_t)rd32(me + 0xC) - (int32_t)rd32(other + 0xC)) >> 12;
+    b[5] = dy > 0x1000 ? 2 : dy < -0x1000 ? 0 : 1;
+    int16_t r1, r2;
+    memcpy(&r1, psx_ptr(other + 0x1A), 2); memcpy(&r2, psx_ptr(me + 0x1A), 2);
+    b[4] = (uint8_t)((((int32_t)r1 - r2 + 0x200) & 0x3FFF) >> 10);
+    b[6] = (uint8_t)(x + 0x2C);
+    b[7] = (uint8_t)(y + 0x2E);
+    guest_call(c, A->blip_draw, g_blip, 0, 0);
+}
+
 /* medicion (AC3_COOP_MISIL=1): el blanco con el que se lanza cada misil del jugador (FUN_800672d4, cuarto argumento: el
  * fijado, DAT_800BBA78 + 0x18; -1 sin fijado: el misil va recto) y de quien es */
 static void missile_hook(RCpu *c) {
@@ -616,7 +680,6 @@ static void draw_start_hook(RCpu *c) {
     g_s1_ok = 1;
     ac3_rr_mute = 1;   /* (paso 6) el redibujo de las intermedias anota el del jugador 2, no este */
 }
-static int g_rebuilding;
 static uint8_t g_bars[8];
 /* la logica vacia del redibujo: FUN_80033910 pone a cero las bandas de cine (g_render + 0x28C..0x293: altos de los
  * rectangulos negros de arriba y abajo) antes de la logica, que les da valor; aqui vuelven a ser las de S1 */
@@ -729,6 +792,18 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     return r;
 }
 
+/* depuracion (AC3_COOP_DBGSONIDO=1): las llamadas a las funciones de sonido mas usadas del juego, con quien llama */
+static const uint32_t SND_FN[10] = {0x8002D8E4u, 0x8002D978u, 0x8002DB40u, 0x8002DC60u, 0x8002E3F8u, 0x8002E688u, 0x8002E5F8u,
+                                    0x8002E488u, 0x8002E2C0u, 0x8002EE80u};
+static void snd_log(const RCpu *c, int k) {
+    printf("coop: VBlank %d sonido %08x(%x, %x, %x) desde %08x%s\n", VSync(-1), SND_FN[k], c->r[4], c->r[5], c->r[6], c->r[31],
+           g_busy ? " (como el 2)" : "");
+}
+#define SND_HOOK(k) static void snd_hook##k(RCpu *c) { snd_log(c, k); }
+SND_HOOK(0) SND_HOOK(1) SND_HOOK(2) SND_HOOK(3) SND_HOOK(4) SND_HOOK(5) SND_HOOK(6) SND_HOOK(7) SND_HOOK(8) SND_HOOK(9)
+static void (*const SND_HOOKS[10])(RCpu *) = {snd_hook0, snd_hook1, snd_hook2, snd_hook3, snd_hook4, snd_hook5, snd_hook6, snd_hook7,
+                                              snd_hook8, snd_hook9};
+
 int ac3_coop_install(const Ac3Version *v) {
     A = NULL;
     for (size_t i = 0; i < sizeof ADDR / sizeof ADDR[0]; i++)
@@ -740,8 +815,11 @@ int ac3_coop_install(const Ac3Version *v) {
     for (int k = 0; k < NORDERS; k++) mipsi_set_hook(A->orders[k], ORDER_HOOKS[k]);
     mipsi_set_hook(A->effects, effects_hook);
     mipsi_set_hook(A->cam_step, camera_hook);
+    mipsi_set_hook(A->snd_rel, listener_hook);
+    mipsi_set_hook(A->radar_draw, radar_hook);
     if (view2_on()) { mipsi_set_hook(A->cam_prep, draw_start_hook); mipsi_set_hook(A->noop, noop_hook); }
     if (getenv("AC3_COOP_MISIL")) mipsi_set_hook(A->missile_launch, missile_hook);
+    if (getenv("AC3_COOP_DBGSONIDO")) for (int k = 0; k < 10; k++) mipsi_set_hook(SND_FN[k], SND_HOOKS[k]);
     return 0;
 }
 

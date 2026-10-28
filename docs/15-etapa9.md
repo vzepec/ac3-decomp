@@ -678,6 +678,45 @@ persona coinciden con las del 1 (horizonte, alabeo, altitud). La lectura del
 redibujo de los bloques del 1 por su dirección (`AC3_COOP_LECTURAS`) da
 cero.
 
+### Sonido y radar (segunda prueba del dueño)
+
+«Los misiles salen del avión, pero al impactar no suena nada; el jugador 1
+no aparece en el minimapa ni en el mapa grande, y al revés.»
+
+- **Sonido:**
+  - los sonidos con posición se calculan respecto a la cámara del jugador
+    1 (`FUN_8002e488(salida, oyente, fuente)`, con el oyente en la cámara
+    + 4);
+  - los sueltos (`FUN_8002f16c` / `f20c`: explosiones, impactos) siempre
+    suenan, pero la distancia les fija volumen y panorama: el impacto del 2
+    lejos del 1 sonaba casi a cero;
+  - el gestor de emisores (`FUN_8002f758`) además da voces según la
+    posición respecto al oyente, y el driver (`FUN_8002df8c`) lee el estado
+    de las voces (`SpuGetAllKeysStatus`): **un oyente distinto en cada
+    aparato separaría las partidas**;
+  - **arreglo, igual en los dos aparatos:** cada sonido se oye desde la
+    cámara del jugador más cercano a él (gancho a la entrada de
+    `FUN_8002e488`; `AC3_COOP_OYENTE=0` lo quita);
+  - medido (`AC3_COOP_DBGOYENTE`): el impacto del misil del 2 (sonido 0x1B,
+    VBlank 3276) se calcula desde su cámara, a 496 unidades (de la del 1,
+    a 27.800); y los motores de los enemigos que tiene cerca;
+  - consecuencia: el 1 también oye lo que pasa junto al 2, como si
+    estuviera allí. Un oyente por aparato pediría separar el sonido de la
+    partida.
+- **Radar:**
+  - su lógica (`FUN_8003d46c`) y su dibujo (`FUN_8003d8c0`) van de la
+    ranura 2 a la 63: ninguno de los dos jugadores sale;
+  - el color de cada punto lo da su registro (`[2]`: 0 gris, 1 rojo, 2
+    azul, 3 amarillo); con el alcance del mapa grande (`DAT_800C569C` >
+    0x7FFF), el punto pequeño;
+  - **arreglo:** al entrar en su dibujo, el otro jugador (la ranura 1 de la
+    tabla: el 2 en la imagen del 1; el 1 en el redibujo del 2) como un punto
+    azul más. Su registro se calcula como el juego (centro y giro del radar
+    en `*DAT_800BB978`, rumbo, por encima o por debajo) y lo dibuja
+    `FUN_8003da58` (`AC3_COOP_RADAR=0` lo quita);
+  - comprobado separándolos 8.000 unidades: cada uno ve al otro en el lado
+    opuesto, a la escala del juego (el radar abarca unas 60.000 unidades).
+
 ### Resultados
 
 - **Lockstep entre aparatos** (`tools/movil_coop.sh`, mismos mandos por
@@ -685,7 +724,8 @@ cero.
   - Retroid dibujando desde el 1 y S24 desde el 2: la misma huella de la
     RAM en los 4.081 VBlank (misión 0);
   - al revés también;
-  - tras los arreglos de la vista, en la misión 5: la misma en los 4.004.
+  - tras los arreglos de la vista, en la misión 5: la misma en los 4.004;
+  - con el oyente y el radar nuevos, también.
 - **Coste del redibujo del 2**, de media por imagen y como máximo:
 
   | Aparato | Media | Máximo | CPU |
@@ -710,12 +750,17 @@ cero.
   guion, un segundo mando o los controles del propio aparato.
 - La caída del 1 termina la misión, como en el juego. En cooperativo
   habría que decidir si reaparece.
-- Los avisos de fijado del 2 suenan en los dos aparatos.
+- Los avisos de fijado del 2 suenan en los dos aparatos, y cada uno oye lo
+  que pasa junto al otro (el oyente es el más cercano).
+- El mapa grande se ha comprobado como el alcance largo del radar; si hay
+  otro mapa (pausa), falta verlo.
 - `SIN RESOLVER`: a quién persiguen los enemigos; la transición de ruido en
   la vista del 2.
 
 **Reproducir:**
 - `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`
+- Radar: `AC3_COOP_POS=8000,0` con `AC3_COOP_VER=1` y `2`; sonido:
+  `AC3_COOP_DBGOYENTE=1` en la prueba del misil de `tools/coop_vista.py`
 - `python3 tools/coop_vista.py "<US>" <dir>`
 - En el PC, la prueba del alabeo: `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'`
   con `AC3_COOP_VER=2`, contra el mismo guion en el jugador 1.
