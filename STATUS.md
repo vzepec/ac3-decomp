@@ -19,8 +19,8 @@ imagen intermedia, en un hilo de dibujo.
 **Etapa 9 — Juego en red (experimental): EN CURSO** (`docs/15-etapa9.md`, rama `etapa-9`). La campaña en
 cooperativo por lockstep, sin servidor propio. Pasos 1-6 hechos: determinismo, el segundo avión, su combate y su
 vista (PC), y el cooperativo en el APK (dos aparatos, cada uno con su jugador, la misma partida).
-**Etapa 10 — Cooperativo en red local: EN CURSO** (`docs/16-etapa10.md`, rama `etapa-10`). Paso 7 hecho: el lockstep
-por TCP, jugado entre el PC y la Retroid.
+**Etapa 10 — Cooperativo en red local: pasos 7 y 8 hechos** (`docs/16-etapa10.md`, rama `etapa-10`). El lockstep por TCP
+y el menú Cooperativo del APK de desarrollo (Crear / Unirse por Wi-Fi), jugado Retroid↔S24; aún no en el publicable.
 
 **Ramas:** `main` (base y releases) y `develop`. Cada trabajo nuevo va en su
 rama (`etapa-6-paso-N`), que se fusiona y se borra al subir.
@@ -214,8 +214,10 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
     va a los dos, así que se puede cargar su partida guardada.
   - el dueño lo probó Retroid↔S24 con los menús a mano: «funciona
     perfecto».
-- **Siguiente:** decidir si el
-  menú pasa al APK publicable; cerrar la etapa 10 (fusionar en `etapa-10`).
+  - el dueño cargó su partida guardada en red (Retroid↔S24): 0 distintas.
+- **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
+  al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
+  (Internet; las 36 misiones en cooperativo).
 
 **Al publicar una release:** la nota lleva `## Novedades de la …` y
 `## What's new in …` (el menú muestra la del idioma elegido). La etiqueta
