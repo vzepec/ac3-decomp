@@ -723,9 +723,13 @@ no aparece en el minimapa ni en el mapa grande, y al revés.»
     ranura 2: una sombra y luego el color, azul para el bando del jugador
     (0x40). Van en `*DAT_800BB974 + 0x518`, con su número en
     `*DAT_800BB970 + 0xC`, y `FUN_8003c5f4` las enlaza;
-  - **arreglo:** al entrar en `FUN_8003c5f4`, las dos baldosas del otro
+  - **arreglo:** al entrar en `FUN_8003c5f4`, una baldosa más para el otro
     jugador con la misma cuenta (`FUN_8003e66c`: casillas de x >> 23 y -z >>
     23, ventana de 128 alrededor del jugador);
+  - primero copiaba el estilo del juego: la sombra roja de su primera
+    pasada (0xFF, 0x40, 0x40) y el azul semitransparente encima. En la
+    Retroid se veía rojo, como un enemigo (lo vio el dueño). Ahora es un
+    cuadrado azul opaco de 3×3;
   - medido (`AC3_COOP_DBGMAPA`, separados 30.000 y 10.000 unidades): el 1 ve
     al 2 a (+15, −5) casillas y el 2 al 1 a (−15, +5).
 

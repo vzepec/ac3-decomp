@@ -653,7 +653,7 @@ static void radar_hook(RCpu *c) {
 
 /* (paso 6) el mapa grande (cuadrado mantenido): FUN_8003e0fc pone una baldosa de 2x2 por entidad (una sombra y luego el
  * color: azul las del bando del jugador, bandera 0x40), tambien desde la ranura 2, en las primitivas de *DAT_800BB974 +
- * 0x518 (0x10 bytes; su numero en *DAT_800BB970 + 0xC), y FUN_8003c5f4 las enlaza. Al entrar en esta, las dos del otro
+ * 0x518 (0x10 bytes; su numero en *DAT_800BB970 + 0xC), y FUN_8003c5f4 las enlaza. Al entrar en esta, la del otro
  * jugador, con la misma cuenta (FUN_8003e66c: x >> 23 y -z >> 23 en una rejilla de 256, ventana de 128 alrededor del
  * jugador) */
 static int map_cell(uint32_t e, int *x, int *y) {
@@ -684,15 +684,15 @@ static void map_hook(RCpu *c) {
     uint8_t tile[0x10];
     memcpy(tile, psx_ptr(base), sizeof tile);   /* plantilla: la primera baldosa (TILE: 3 palabras, codigo 0x60-0x63) */
     if (n > 0x70 || tile[3] != 3 || (tile[7] & 0xFC) != 0x60) return;
-    for (int k = 0; k < 2; k++) {   /* la sombra (como la primera pasada del juego) y el punto azul */
-        uint8_t *t = psx_ptr(base + (n + (uint32_t)k) * 0x10);
-        memcpy(t + 3, tile + 3, 1);
-        t[4] = k ? 0 : 0xFF; t[5] = k ? 0 : 0x40; t[6] = k ? 0xFF : 0x40;
-        t[7] = k ? (uint8_t)(tile[7] | 2) : (uint8_t)(tile[7] & 0xFD);
-        int16_t x = (int16_t)(px + 0x60 - !k), y = (int16_t)(py + 0x38 - !k), w = 2;
-        memcpy(t + 8, &x, 2); memcpy(t + 10, &y, 2); memcpy(t + 12, &w, 2); memcpy(t + 14, &w, 2);
-    }
-    wr32(counts + 0xC, n + 2);
+    /* un punto azul opaco de 3x3: con la sombra roja del juego (0xFF, 0x40, 0x40, su primera pasada) y el azul
+     * semitransparente encima, en la Retroid se veia rojo, como un enemigo (lo vio el dueno) */
+    uint8_t *t = psx_ptr(base + n * 0x10);
+    memcpy(t + 3, tile + 3, 1);
+    t[4] = 0x20; t[5] = 0x60; t[6] = 0xFF;
+    t[7] = (uint8_t)(tile[7] & 0xFD);
+    int16_t x = (int16_t)(px + 0x60 - 1), y = (int16_t)(py + 0x38 - 1), w = 3;
+    memcpy(t + 8, &x, 2); memcpy(t + 10, &y, 2); memcpy(t + 12, &w, 2); memcpy(t + 14, &w, 2);
+    wr32(counts + 0xC, n + 1);
 }
 
 /* medicion (AC3_COOP_MISIL=1): el blanco con el que se lanza cada misil del jugador (FUN_800672d4, cuarto argumento: el

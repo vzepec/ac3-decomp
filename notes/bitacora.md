@@ -42,7 +42,8 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 - **Tercera prueba:** faltaba el otro en el mapa grande (cuadrado
   mantenido). `FUN_8003e0fc` también empieza en la ranura 2; sus dos
   baldosas se añaden al entrar en `FUN_8003c5f4`, con la cuenta del juego
-  (`AC3_COOP_DBGMAPA`: posiciones opuestas y exactas).
+  (`AC3_COOP_DBGMAPA`: posiciones opuestas y exactas). Con la sombra roja
+  del juego se veía como un enemigo: ahora es un cuadrado azul opaco de 3×3.
 - **Reproducir:** `tools/movil_coop.sh <serie_A> <serie_B> <dir> [mision]`;
   en el PC, `AC3_GUION2='2700:lder:80,2850:select:6,2900:lder:80'
   AC3_COOP_VER=2` contra el mismo guion en el 1.
