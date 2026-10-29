@@ -69,6 +69,16 @@ typedef struct {
                                         * anota para el informe, justo despues */
     uint32_t bigmsg, bigmsg_ptr;       /* el mensaje grande del HUD (FUN_8004b980(n): BULL'S-EYE...; su estructura en
                                         * *DAT_800BB9BC: el actual en +0x11C, 0xFF sin mensaje); se avanza en el dibujo */
+    uint32_t damage, after_damage;     /* el dano a los enemigos (FUN_80045118: de la tabla del jugador si el atacante es la
+                                        * ranura 0, si no de la de armas por ranura) y lo siguiente de FUN_80044f70
+                                        * (FUN_8004ae94) */
+    uint32_t air_fire, ai_recs, ground_fire, ground_list;   /* (etapa 10) el disparo de la IA: aviones (FUN_80047344(k):
+                                                             * su blanco en *DAT_800BB888 + k*0xB8 + 0x60) y tierra
+                                                             * (FUN_80052184(k): blanco en la entidad + 0x5B, lista
+                                                             * *DAT_800BB814). Con el blanco en la ranura 0 esperan antes
+                                                             * de disparar y avisan al jugador (DAT_800C57EC | 1) */
+    uint32_t threat, threat_clear;     /* el aviso de amenaza del jugador (DAT_800C57EC: 1 fijado, 2 misil en camino) y
+                                        * quien quita el 1 en cada paso (FUN_80037fc8) */
     uint32_t snd_queue, snd_queue_proc[2], snd_play;   /* la cola de sonidos con espera (DAT_800C4E70: 8 de 4 bytes,
                                                         * sonido y espera, -1 libre; FUN_8002ef48 encola y FUN_8002ef8c
                                                         * los pide con FUN_8002d8e4 al llegar a 0) */
@@ -105,7 +115,9 @@ static const CoopAddr ADDR[] = {
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
      0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
      0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}, 0x800D2448u,
-     {0x80045BE0u, 0x80045E30u}, 0x80047C2Cu, 0x8004B980u, 0x800BB9BCu, 0x800C4E70u, {0x8002EF8Cu, 0x8002F000u}, 0x8002D8E4u,
+     {0x80045BE0u, 0x80045E30u}, 0x80047C2Cu, 0x8004B980u, 0x800BB9BCu, 0x80045118u, 0x8004AE94u,
+     0x80047344u, 0x800BB888u, 0x80052184u, 0x800BB814u, 0x800C57ECu, 0x80037FC8u, 0x800C4E70u,
+     {0x8002EF8Cu, 0x8002F000u}, 0x8002D8E4u,
      {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
 };
 
@@ -115,6 +127,12 @@ static int ai_on(void);
 static void ai_slot1(uint32_t e1);
 static void bigmsg_in(const RCpu *cb);   /* (etapa 10) el mensaje de derribo del 2, en su redibujo */
 static void bigmsg_out(void);
+static void damage_hook(RCpu *c);   /* (etapa 10) el 2 como el 1 ante los enemigos */
+static void air_fire_hook(RCpu *c);
+static void ground_fire_hook(RCpu *c);
+static void threat_clear_hook(RCpu *c);
+static void after_damage_hook(RCpu *c);
+static void kill_log_hook(RCpu *c);
 static uint32_t g_gp, g_state_ptr;
 static uint32_t g_mine[6], g_input2, g_alloc_end;
 /* (paso 4) sus copias del fogonazo de la metralleta (8 bytes) y de la punteria (registros por entidad y
@@ -135,6 +153,7 @@ static int g_busy, g_steps, g_orders, g_revives;
 static int g_msg2_ok;   /* (etapa 10, paso 8) el aviso del HUD del 2 ya tiene valor (hud_msg_in) */
 static int g_local, g_p1_window;   /* (etapa 10) el jugador de este aparato; dentro del paso de vuelo del 1 */
 static int g_p2_gone;              /* (etapa 10) el jugador 2 se desconecto: su avion ya no esta */
+static int g_wrap;                 /* (etapa 10) dentro de una llamada de la IA hecha con el contexto del 2 (fire_as_p2) */
 /* (etapa 10) los mensajes de derribo de cada uno: el del 2, pendiente de empezar en su redibujo (-1 ninguno); el mensaje
  * grande actual es de un derribo del 1; su copia del mensaje (la estructura de *DAT_800BB9BC) y si esta en marcha */
 #define BIGMSG_SIZE 0x120
@@ -873,7 +892,10 @@ static void map_hook(RCpu *c) {
 /* medicion (AC3_COOP_MISIL=1): el blanco con el que se lanza cada misil del jugador (FUN_800672d4, cuarto argumento: el
  * fijado, DAT_800BBA78 + 0x18; -1 sin fijado: el misil va recto) y de quien es */
 static void missile_hook(RCpu *c) {
-    printf("coop: VBlank %d misil del jugador %d con blanco %d\n", VSync(-1), g_busy ? 2 : 1, (int32_t)c->r[7]);
+    if (g_wrap || (c->r[4] & 0x3F) >= 2)   /* un enemigo (a0: sus banderas; a3: las de su blanco) */
+        printf("coop: VBlank %d misil de la entidad %u contra la ranura %u%s\n", VSync(-1), c->r[4] & 0x3F, c->r[7] & 0x3F,
+               g_wrap ? " (con el contexto del 2)" : "");
+    else printf("coop: VBlank %d misil del jugador %d con blanco %d\n", VSync(-1), g_busy ? 2 : 1, (int32_t)c->r[7]);
 }
 
 /* (paso 5) la imagen desde el avion del jugador 2, sin tocar la partida. Al empezar el dibujo del paso (entrada de
@@ -1095,6 +1117,13 @@ int ac3_coop_install(const Ac3Version *v) {
     mipsi_set_hook(A->ai_release, ai_release_hook);
     mipsi_set_hook(A->hud_boxes, frnd_hook);
     mipsi_set_hook(A->hud_after_boxes, frnd_after_hook);
+    /* (etapa 10) el 2 como el 1 ante los enemigos: su dano, sus derribos (informe) y su mensaje de derribo */
+    mipsi_set_hook(A->damage, damage_hook);
+    mipsi_set_hook(A->after_damage, after_damage_hook);
+    mipsi_set_hook(A->kill_log, kill_log_hook);
+    mipsi_set_hook(A->air_fire, air_fire_hook);
+    mipsi_set_hook(A->ground_fire, ground_fire_hook);
+    mipsi_set_hook(A->threat_clear, threat_clear_hook);
     if (view2_on()) {
         mipsi_set_hook(A->menu_draw[0], menu0_hook);
         mipsi_set_hook(A->menu_draw[1], menu1_hook);
@@ -1122,7 +1151,7 @@ static void voice_req_hook(RCpu *c) {
     uint32_t v = c->r[5];
     /* el tono de fijado (0x32) es siempre de un jugador: el del 1 se pide desde el HUD del dibujo, fuera de su paso; un
      * sonido de la cola con espera, el de quien lo encolo */
-    int owner = g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK ? 1 : 0;
+    int owner = g_wrap ? 0 : g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK ? 1 : 0;   /* (la IA como el 2: comunes) */
     if (g_req_owner) { owner = g_req_owner & 3; g_req_owner = 0; }
     if (v < 24) g_voice_req[v] = (uint8_t)(0x80 | owner);
     if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d peticion: sonido %x en la voz %u (%s) desde %08x\n", VSync(-1), c->r[4], v,
@@ -1179,14 +1208,111 @@ static void bigmsg_hook(RCpu *c) {
         if (k >= 0) g_queue_owner[k] = 1;
     }
 }
+/* (etapa 10) el 2 hace el mismo dano que el 1: durante FUN_80045118, los enemigos que ha tocado (impactos en +0x54,
+ * atacante en +0x50 & 0x3F) tienen el atacante en la ranura 0, como los del 1 (dano de la tabla del jugador, doble en
+ * facil: medido, su misil quitaba 110 y el del 1 160); al entrar en lo siguiente vuelve a ser la 1 (la IA y los
+ * derribos siguen sabiendo quien fue) */
+static uint8_t g_p2_hit[64];
+static void kill_msg_p2(uint32_t k, uint32_t e);
+static void damage_hook(RCpu *c) {
+    (void)c;
+    if (g_busy || !p2_active()) return;
+    uint32_t tab = rd32(A->ent_table);
+    for (uint32_t k = 2; k < 64; k++) {
+        uint32_t e = rd32(tab + 4 * k);
+        g_p2_hit[k] = e && (rd32(e + 0x54) & 0x7FFF) && (rd32(e + 0x50) & 0x3F) == 1;
+        if (g_p2_hit[k]) wr32(e + 0x50, rd32(e + 0x50) & ~0x3Fu);
+    }
+}
+static void after_damage_hook(RCpu *c) {
+    (void)c;
+    if (g_busy) return;
+    uint32_t tab = rd32(A->ent_table);
+    for (uint32_t k = 2; k < 64; k++)
+        if (g_p2_hit[k]) {
+            uint32_t e = rd32(tab + 4 * k);
+            if ((rd32(e + 0x50) & 0x3F) == 0) wr32(e + 0x50, rd32(e + 0x50) | 1u);
+            g_p2_hit[k] = 0;
+        }
+}
 /* el derribo, en la simulacion (los dos aparatos): las condiciones con las que FUN_80045be0 saca el mensaje para el 1,
  * pero con el atacante en la ranura 1. El mensaje solo se anota (sale en el redibujo del 2); su voz se encola como la
- * del juego, con el 2 de dueno */
+ * del juego, con el 2 de dueno. Despues, para el informe, el derribo del 2 cuenta como del jugador (atacante 0) */
 static void kill_log_hook(RCpu *c) {
-    if (g_busy || c->r[31] < A->kill_proc[0] || c->r[31] >= A->kill_proc[1]) return;
+    if (g_busy) return;
     uint32_t k = c->r[4];
-    if (k < 2 || k >= 0x20) return;
-    uint32_t e = rd32(rd32(A->ent_table) + 4 * k), fl = rd32(A->ent_flags + 4 * k);
+    if (k < 2 || k >= 0x40) return;
+    uint32_t e = rd32(rd32(A->ent_table) + 4 * k);
+    int from_kills = c->r[31] >= A->kill_proc[0] && c->r[31] < A->kill_proc[1];
+    if (from_kills && k < 0x20) kill_msg_p2(k, e);
+    if (p2_active() && (rd32(e + 0x50) & 0x3F) == 1) wr32(e + 0x50, rd32(e + 0x50) & ~0x3Fu);
+}
+/* (etapa 10) la IA que dispara al 2, como al 1: con el blanco en la ranura 1, la llamada se hace con el contexto del 2
+ * (p2_begin: su entidad en la 0, su aviso de amenaza...) y el blanco en la 0, y la original no se ejecuta
+ * (mipsi_skip_call). Asi espera antes de disparar como con el 1 (con otro blanco disparaba enseguida), el misil va a su
+ * entidad y el aviso de fijado le sale a el (el de tierra lo ponia siempre en el del 1). Los sonidos de esa IA, comunes */
+extern int mipsi_skip_call;
+extern uint32_t mipsi_skip_ret;
+static uint32_t guest_call_v0(const RCpu *c, uint32_t addr, uint32_t a0) {
+    RCpu cb;
+    memset(&cb, 0, sizeof cb);
+    cb.r[4] = a0;
+    cb.r[28] = g_gp;
+    cb.r[29] = (c->r[29] - 0x100u) & ~7u;
+    cb.r[31] = 0x8000FFF0u;
+    uint32_t ret = rc_ret;
+    rc_ret = cb.r[31];
+    rc_call(&cb, addr);
+    rc_ret = ret;
+    return cb.r[2];
+}
+static void fire_as_p2(RCpu *c, uint32_t fn, uint32_t target) {
+    Swap s;
+    p2_begin(&s);
+    g_wrap = 1;
+    *(uint8_t *)psx_ptr(target) = 0;
+    uint32_t v = guest_call_v0(c, fn, c->r[4]);
+    if (*(uint8_t *)psx_ptr(target) == 0) *(uint8_t *)psx_ptr(target) = 1;
+    g_wrap = 0;
+    p2_end(&s);
+    mipsi_skip_call = 1;
+    mipsi_skip_ret = v;
+}
+static void air_fire_hook(RCpu *c) {
+    if (g_busy || g_wrap || !ai_on() || !p2_active() || c->r[4] < 2 || c->r[4] >= 0x20) return;
+    uint32_t t = rd32(A->ai_recs) + c->r[4] * 0xB8 + 0x60;
+    if (*(uint8_t *)psx_ptr(t) == 1) fire_as_p2(c, A->air_fire, t);
+}
+static void ground_fire_hook(RCpu *c) {
+    if (g_busy || g_wrap || !ai_on() || !p2_active() || c->r[4] >= 0x20) return;
+    uint32_t g = rd32(rd32(A->ground_list) + 4 * c->r[4]);
+    if (g && *(uint8_t *)psx_ptr(g + 0x5B) == 1) fire_as_p2(c, A->ground_fire, g + 0x5B);
+}
+/* el aviso de fijado del 2 (en su copia, g_pview2) se quita en el mismo sitio que el del 1 */
+static void threat_clear_hook(RCpu *c) {
+    (void)c;
+    if (g_busy || !g_alloc_end) return;
+    static int n1;
+    if (rd32(A->threat) & 1) n1++;
+    if (getenv("AC3_COOP_DBGIA") && (rd32(A->threat) & 1) && n1 % 10 == 1)
+        printf("coop: VBlank %d aviso de fijado del jugador 1 (%d pasos)\n", VSync(-1), n1);
+    uint32_t o = 0;
+    for (int i = 0; i < 6 && A->pview[i][1]; i++) {
+        if (A->threat >= A->pview[i][0] && A->threat < A->pview[i][0] + A->pview[i][1]) {
+            uint32_t a = g_pview2 + o + (A->threat - A->pview[i][0]);
+            static int n;
+            if (rd32(a) & 1) n++;
+            if (getenv("AC3_COOP_DBGIA") && (rd32(a) & 1) && n % 10 == 1)
+                printf("coop: VBlank %d aviso de fijado del jugador 2 (%d pasos)\n", VSync(-1), n);
+            wr32(a, rd32(a) & ~1u);
+            return;
+        }
+        o += A->pview[i][1];
+    }
+}
+
+static void kill_msg_p2(uint32_t k, uint32_t e) {
+    uint32_t fl = rd32(A->ent_flags + 4 * k);
     int16_t type;
     memcpy(&type, psx_ptr(e + 0x48), 2);
     if (!(fl & 0x800) || (fl & 0x80000) || (rd32(e + 0x50) & 0x3F) != 1 || (rd32(e) & 0x40) || type == 0x3E || !(rd32(e) & 0x80)) return;
@@ -1244,7 +1370,6 @@ void ac3_coop_set_local(int player) {
     g_local = player;
     mipsi_set_hook(A->player_step, p1_step_hook);
     mipsi_set_hook(SND_REQ, voice_req_hook);
-    mipsi_set_hook(A->kill_log, kill_log_hook);
     mipsi_set_hook(A->bigmsg, bigmsg_hook);
     mipsi_set_hook(A->snd_play, snd_play_hook);
     psx_spu_keyon_hook = voice_on_hook;

@@ -101,6 +101,10 @@ static inline uint32_t fetch(uint32_t pc) {
  * LWC2); asi se sabe que datos usa una funcion */
 uint8_t *mipsi_rtrace, *mipsi_wtrace;   /* con mipsi_wtrace: solo lo leido antes de escribirlo */
 uint32_t mipsi_watch_write;              /* depuracion: imprime desde donde se escribe esta direccion */
+/* (etapa 10) un gancho de entrada que ya hizo la llamada el mismo (con otro contexto) pone mipsi_skip_call: la original
+ * no se ejecuta y devuelve mipsi_skip_ret en v0 */
+int mipsi_skip_call;
+uint32_t mipsi_skip_ret;
 void (*mipsi_watch_write_fn)(uint32_t pc);   /* (etapa 10, paso 8) si esta: se le avisa (antes de escribir) en vez de imprimir */
 uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
 
@@ -200,6 +204,7 @@ static inline uint32_t call_to(RCpu *c, uint32_t tgt, uint32_t link) {
     void (*fn)(RCpu *) = rc_find(tgt);
     if (fn) { rc_ret = link; fn(c); c->r[0] = 0; return link; }
     if (g_entered || g_watched || g_hook) on_entry(c, tgt);
+    if (mipsi_skip_call) { mipsi_skip_call = 0; c->r[2] = mipsi_skip_ret; return link; }
     RC_BUDGET(tgt);
     return tgt;
 }
@@ -210,6 +215,7 @@ void mipsi_call(RCpu *c, uint32_t addr) {
     /* entrar en la funcion: como un salto a ella (libreria, traducida o interpretada) */
     if (rc_is_lib(pc)) { rc_libcall(c, pc); return; }
     if (g_entered || g_watched || g_hook) on_entry(c, pc);
+    if (mipsi_skip_call) { mipsi_skip_call = 0; c->r[2] = mipsi_skip_ret; return; }
     RC_BUDGET(pc);
     while (pc != ret) {
         uint32_t w = fetch(pc);

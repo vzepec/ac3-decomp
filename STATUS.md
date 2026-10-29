@@ -222,8 +222,10 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   Retroid↔S24: funciona bien (0 distintas; el 2 desaparece al irse).
 - **Mensaje de derribo** (rama `etapa-10-paso-8-derribos`): el BULL'S-EYE
   y su voz salen en la pantalla y el aparato de quien derriba (antes el 2
-  no tenía). Pendiente de decidir: el misil del 2 quita menos (110 frente a
-  160 en fácil) y el informe cuenta sus derribos como de un aliado.
+  no tenía). Y el 2 como el 1 ante los enemigos: el mismo daño, sus
+  derribos en el informe, y la IA le dispara con la misma espera y su
+  aviso. `SIN RESOLVER`: las órdenes del guion de «atacar al jugador» siguen
+  siendo contra el 1.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

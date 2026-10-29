@@ -16,9 +16,19 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
   - el mensaje se arranca y avanza en una copia del 2, dentro de su
     redibujo; el del 1 no sale en la pantalla del 2;
   - la voz va a la cola con espera, cada hueco con su dueño.
-- **Además se ve:** el misil del 2 quita 110 y el del 1, 160 (en fácil el
-  del jugador se dobla), y el informe cuenta sus derribos como de un
-  aliado. Pendiente de decidir.
+- **Además, el 2 ya es como el 1 ante los enemigos:**
+  - **daño:** su misil quitaba 110 y el del 1, 160. Durante el cálculo, el
+    atacante 2 cuenta como el jugador, y luego se devuelve;
+  - **informe:** sus derribos cuentan como del jugador;
+  - **disparos de la IA contra él:** se ejecutan con su contexto (gancho
+    que se salta la llamada, `mipsi_skip_call`). Antes le disparaban sin
+    la espera que tienen con el 1, y el aviso de fijado de tierra le salía
+    al 1;
+  - le persiguen tanto como al 1 (41 misiones: 105 frente a 80).
+  - **`SIN RESOLVER`:** las órdenes del guion de «atacar al jugador»
+    (`FUN_8004f77c`) siguen siendo contra el 1. Hacerlas con su contexto
+    no basta (se probó y se quitó): hay que llevar todo el paso del
+    enemigo (`FUN_80045fc8`).
 - **Reproducir:** `python3 tools/red.py "<US>" <dir> derribo`
   (`AC3_COOP_VIDA=k,v`).
 

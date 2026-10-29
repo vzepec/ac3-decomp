@@ -365,16 +365,76 @@ El dueño vio que al derribar con el 2 no salía nada en su pantalla
   - cada hueco de la cola recuerda su dueño, y al pedirse (`FUN_8002ef8c` →
     `FUN_8002d8e4`) la voz queda con él, así que solo se oye en el aparato
     de quien derribó.
-- **`SIN RESOLVER` / pendiente:** el juego sigue tratando al 2 como un
-  atacante cualquiera.
-  - Su misil quita 110 (de la tabla de armas por ranura,
-    `DAT_800BB8C0 + ranura*0x40`), y el del 1, 160: en fácil, el del
-    jugador se dobla.
-  - El informe cuenta sus derribos como de un aliado (`FUN_80047c2c`).
-  - Decidir con el dueño si se igualan.
+- Lo que seguía tratando al 2 como un atacante cualquiera se iguala en la
+  sección siguiente.
 
 | Prueba | Resultado |
 |---|---|
 | `tools/red.py derribo`: derriba el 1 y, aparte, el 2 (enemigo con 50 de vida, `AC3_COOP_VIDA`) | el rótulo (≈450 px) solo en la vista de quien derriba; su voz se oye en su aparato y no en el otro; la misma partida desde las dos vistas |
 | El resto de `tools/red.py` y `tools/coop_vista.py huella autoprueba` | igual |
+
+## El 2 como el 1 ante los enemigos (misma rama)
+
+El dueño pidió que los dos jugadores se comporten igual, y vio que los
+enemigos no parecían ir a por el 2.
+
+### Su daño y sus derribos
+
+- **El daño** (`FUN_80045118`) sale de la tabla del jugador solo con el
+  atacante en la ranura 0; con otra, de la tabla de armas por ranura
+  (`DAT_800BB8C0 + ranura*0x40`), sin doblar en fácil. Medido: el misil
+  del 2 quitaba 110 y el del 1, 160.
+  - **Arreglo:** al entrar en `FUN_80045118`, los enemigos tocados por el 2
+    tienen el atacante en la 0. Al entrar en lo siguiente de
+    `FUN_80044f70` (`FUN_8004ae94`) vuelve a ser la 1, para que la IA y los
+    derribos sigan sabiendo quién fue.
+  - Medido con `tools/coop_vista.py misil`: el misil del 2 deja al enemigo
+    2 en -20, como el del 1.
+- **El informe** (`FUN_80047c2c`) cuenta como del jugador solo el atacante
+  0. El derribo del 2 se anota ahora con el atacante 0: un registro de tipo
+  0 y el contador de derribos del jugador (`DAT_800BB87C+0x2e`) en 1, como
+  el del 1.
+
+### Los enemigos y el 2
+
+- **Le persiguen:** en las 41 misiones (`AC3_COOP_DBGIA`, 173 muestras),
+  105 veces al 2 y 80 al 1. La elección de objetivo (`FUN_8004570c`) ya lo
+  incluía desde el paso 6.
+- **Le disparan:** el disparo de la IA es `FUN_80047344(k)`, con el blanco
+  en `*DAT_800BB888 + k*0xB8 + 0x60`. Con el blanco en la 0 espera antes de
+  disparar y avisa al jugador (`DAT_800C57EC | 1`). Con otro blanco
+  disparaba enseguida: medido, misión 25, 8 misiles al 2 y ninguno al 1.
+  - **Arreglo:** con el blanco en la 1, la llamada se hace con el contexto
+    del 2 (`p2_begin`: su entidad en la 0, su copia del aviso de amenaza) y
+    el blanco en la 0, y la original no se ejecuta. Para eso, un gancho de
+    entrada puede saltarse la llamada (`mipsi_skip_call`, nuevo en el
+    intérprete).
+  - Igual con la IA de tierra (`FUN_80052184`, blanco en `+0x5B`), que
+    ponía el aviso de fijado siempre en el del 1.
+  - El bit de fijado del 2 se quita en el mismo sitio que el del 1
+    (`FUN_80037fc8`). Los sonidos de esa IA siguen siendo comunes.
+  - **Medido** (`AC3_COOP_MISIL`): misiles al 1 en las misiones 0, 18, 22,
+    27, 30, 35 y 37; al 2, con su contexto, en la 26 y la 31. En la 25 ya
+    no le disparan, como al 1. La partida, igual desde las dos vistas.
+  - El 1 casi no tiene aviso de fijado (una vez, de tierra, en la misión
+    22): los aviones disparan sin él.
+- **`SIN RESOLVER`:** las órdenes del guion de «atacar al jugador»
+  (`FUN_8004f77c`, blanco del guion `+0x1F` = 0, comportamientos 9 y 10)
+  son siempre contra el 1.
+  - Ejemplo: el enemigo 2 de la misión 37 ataca al 1 aunque el 2 esté
+    detrás de él.
+  - Se probó elegir al jugador más cercano y hacer la orden con el contexto
+    del 2. No basta: el resto del paso del enemigo (`FUN_80045fc8`: giros y
+    acercamiento) también usa la entidad 0, y el enemigo iba hacia el 1
+    apuntando al 2. No disparaba a ninguno, y al 1 le llegó 1 misil en vez
+    de 6. Se quitó. Hace falta ejecutar todo el paso de esos enemigos con
+    el contexto del 2.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/coop_vista.py misil` | el misil del 2 con su vista: 140 → -20, como el del 1 (antes 30) |
+| Informe tras el derribo de cada uno | igual: registro de tipo 0, 1 derribo del jugador |
+| 41 misiones con `AC3_COOP_DBGIA` | perseguidores: 105 al 2, 80 al 1 |
+| Misiones 22, 26, 31 y 37 (`AC3_COOP_MISIL`) | misiles al 1 (22, 37) y al 2 con su contexto (26, 31) |
+| `tools/red.py`, `tools/coop_vista.py`, `tools/coop.py --vista2` | igual |
 
