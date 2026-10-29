@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-29 — Etapa 10: el mensaje de derribo (BULL'S-EYE) y su voz, de quien derriba
+
+- **El 2 no tenía mensaje al derribar:** `FUN_80045be0` lo saca
+  (`FUN_8004b980(6/7)`) solo con el atacante en la ranura 0. La vida la
+  escribe `FUN_80045118` igual para los dos (`AC3_WATCHWRITE`).
+- **Arreglo:**
+  - en la simulación se detecta el derribo del 2 (entrada de `FUN_80047c2c`,
+    mismas condiciones con el atacante en la 1);
+  - el mensaje se arranca y avanza en una copia del 2, dentro de su
+    redibujo; el del 1 no sale en la pantalla del 2;
+  - la voz va a la cola con espera, cada hueco con su dueño.
+- **Además se ve:** el misil del 2 quita 110 y el del 1, 160 (en fácil el
+  del jugador se dobla), y el informe cuenta sus derribos como de un
+  aliado. Pendiente de decidir.
+- **Reproducir:** `python3 tools/red.py "<US>" <dir> derribo`
+  (`AC3_COOP_VIDA=k,v`).
+
+---
+
 ## 2026-10-28 — Etapa 10, tras el paso 8: los disparos del otro no se oyen; el avión de quien se va desaparece
 
 - **Los disparos del otro se oían en los dos:**

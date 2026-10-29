@@ -64,6 +64,14 @@ typedef struct {
                               * la pausa (FUN_80034808, desde FUN_80033e20) y el de FUN_8003422c (FUN_80034d78) */
     uint32_t newgame_sh;     /* (etapa 10, paso 8) el sh de la partida nueva que pone la mision 1 en g_state + 0x390
                               * (FUN_800d2418, overlay 1; se llega a ella por una tabla de saltos) */
+    uint32_t kill_proc[2], kill_log;   /* (etapa 10) los derribos: FUN_80045be0 (de..a) los procesa, y para el mensaje
+                                        * exige que la ranura del atacante (+0x50 & 0x3F) sea la 0; FUN_80047c2c(k) los
+                                        * anota para el informe, justo despues */
+    uint32_t bigmsg, bigmsg_ptr;       /* el mensaje grande del HUD (FUN_8004b980(n): BULL'S-EYE...; su estructura en
+                                        * *DAT_800BB9BC: el actual en +0x11C, 0xFF sin mensaje); se avanza en el dibujo */
+    uint32_t snd_queue, snd_queue_proc[2], snd_play;   /* la cola de sonidos con espera (DAT_800C4E70: 8 de 4 bytes,
+                                                        * sonido y espera, -1 libre; FUN_8002ef48 encola y FUN_8002ef8c
+                                                        * los pide con FUN_8002d8e4 al llegar a 0) */
     uint32_t hud_msg[2][2];  /* (paso 8) el aviso del HUD del jugador (direccion, bytes): FUN_80041c88 (desde el HUD de cada
                               * imagen, FUN_80040c44) lo elige por su estado y su entrada (9, el autopiloto; fuera de zona,
                               * altura...) y lo guarda en DAT_800C5AA0..AF (aviso y tiempos) y DAT_800BB988 (su cuenta) */
@@ -97,6 +105,7 @@ static const CoopAddr ADDR[] = {
      0x80033910u, 0x8003A2F8u, 0x800672D4u, 0x800BBA60u, 0x8002E488u, 0x8003D8C0u, 0x8003DA58u, 0x800BB978u, 0x800C569Cu,
      0x8004570Cu, 0x8004599Cu, 0x80045A94u, 0x800C56A0u, 0x800C58F0u, 0x8003EA48u, 0x80062924u,
      0x8003C5F4u, 0x800BB970u, 0x800BB974u, {0x80034808u, 0x80034D78u}, 0x800D2448u,
+     {0x80045BE0u, 0x80045E30u}, 0x80047C2Cu, 0x8004B980u, 0x800BB9BCu, 0x800C4E70u, {0x8002EF8Cu, 0x8002F000u}, 0x8002D8E4u,
      {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
 };
 
@@ -104,6 +113,8 @@ static const CoopAddr *A;
 #define REL(k, i) (A->ai_rel + 4 * (uint32_t)(k) + (i))   /* (paso 6) la tabla de persecuciones: fila k, byte i */
 static int ai_on(void);
 static void ai_slot1(uint32_t e1);
+static void bigmsg_in(const RCpu *cb);   /* (etapa 10) el mensaje de derribo del 2, en su redibujo */
+static void bigmsg_out(void);
 static uint32_t g_gp, g_state_ptr;
 static uint32_t g_mine[6], g_input2, g_alloc_end;
 /* (paso 4) sus copias del fogonazo de la metralleta (8 bytes) y de la punteria (registros por entidad y
@@ -124,6 +135,13 @@ static int g_busy, g_steps, g_orders, g_revives;
 static int g_msg2_ok;   /* (etapa 10, paso 8) el aviso del HUD del 2 ya tiene valor (hud_msg_in) */
 static int g_local, g_p1_window;   /* (etapa 10) el jugador de este aparato; dentro del paso de vuelo del 1 */
 static int g_p2_gone;              /* (etapa 10) el jugador 2 se desconecto: su avion ya no esta */
+/* (etapa 10) los mensajes de derribo de cada uno: el del 2, pendiente de empezar en su redibujo (-1 ninguno); el mensaje
+ * grande actual es de un derribo del 1; su copia del mensaje (la estructura de *DAT_800BB9BC) y si esta en marcha */
+#define BIGMSG_SIZE 0x120
+static int g_p2_msg = -1, g_msg1_kill, g_d2_on;
+static uint8_t g_d2[BIGMSG_SIZE];
+static uint8_t g_queue_owner[8];   /* el dueno de cada hueco de la cola de sonidos con espera */
+static int g_req_owner;            /* 0x80 | dueno para la proxima peticion de voz (un sonido de la cola) */
 static int g_rebuilding;   /* (paso 5) dentro del redibujo del jugador 2 */
 static uint32_t g_e1;
 
@@ -272,6 +290,14 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
     wr32(e1 + 0x10, rd32(e0 + 0x10) + ((uint32_t)dz << 12));
     if (getenv("AC3_COOP_TRAS")) place_behind(e1, atoi(getenv("AC3_COOP_TRAS")), getenv("AC3_COOP_GIRO"));
     if (getenv("AC3_COOP_TRAS1")) place_behind(e0, atoi(getenv("AC3_COOP_TRAS1")), getenv("AC3_COOP_GIRO1"));   /* (paso 5) el 1 */
+    if (getenv("AC3_COOP_VIDA")) {   /* (etapa 10, prueba) AC3_COOP_VIDA=k,v: la vida de la entidad k (un derribo con un misil) */
+        unsigned k = 0;
+        int v = 0;
+        if (sscanf(getenv("AC3_COOP_VIDA"), "%u,%d", &k, &v) == 2 && k < 64) {
+            int16_t hp = (int16_t)v;
+            memcpy(psx_ptr(rd32(rd32(A->ent_table) + 4 * k) + 0x4E), &hp, 2);
+        }
+    }
     if (ai_on()) {   /* (paso 6) su fila de la tabla de persecuciones, libre (como FUN_80045b00) */
         uint8_t *r1 = psx_ptr(REL(1, 0));
         r1[0] = 0; r1[1] = r1[2] = r1[3] = 0xFF;
@@ -955,7 +981,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
         static int self = -1;   /* AC3_COOP_AUTOPRUEBA=1 (prueba): el mismo redibujo, pero como el jugador 1 (igual al original) */
         if (self < 0) self = getenv("AC3_COOP_AUTOPRUEBA") != NULL;
         Swap s;
-        if (!self) { p2_begin(&s); hud_msg_in(); }
+        if (!self) { p2_begin(&s); hud_msg_in(); if (g_local) bigmsg_in(&cb); }
         uint32_t tab = rd32(A->ent_table), pe0 = rd32(tab + 4), pe1 = rd32(tab);   /* (tras p2_begin: [0] es la 1) */
         int content = content_mask() & 1;
         if (!self && content) ent_content_swap(tab, pe0, pe1);
@@ -972,7 +998,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
                    a[2], t0, e[0], e[1], e[2]);
         }
         guest_call(&cb, A->mission_draw, A->noop, 0, 0);
-        if (!self) hud_msg_out();
+        if (!self) { hud_msg_out(); if (g_local) bigmsg_out(); }
         if (trace) {   /* depuracion: lo que el redibujo lee de los bloques del jugador 1 (por su direccion, no por el puntero) */
             mipsi_rtrace = NULL;
             unsetenv("AC3_COOP_LECTURAS");
@@ -1094,8 +1120,10 @@ static uint8_t g_voice_req[24];   /* 0x80 | dueno (0 comun, 1, 2) de la peticion
 static void p1_step_hook(RCpu *c) { (void)c; if (!g_busy) g_p1_window = 1; }
 static void voice_req_hook(RCpu *c) {
     uint32_t v = c->r[5];
-    /* el tono de fijado (0x32) es siempre de un jugador: el del 1 se pide desde el HUD del dibujo, fuera de su paso */
+    /* el tono de fijado (0x32) es siempre de un jugador: el del 1 se pide desde el HUD del dibujo, fuera de su paso; un
+     * sonido de la cola con espera, el de quien lo encolo */
     int owner = g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK ? 1 : 0;
+    if (g_req_owner) { owner = g_req_owner & 3; g_req_owner = 0; }
     if (v < 24) g_voice_req[v] = (uint8_t)(0x80 | owner);
     if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d peticion: sonido %x en la voz %u (%s) desde %08x\n", VSync(-1), c->r[4], v,
                                             owner == 2 ? "jugador 2" : owner == 1 ? "jugador 1" : "comun", c->r[31]);
@@ -1129,11 +1157,96 @@ void ac3_coop_remove_p2(void) {
     printf("coop: el jugador 2 se fue en el VBlank %d: su avion desaparece\n", VSync(-1));
 }
 
+/* (etapa 10) la tabla de los mensajes grandes (DAT_800B0534 + n * 0x1C): +0 banderas (1: una voz, la de +0x18, encolada
+ * con espera 0x1E). Medido: 6 y 7 (los de derribo), voces 75 y 76 */
+#define BIGMSG_TAB 0x800B0534u
+static int queue_free_slot(void) {
+    for (int i = 0; i < 8; i++) {
+        int16_t t;
+        memcpy(&t, psx_ptr(A->snd_queue + 4 * (uint32_t)i + 2), 2);
+        if (t == -1) return i;
+    }
+    return -1;
+}
+/* el mensaje grande, en la simulacion: el de un derribo del 1 (llamado desde FUN_80045be0) es suyo, y su voz encolada
+ * tambien (el hueco que va a tomar FUN_8002ef48, el primero libre) */
+static void bigmsg_hook(RCpu *c) {
+    if (g_busy || g_rebuilding) return;
+    uint32_t n = c->r[4], p = rd32(A->bigmsg_ptr);
+    g_msg1_kill = c->r[31] >= A->kill_proc[0] && c->r[31] < A->kill_proc[1];
+    if (g_msg1_kill && n < 0x40 && rd32(p + 0x11C) != n && (*(uint8_t *)psx_ptr(BIGMSG_TAB + n * 0x1C) & 1)) {
+        int k = queue_free_slot();
+        if (k >= 0) g_queue_owner[k] = 1;
+    }
+}
+/* el derribo, en la simulacion (los dos aparatos): las condiciones con las que FUN_80045be0 saca el mensaje para el 1,
+ * pero con el atacante en la ranura 1. El mensaje solo se anota (sale en el redibujo del 2); su voz se encola como la
+ * del juego, con el 2 de dueno */
+static void kill_log_hook(RCpu *c) {
+    if (g_busy || c->r[31] < A->kill_proc[0] || c->r[31] >= A->kill_proc[1]) return;
+    uint32_t k = c->r[4];
+    if (k < 2 || k >= 0x20) return;
+    uint32_t e = rd32(rd32(A->ent_table) + 4 * k), fl = rd32(A->ent_flags + 4 * k);
+    int16_t type;
+    memcpy(&type, psx_ptr(e + 0x48), 2);
+    if (!(fl & 0x800) || (fl & 0x80000) || (rd32(e + 0x50) & 0x3F) != 1 || (rd32(e) & 0x40) || type == 0x3E || !(rd32(e) & 0x80)) return;
+    int n = (rd32(rd32(G_RENDER) + 0xC) & 7) == 0 ? 6 : 7;
+    g_p2_msg = n;
+    if (*(uint8_t *)psx_ptr(BIGMSG_TAB + (uint32_t)n * 0x1C) & 1) {
+        int q = queue_free_slot();
+        if (q >= 0) {
+            uint8_t *s = psx_ptr(A->snd_queue + 4 * (uint32_t)q);
+            int16_t t = 0x1E;
+            s[0] = *(uint8_t *)psx_ptr(BIGMSG_TAB + (uint32_t)n * 0x1C + 0x18);
+            memcpy(s + 2, &t, 2);
+            g_queue_owner[q] = 2;
+        }
+    }
+    printf("coop: VBlank %d el jugador 2 derriba la entidad %u: su mensaje %d\n", VSync(-1), k, n);
+}
+/* un sonido de la cola que llega a 0 (FUN_8002ef8c -> FUN_8002d8e4): el de su hueco (el que tiene ese sonido y espera 0) */
+static void snd_play_hook(RCpu *c) {
+    if (c->r[31] < A->snd_queue_proc[0] || c->r[31] >= A->snd_queue_proc[1]) return;
+    for (int i = 0; i < 8; i++) {
+        uint8_t *s = psx_ptr(A->snd_queue + 4 * (uint32_t)i);
+        int16_t t;
+        memcpy(&t, s + 2, 2);
+        if (t == 0 && s[0] == (uint8_t)c->r[4] && g_queue_owner[i]) { g_req_owner = 0x80 | g_queue_owner[i]; g_queue_owner[i] = 0; break; }
+    }
+}
+/* en el redibujo del 2: su mensaje (el que empieza, con FUN_8004b980 sobre su copia, o el que sigue); sin el, el del
+ * juego salvo si es de un derribo del 1 */
+static void bigmsg_in(const RCpu *cb) {
+    uint32_t p = rd32(A->bigmsg_ptr);
+    if (!p) return;
+    if (g_p2_msg >= 0) {
+        if (!g_d2_on) memcpy(g_d2, psx_ptr(p), BIGMSG_SIZE);
+        memcpy(psx_ptr(p), g_d2, BIGMSG_SIZE);
+        wr32(p + 0x110, 0); wr32(p + 0x11C, 0xFF);   /* (como FUN_8004b96c: para que empiece aunque sea el mismo) */
+        guest_call(cb, A->bigmsg, (uint32_t)g_p2_msg, 0, 0);
+        g_p2_msg = -1;
+        g_d2_on = 1;
+    } else if (g_d2_on) {
+        memcpy(psx_ptr(p), g_d2, BIGMSG_SIZE);
+    } else if (g_msg1_kill && rd32(p + 0x11C) != 0xFF) {
+        wr32(p + 0x110, 0); wr32(p + 0x11C, 0xFF);
+    }
+}
+static void bigmsg_out(void) {
+    uint32_t p = rd32(A->bigmsg_ptr);
+    if (!p || !g_d2_on) return;
+    memcpy(g_d2, psx_ptr(p), BIGMSG_SIZE);
+    if (rd32(p + 0x11C) == 0xFF) g_d2_on = 0;
+}
+
 void ac3_coop_set_local(int player) {
     if (!A) return;
     g_local = player;
     mipsi_set_hook(A->player_step, p1_step_hook);
     mipsi_set_hook(SND_REQ, voice_req_hook);
+    mipsi_set_hook(A->kill_log, kill_log_hook);
+    mipsi_set_hook(A->bigmsg, bigmsg_hook);
+    mipsi_set_hook(A->snd_play, snd_play_hook);
     psx_spu_keyon_hook = voice_on_hook;
 }
 

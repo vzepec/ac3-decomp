@@ -220,6 +220,10 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   audio; la partida igual); si el que se une se va, su avión desaparece; si
   se va quien creó la partida, el otro vuelve al menú. El dueño lo probó
   Retroid↔S24: funciona bien (0 distintas; el 2 desaparece al irse).
+- **Mensaje de derribo** (rama `etapa-10-paso-8-derribos`): el BULL'S-EYE
+  y su voz salen en la pantalla y el aparato de quien derriba (antes el 2
+  no tenía). Pendiente de decidir: el misil del 2 quita menos (110 frente a
+  160 en fácil) y el informe cuenta sus derribos como de un aliado.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

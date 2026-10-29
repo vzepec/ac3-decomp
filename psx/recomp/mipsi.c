@@ -30,7 +30,7 @@ uint64_t mipsi_steps;
 
 /* enganches: se llama a fn al entrar en la funcion `addr` (p. ej. forzar la mision que carga el
  * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta NHOOK; fn NULL lo quita */
-#define NHOOK 32   /* (etapa 9) los del cooperativo (paso 6: en el APK con la vista del 2, 23) */
+#define NHOOK 40   /* (etapa 9) los del cooperativo (paso 6: en el APK con la vista del 2, 23; etapa 10, en red, 32) */
 static uint32_t g_hook_addr[NHOOK];
 static void (*g_hook_fn[NHOOK])(RCpu *);
 static int g_hook;

@@ -31,12 +31,16 @@ Con el binario libre (make libre-build) y psx/recomp/ac3_net.c. Pruebas en la mi
   en la mision 5: no se oye en el aparato del 2. Las huellas, iguales (solo cambia la salida de audio).
 - se_va (etapa 10): el invitado se cierra en el VBlank 3100 y el anfitrion sigue: su avion desaparece (el punto azul del
   radar, junto al 1, antes si y despues no) y la partida sigue.
+- derribo (etapa 10): el mensaje de derribo (BULL'S-EYE) y su voz son de quien derriba. Mision 5, detras del enemigo
+  2 con su vida a 50 (AC3_COOP_VIDA: un misil basta); derriba el 1 y, aparte, el 2; cada caso dibujando desde el 1 y
+  desde el 2 (AC3_COOP_LOCAL igual a la vista): el rotulo (pixeles amarillos en la imagen 3300) solo en la vista de
+  quien derriba, su voz (0x4c) solo sin silenciar en su aparato, y la misma partida desde las dos vistas.
 - aviso (paso 8): el autopiloto (SELECT mantenido) del jugador 1 y, aparte, el del 2, sin red, dibujando desde el 1 y
   desde el 2: la barra azul "AUTOPILOT" (pixeles azules en la imagen 2850) solo en la vista de quien lo activa, y la
   misma partida desde las dos vistas. Antes del arreglo salia tambien en la vista del 2 cuando lo activaba el 1.
 
 Uso:
-    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|tarjeta|sonido|se_va|aviso ...]
+    python3 tools/red.py <imagen_US> <salida> [red|control|vistas|anuncio|disco|menus|tarjeta|sonido|se_va|derribo|aviso ...]
                          [--eu <imagen_EU>]
 """
 import os
@@ -354,6 +358,54 @@ def test_leave(out):
     return good
 
 
+def yellow_text(ppm):
+    """pixeles del rotulo de derribo (amarillo) en la franja de arriba"""
+    data = open(ppm, 'rb').read()
+    parts = data.split(b'\n', 3)
+    w, h = map(int, parts[1].split())
+    px = parts[3]
+    n = 0
+    for y in range(60, 110):
+        for x in range(w):
+            r, g, b = px[(y * w + x) * 3:(y * w + x) * 3 + 3]
+            n += r > 200 and g > 150 and b < 90
+    return n
+
+
+def test_kill(out):
+    ok = True
+    for who in (1, 2):
+        ps = []
+        for v in (1, 2):
+            d = os.path.join(out, 'derribo', 'j%d_ver%d' % (who, v))
+            env = dict(AC3_PAD_ID='73', AC3_MISSION='5', AC3_COOP='1', AC3_PAD2_ID='73', AC3_COOP_DESDE='3150',
+                       AC3_COOP_DIST='600', AC3_COOP_VIDA='2,50', AC3_COOP_VER=str(v), AC3_COOP_LOCAL=str(v),
+                       AC3_COOP_DBGVOCES='1', AC3_WIDE='1', AC3_COMO_APK='1', AC3_SPU='1',
+                       AC3_RAMHASH=os.path.join(d, 'huella.bin'))
+            if who == 1:
+                env['AC3_COOP_TRAS1'] = '2'
+                g1 = G0 + ',3220:circulo:4'
+            else:
+                env.update(AC3_COOP_TRAS='2', AC3_GUION2='3220:circulo:4')
+                g1 = G0
+            ps.append((v, d, run(d, env, g1, 3400, shots=20)))
+        text, voice = {}, {}
+        for v, d, p in ps:
+            p.wait()
+            text[v] = yellow_text(os.path.join(d, 'f03300.ppm'))
+            m = re.findall(r'peticion: sonido 4c en la voz (\d+) \((\w+ \d)\)', log_of(d))
+            vs = [(n, w, mu) for n, w, mu in voices(d) if m and n == int(m[0][0]) and w == m[0][1]]
+            voice[v] = (m[0][1] if m else '-', vs[0][2] if vs else None)
+        same = open(os.path.join(ps[0][1], 'huella.bin'), 'rb').read() == open(os.path.join(ps[1][1], 'huella.bin'), 'rb').read()
+        good = (same and text[who] > 100 and text[3 - who] == 0 and voice[who] == ('jugador %d' % who, False)
+                and voice[3 - who] == ('jugador %d' % who, True))
+        ok = ok and good
+        print('derribo: derriba el %d: rotulo en la vista del 1 %d px, en la del 2 %d px; su voz en el aparato del 1 %s, en el del 2 '
+              '%s; %s -> %s' % (who, text[1], text[2], 'sin oir' if voice[1][1] else 'se oye', 'sin oir' if voice[2][1] else 'se oye',
+                               'la misma partida' if same else 'DISTINTAS', 'bien' if good else 'MAL'), flush=True)
+    return ok
+
+
 def blue_bar(ppm):
     """pixeles azules donde sale la barra "AUTOPILOT" (911 con ella, 0 sin ella; sin Pillow: el PPM a mano)"""
     data = open(ppm, 'rb').read()
@@ -406,7 +458,7 @@ def main():
         eu = args[i + 1]
         del args[i:i + 2]
     DISC, out = args[0], args[1]
-    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'tarjeta', 'sonido', 'se_va', 'aviso'] + (
+    what = args[2:] or ['red', 'control', 'vistas', 'anuncio', 'menus', 'tarjeta', 'sonido', 'se_va', 'derribo', 'aviso'] + (
         ['disco'] if eu else [])
     ok = True
     if 'red' in what:
@@ -427,6 +479,8 @@ def main():
         ok = test_sound(out) and ok
     if 'se_va' in what:
         ok = test_leave(out) and ok
+    if 'derribo' in what:
+        ok = test_kill(out) and ok
     if 'aviso' in what:
         ok = test_hud_message(out) and ok
         ok = test_hud_message(out, control=True) and ok

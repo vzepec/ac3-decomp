@@ -335,3 +335,46 @@ no se puede dejar de reproducir en un aparato. Lo que se hace es no
 | `tools/red.py sonido`: tono de fijado del 1 (misión 5), en el aparato del 2 | 8 peticiones, del jugador 1, sin oír |
 | `tools/red.py se_va`: el invitado se cierra en el VBlank 3100 | el anfitrión lo quita en el 3104; el punto azul del radar, 4 px antes y 0 después |
 | El resto de `tools/red.py` | igual |
+
+## El mensaje de derribo de cada uno (rama `etapa-10-paso-8-derribos`)
+
+El dueño vio que al derribar con el 2 no salía nada en su pantalla
+(BULL'S-EYE...), y con el 1 sí.
+
+- **Por qué:** `FUN_80045be0` procesa los enemigos derribados y saca el
+  mensaje con `FUN_8004b980(6 o 7)` solo si la ranura del atacante
+  (`+0x50 & 0x3F` del enemigo) es la 0. Medido con `AC3_WATCHWRITE`:
+  `FUN_80045118` escribe la vida igual para los dos, y en ella el atacante
+  es la 1 para los misiles del 2.
+- **El mensaje** está en la estructura de `*DAT_800BB9BC` (el actual en
+  `+0x11C`, 0xFF sin mensaje). Se avanza y se dibuja en el dibujo de la
+  misión: `FUN_80033910` → `FUN_800336ec` → `FUN_8004b468`.
+- **Arreglo, sin tocar la partida:**
+  - en la simulación, al entrar en `FUN_80047c2c` (el registro del derribo,
+    justo después) se comprueban las mismas condiciones con el atacante en
+    la 1; el mensaje solo se anota;
+  - el 2 tiene su copia de la estructura: en su redibujo, el mensaje nuevo
+    se arranca allí con `FUN_8004b980` y se avanza con el código del juego;
+  - el mensaje de un derribo del 1 (`FUN_8004b980` llamado desde
+    `FUN_80045be0`) no sale en el redibujo del 2.
+- **La voz del mensaje** (bandera 1 de su tabla, `DAT_800B0534 + n*0x1C`:
+  los sonidos 75 y 76) va a la cola de sonidos con espera (`DAT_800C4E70`,
+  30 pasos):
+  - la del 2 se encola en la simulación de los dos aparatos, como hace el
+    juego con la del 1;
+  - cada hueco de la cola recuerda su dueño, y al pedirse (`FUN_8002ef8c` →
+    `FUN_8002d8e4`) la voz queda con él, así que solo se oye en el aparato
+    de quien derribó.
+- **`SIN RESOLVER` / pendiente:** el juego sigue tratando al 2 como un
+  atacante cualquiera.
+  - Su misil quita 110 (de la tabla de armas por ranura,
+    `DAT_800BB8C0 + ranura*0x40`), y el del 1, 160: en fácil, el del
+    jugador se dobla.
+  - El informe cuenta sus derribos como de un aliado (`FUN_80047c2c`).
+  - Decidir con el dueño si se igualan.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red.py derribo`: derriba el 1 y, aparte, el 2 (enemigo con 50 de vida, `AC3_COOP_VIDA`) | el rótulo (≈450 px) solo en la vista de quien derriba; su voz se oye en su aparato y no en el otro; la misma partida desde las dos vistas |
+| El resto de `tools/red.py` y `tools/coop_vista.py huella autoprueba` | igual |
+
