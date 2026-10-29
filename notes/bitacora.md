@@ -5,6 +5,25 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-29 — Etapa 10: la tabla de ganchos era pequeña para el aparato del 2 (sus sonidos)
+
+- **Lo que vio el dueño:** en el S24 (el 2) se oían el autopiloto, el BINGO
+  y los sonidos lejanos del 1.
+- **Lo que se midió:** en la repetición del PC todo salía bien, y en el
+  aparato no. El registro nuevo de ganchos lo explica: como el 2, el
+  aparato registra 43, y `NHOOK` era 40.
+  - Se perdían los de los sonidos de cada aparato, que no cambian la
+    partida.
+- **Arreglo:** `NHOOK` 64, y el aviso de «sin sitio» al registro.
+- **Comprobado:**
+  - con su partida repetida como el 2 y los ganchos del aparato, los
+    sonidos del 1 no suenan;
+  - las torretas de la misión 2 sí le dispararon (unas 400 veces, una le
+    dio), y el lanzamisiles lanzó con él de blanco.
+- **Herramientas:** `voces=1` en `depurar.txt`; `AC3_WATCHWRITE_N`.
+
+---
+
 ## 2026-10-29 — Etapa 10: la separación de las partidas (el presupuesto del redibujo) y los sonidos del 1 en el aparato del 2
 
 - **La separación, encontrada** con las grabaciones de los dos aparatos y

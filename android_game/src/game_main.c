@@ -194,6 +194,7 @@ static void dbg_read(void) {
             /* (etapa 8, paso 10) pruebas de la pantalla ancha, antes de entrar en la mision: sin la
              * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
             else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
+            else if (!strcmp(k, "voces") && v == 1) setenv("AC3_COOP_DBGVOCES", "1", 1);   /* (etapa 10) de quien es cada sonido, al registro */
             else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
             else if (!strcmp(k, "rrserie") && v == 1) setenv("PSX_INTERP_RRSERIE", "1", 1);   /* (paso 12) las fases en serie, como antes */
             else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */

@@ -351,7 +351,7 @@ static int coop_init(uint32_t st, uint32_t e0, uint32_t e1) {
         r1[0] = 0; r1[1] = r1[2] = r1[3] = 0xFF;
     }
     g_msg2_ok = 0;   /* (paso 8) el 2 empieza sin aviso del HUD */
-    printf("coop: entidad 1 (%08x) activa en el VBlank %d\n", e1, VSync(-1));
+    { extern int mipsi_hooks_used(void); printf("coop: entidad 1 (%08x) activa en el VBlank %d (%d ganchos)\n", e1, VSync(-1), mipsi_hooks_used()); }
     return 0;
 }
 
@@ -1236,8 +1236,8 @@ static void voice_on_hook(uint32_t voices) {
         g_voice_req[i] = 0;
         if (owner && owner != g_local) s->mute_out |= 1u << i;
         else s->mute_out &= ~(1u << i);
-        if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d voz %d del %s%s\n", VSync(-1), i, owner == 1 ? "jugador 1" : owner == 2 ? "jugador 2" : "comun",
-                                                  s->mute_out >> i & 1 ? " (no se oye aqui)" : "");
+        if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d voz %d del %s%s (se quita %u/4096)\n", VSync(-1), i, owner == 1 ? "jugador 1" : owner == 2 ? "jugador 2" : "comun",
+                                                  s->mute_out >> i & 1 ? " (no se oye aqui)" : "", s->out_quiet[i]);
     }
 }
 /* (etapa 10) el volumen por distancia de cada aparato (ver rel_note): lo que la partida da con el oyente mas cercano y lo
@@ -1595,6 +1595,8 @@ void ac3_coop_set_local(int player) {
     mipsi_set_hook(A->hud_logic, hud_logic_hook);
     mipsi_set_hook(A->snd_att, snd_att_hook);
     psx_spu_keyon_hook = voice_on_hook;
+    extern int mipsi_hooks_used(void);
+    printf("coop: jugador %d en este aparato; %d ganchos\n", player, mipsi_hooks_used());
 }
 
 /* (etapa 10, paso 8) la mision elegida, en la partida nueva: se vigila la escritura de la mision actual (g_state +
@@ -1613,7 +1615,7 @@ void ac3_coop_frame(void) {
     if (!mipsi_watch2 && st) { mipsi_watch_write_fn = newgame_write; mipsi_watch2 = st + 0x390; }
     if (g_ng_hit) {
         g_ng_hit = 0;
-        printf("coop: partida nueva en el VBlank %d: la mision %d\n", VSync(-1), g_ng_mission);
+        { extern int mipsi_hooks_used(void); printf("coop: partida nueva en el VBlank %d: la mision %d (%d ganchos)\n", VSync(-1), g_ng_mission, mipsi_hooks_used()); }
         int16_t m = (int16_t)g_ng_mission;
         memcpy(psx_ptr(st + 0x390), &m, 2);
     }

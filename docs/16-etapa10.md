@@ -622,3 +622,50 @@ Medido repitiendo la grabación como el 2 con `AC3_COOP_DBGVOCES=1`, y
 | `tools/red_repro.py` con las dos grabaciones de la misión 1 | la Retroid igual a la repetición; las dos repeticiones, la misma partida (antes, separadas en el VBlank 10825) |
 | Sonidos de la partida repetida como el 2 | 0x2d del 1, avisos del HUD del 1; los sonidos con posición, desde el avión de cada uno |
 
+## Las misiones 1 y 2 del dueño, otra vez: los ganchos que no cabían
+
+- **Lo que vio el dueño** (Retroid el 1, S24 el 2; 59.057 VBlank y 984
+  huellas, todas iguales):
+  - en el aparato del 2 se oían el autopiloto del 1, su voz de BINGO y los
+    sonidos con posición del 1 aunque estuviera lejos;
+  - las torretas no le disparaban, y no sabía si el misil del lanzamisiles
+    iba a por él.
+- **La causa de los sonidos: la tabla de ganchos del intérprete** (`NHOOK`,
+  `psx/recomp/mipsi.c`) era de 40.
+  - El aparato con la vista del 2 registra 43 (medido: `coop: ... (N
+    ganchos)`, nuevo en el registro):
+    - quien crea, 39;
+    - quien se une, más los del redibujo.
+  - Los últimos no se registraban. Son los de los sonidos de cada aparato
+    (el aviso del HUD, el volumen por distancia), que no cambian la
+    partida, y por eso no se separaba.
+  - El aviso de «sin sitio» iba a `stderr` y en el APK no se veía.
+- **Arreglo:** la tabla es de 64, y el aviso va al registro.
+- **Comprobado con la repetición de su partida como el 2**, con los mismos
+  ganchos que el aparato (`AC3_RR=1`, `AC3_COOP_DBGVOCES=1`):
+  - **del 1, no suenan en el aparato del 2:** el autopiloto (0x37, 4 de 4),
+    su voz de BINGO (0x4c, 4 de 4), la metralleta (0x11, 54), el misil
+    (0x0e, 11) y los tonos de fijado (0x2d, 0x32);
+  - **del 2, sí:** su metralleta, sus misiles, sus tonos y su voz de BINGO;
+  - **los sonidos con posición:** un evento a 2.985 del oyente y a 10.291
+    del 2 no suena en el aparato del 2.
+- **Las torretas sí le disparaban** (la misma repetición, con
+  `AC3_COOP_DBGIA` y `AC3_TRACE=80051dc4`):
+  - entre los VBlank 26.000 y 27.600 el 1 estaba a más de 70.000 y el
+    antiaéreo (tipo 0x40) disparó unas 400 veces;
+  - al 2 le dio una vez (vida 30 → 28).
+- **El lanzamisiles** (unidad 6, tipo 0x41) tenía al 2 de blanco a 1.400.
+  Lanzó en el VBlank 24.349 (`FUN_80067094`). Que saliera su alerta en el
+  aparato del 2 dice que el misil iba a él: la alerta mira la ranura del
+  misil.
+- **Nuevo en `depurar.txt`:** `voces=1`, el dueño de cada sonido al
+  registro (`AC3_COOP_DBGVOCES`).
+- **Ojo con las pruebas:**
+  - `AC3_TRACE` sobre una función con gancho lo sustituye (en
+    `FUN_8002d8e4`, el de la cola de sonidos);
+  - `tools/movil_red.sh` sin `MENU=1` ya no da la misma partida (VBlank 120,
+    también con el commit anterior): con `depurar.txt` no se pasa la tarjeta
+    de quien crea.
+- **`SIN RESOLVER`:** el autopiloto del 2 (0x37) solo se pide en su
+  redibujo y no suena en ningún aparato.
+

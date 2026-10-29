@@ -241,8 +241,12 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   aparato. Los sonidos del 1 ya no suenan en el aparato del 2 (el pitido de
   «fijando», el aviso de que le fijan), y las explosiones y los impactos se
   oyen según la distancia al avión de cada uno.
+- **La tabla de ganchos del intérprete** era de 40, y el aparato del 2
+  registra 43: perdía los de sus sonidos (oía el autopiloto, el BINGO y los
+  sonidos lejanos del 1). Ahora es de 64, y el número de ganchos sale en el
+  registro.
 - **`SIN RESOLVER`:**
-  - el 2 no oye el aviso de que le fijan;
+  - el 2 no oye el aviso de que le fijan, ni su autopiloto;
   - las órdenes del guion de atacar al jugador siguen siendo contra el 1.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
