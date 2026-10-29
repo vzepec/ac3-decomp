@@ -204,6 +204,7 @@ static void coop_summary(void) {
     if (views || miss) printf("coop: %d imagenes desde el jugador 2, %d como el original\n", views, miss);
     printf("coop: %d pasos del jugador 2, %d ordenes de modo, %d reapariciones\n", ac3_coop_steps(), ac3_coop_orders(), ac3_coop_revives()); }
 static int g_spu_on;
+static FILE *g_repro;   /* (etapa 10) AC3_REPRO: la grabacion de los mandos de una partida en red */
 static void ram_hash(int v) {
     uint64_t h[35];
     h[0] = (uint64_t)v;
@@ -264,6 +265,23 @@ static void pc_frame_wait(void) {
     if (ac3_net_lost() && !lost_told) {   /* (etapa 10) como el APK: si se fue el 2, su avion desaparece */
         lost_told = 1;
         if (ac3_net_is_host()) ac3_coop_remove_p2();
+    }
+    if (g_repro) {   /* (etapa 10) AC3_REPRO: los mandos de los dos, de la grabacion de una partida en red del APK */
+        uint8_t r[16];
+        if (fread(r, 1, 16, g_repro) == 16) {
+            for (int i = 0; i < 2; i++) {
+                uint16_t b;
+                memcpy(&b, r + 4 + 6 * i, 2);
+                psx_pad_set(i, b, r[6 + 6 * i], r[7 + 6 * i], r[8 + 6 * i], r[9 + 6 * i]);
+            }
+        } else for (int i = 0; i < 2; i++) psx_pad_set(i, 0, 0x80, 0x80, 0x80, 0x80);
+        static FILE *hout;   /* AC3_REPRO_HUELLAS: las huellas de cada 60 VBlank, como las del APK (red_partida_huellas.bin) */
+        if (!hout && getenv("AC3_REPRO_HUELLAS")) hout = fopen(getenv("AC3_REPRO_HUELLAS"), "wb");
+        if (hout && v > 0 && v % 60 == 0) {
+            uint64_t h = ac3_net_ram_hash();
+            fwrite(&v, 4, 1, hout); fwrite(&h, 8, 1, hout); fflush(hout);
+        }
+        return;
     }
     if (ac3_net_active() || g_net) {   /* (paso 7) en red: el mando de este jugador (su guion) y el del otro, de la red */
         NetPad mine = ac3_net_is_host() ? script_eval(script, nscript, v) : script_eval(script2, nscript2, v), p1, p2;
@@ -1014,6 +1032,30 @@ int main(int argc, char **argv) {
     psx_set_call(rc_host_callback);
     rc_set_tick(tick, BUDGET_PER_FRAME);
     rc_set_frame_hook(on_vsync_frame);
+    if (getenv("AC3_REPRO")) {   /* (etapa 10) repetir una partida en red grabada por el APK (tools/red_repro.py): como en
+                                  * el menu Cooperativo (la tarjeta grabada, la mision en la partida nueva, el ritmo del
+                                  * APK y la SPU) y los mandos de los dos puertos de la grabacion. AC3_COOP, AC3_WIDE,
+                                  * AC3_COOP_VER y AC3_COOP_LOCAL los pone la herramienta */
+        char p[600];
+        int mission = -1;
+        snprintf(p, sizeof p, "%s/red_partida_info.txt", getenv("AC3_REPRO"));
+        FILE *f = fopen(p, "r");
+        if (f) { if (fscanf(f, "mision=%d", &mission) != 1) mission = -1; fclose(f); }
+        snprintf(p, sizeof p, "%s/red_partida_tarjeta.mcd", getenv("AC3_REPRO"));
+        static uint8_t card[128 * 1024];
+        if ((f = fopen(p, "rb")) && fread(card, 1, sizeof card, f) == sizeof card) psx_card_attach_image(0, card);
+        if (f) fclose(f);
+        snprintf(p, sizeof p, "%s/red_partida_mandos.bin", getenv("AC3_REPRO"));
+        if (!(g_repro = fopen(p, "rb"))) { printf("AC3_REPRO: no se abre %s\n", p); return 1; }
+        ac3_coop_newgame(mission);
+        g_force_mission = -1;
+        mipsi_set_hook(V->mission_start, force_mission);
+        setenv("AC3_COMO_APK", "1", 1);
+#ifdef AC3_LIBRE
+        if (!g_spu_on) { g_spu_on = 1; psx_audio_connect(); }
+#endif
+        printf("repeticion: %s, mision %d\n", getenv("AC3_REPRO"), mission);
+    }
     if (getenv("AC3_RED")) {
         int host = !strcmp(getenv("AC3_RED"), "anfitrion");
         int port = getenv("AC3_RED_PUERTO") ? atoi(getenv("AC3_RED_PUERTO")) : 7070;

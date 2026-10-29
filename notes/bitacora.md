@@ -5,6 +5,35 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-29 — Etapa 10: tierra (derribos, torretas que solo veían al 1), la alerta de misil de cada uno, y grabar las partidas
+
+- **Lo vio el dueño en la misión 2:**
+  - las torretas no disparaban al 2;
+  - sus derribos de tierra no tenían mensaje;
+  - el BINGO del 1 y su alerta de misil salían en las dos pantallas.
+- **Causas, medidas con `AC3_TRACE`, `AC3_WATCHWRITE` y volcados:**
+  - **los derribos de tierra** van por `FUN_80050c80`, no por la función de
+    los aviones;
+  - **las unidades de tierra** solo tienen IA si están cerca del 1: la
+    bandera `0x8000` la ponen `FUN_80050058` y, para los aviones,
+    `FUN_80038024`, por el registro de puntería del 1;
+  - **las torretas sin blanco** se quedan con la ranura 0;
+  - **la alerta de misil** (`FUN_8003a81c`) mira el misil que va a la
+    ranura 0 de `*DAT_800BBA60`.
+- **Arreglos:**
+  - cercanía del 2 durante la activación;
+  - el jugador más cercano para las de tierra;
+  - las ranuras 0 y 1 de la tabla de misiles intercambiadas en su aviso y
+    en su redibujo;
+  - la detección del derribo también en tierra.
+  - Opciones de prueba: `AC3_COOP_AQUI1/2`, `AC3_COOP_MATA`.
+- **Las partidas se separaron** en el VBlank 28380, `SIN RESOLVER`. Desde
+  ahora el APK graba cada partida en red y `tools/red_repro.py` la repite
+  en el PC.
+  - Validado con una grabación de la Retroid: 100 huellas iguales.
+
+---
+
 ## 2026-10-29 — Etapa 10: el mensaje de derribo (BULL'S-EYE) y su voz, de quien derriba
 
 - **El 2 no tenía mensaje al derribar:** `FUN_80045be0` lo saca

@@ -226,6 +226,16 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   derribos en el informe, y la IA le dispara con la misma espera y su
   aviso. `SIN RESOLVER`: las órdenes del guion de «atacar al jugador» siguen
   siendo contra el 1.
+- **Tierra y alerta de misil** (misma rama):
+  - las unidades de tierra (torretas, tanques, barcos, lanzamisiles) se
+    activan y disparan también cerca del 2;
+  - sus derribos de tierra tienen su mensaje, y el del 1 ya no sale en la
+    pantalla del 2;
+  - la alerta de misil, solo para el jugador al que va el misil.
+- **`SIN RESOLVER`:** las partidas se separaron una vez (misión 2, VBlank
+  28380, tras 8 minutos). El APK graba ya cada partida en red
+  (`red_partida_*`) y `tools/red_repro.py` la repite en el PC. Si vuelve a
+  pasar, traer las grabaciones de los dos aparatos y repetirlas.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

@@ -438,3 +438,105 @@ enemigos no parecían ir a por el 2.
 | Misiones 22, 26, 31 y 37 (`AC3_COOP_MISIL`) | misiles al 1 (22, 37) y al 2 con su contexto (26, 31) |
 | `tools/red.py`, `tools/coop_vista.py`, `tools/coop.py --vista2` | igual |
 
+## Lo que vio el dueño en la misión 2 (misma rama)
+
+La misión 2 (objetivos de tierra, algunos con torretas), en red Retroid↔S24.
+Hubo cuatro cosas, más una separación de las partidas.
+
+### Los derribos de tierra
+
+- El mensaje de los de tierra lo saca otra función: `FUN_80050c80(j)` (la
+  entidad `j + 0x20`), con el mensaje 7, o el `0x2E` en la misión `0x16`.
+  El arreglo anterior solo cubría los aviones (`FUN_80045be0`).
+- **Efectos:** el derribo de tierra del 1 salía en las dos pantallas, y el
+  del 2 en ninguna.
+- **Ahora:** la detección del derribo del 2 y la ocultación del mensaje del
+  1 cubren las dos funciones.
+- Medido con una opción de prueba, `AC3_COOP_MATA=k,v,j` (en el VBlank v la
+  entidad k derribada por el jugador j), sobre la torreta 38: el rótulo
+  (678 px) sale solo en la vista de quien la derriba, y la partida es la
+  misma desde las dos vistas.
+
+### Las unidades de tierra (torretas, tanques, barcos, lanzamisiles)
+
+Todas van por la lista de tierra (`*DAT_800BB814`, entidades `0x20`-`0x3F`).
+
+- **Solo tenían IA las cercanas al 1:**
+  - el bucle de tierra (`FUN_8004ffd8` → `FUN_80050610` → `FUN_80051b5c`)
+    exige la bandera `0x8000` de la entidad;
+  - esa bandera la pone en cada paso `FUN_80050058`, y para los aviones
+    `FUN_80038024`, si su registro de puntería del 1
+    (`DAT_800C57F0[k]`) tiene `0x80`, cerca de él (`FUN_80044950`);
+  - medido con `AC3_TRACE`: con el 1 lejos y el 2 junto a las torretas,
+    `FUN_80050610` no se llamaba para ellas.
+  - **Arreglo:** durante esas dos activaciones, los registros del 1 tienen
+    también la cercanía de los del 2 (su copia de su paso) y después
+    quedan como estaban.
+- **Y apuntaban siempre al 1:**
+  - sin blanco, `FUN_8004570c` atiende a una entidad por paso; si no
+    hay, ponen la ranura 0;
+  - el blanco se suelta tras cada disparo o fuera de alcance, en la misma
+    llamada.
+  - **Arreglo:** al entrar en `FUN_80051b5c`, sin blanco o con el 1, el
+    jugador vivo más cercano. Su disparo de misiles (`FUN_80052184`) ya va
+    con el contexto del 2.
+- **Medido** con otra opción de prueba, `AC3_COOP_AQUI1/2=x,y,z` (cada
+  jugador en un punto), y `AC3_TRACE` de los disparos
+  (`FUN_80051dc4`, `FUN_80052184`), con uno a 1.500 de altura junto a las
+  torretas y el otro lejos:
+  - disparos con el 1 cerca: 135, 158 y 197 en tres sitios;
+  - con el 2 cerca: antes 0; ahora 34, 119 y 151 (al 2 la distancia se
+    mide de otra forma, por los tres ejes);
+  - vida tras pasar junto a ellas: 88 el 1 y 88 el 2.
+
+### La alerta de misil del 1 en la pantalla del 2
+
+- El aviso de misil en camino (`FUN_8003a81c`, desde el paso de la cámara)
+  mira el misil que va a la ranura 0 de la tabla de misiles:
+  `*DAT_800BBA60`, con el bit k de la palabra 0, el número del misil en
+  `+8+k` y la cuenta en `+0x88+k` (lo escribe `FUN_80067094`, desde cada
+  lanzamiento).
+  - Como el 2, en su vista, medía la distancia del misil que iba al 1 a su
+    avión: volando cerca del 1 veía su alerta.
+  - El 2 nunca tenía la suya.
+- **Arreglo:**
+  - como el 2, y en su redibujo, esa tabla tiene las ranuras 0 y 1
+    intercambiadas;
+  - los sonidos que pide el aviso de cada uno (la alarma) van con su
+    dueño.
+- **Medido:**
+  - misión 37, misil hacia el 1 con el 2 al lado: el HUD rojo de la alerta
+    (unos 1.300 px) solo en la vista del 1;
+  - misión 26, misil hacia el 2: solo en la del 2 (unos 970 px);
+  - la partida, igual.
+
+### La separación de las partidas (`SIN RESOLVER`)
+
+- **Qué pasó:**
+  - en el VBlank 28380, a los 8 minutos, con combate de tierra y 4
+    reapariciones del 2;
+  - desde ahí, las 37 huellas siguientes fueron distintas (los dos
+    aparatos lo vieron igual).
+- **Por qué no se sabe todavía:** sin los mandos no se puede repetir.
+- **Para la próxima:** el APK graba cada partida del menú Cooperativo en la
+  carpeta de la app (`red_partida_*`):
+  - la misión y las opciones;
+  - la tarjeta;
+  - los mandos de los dos puertos de cada VBlank;
+  - la huella de cada 60.
+- **`tools/red_repro.py`** la repite en el PC (`AC3_REPRO`) desde el 1 y
+  desde el 2. Compara las huellas de cada aparato con la repetición, y las
+  dos repeticiones entre sí, y dice el primer VBlank distinto y en qué
+  bloques de la RAM.
+- **Validado:** la Retroid crea la misión 2 y el PC se une, con los menús a
+  mano y 6.001 VBlank. Las 100 huellas de la Retroid coinciden con la
+  repetición, y las dos repeticiones dan la misma partida.
+
+| Prueba | Resultado |
+|---|---|
+| Derribo de tierra (`AC3_COOP_MATA=38,3200,j`) del 1 y del 2 | el rótulo solo en la vista de quien derriba; la misma partida |
+| Torretas de la misión 2 con cada jugador cerca | disparan a los dos (135-197 al 1; 34-151 al 2, antes 0); el mismo daño |
+| Alerta de misil (misiones 37 y 26) | solo en la vista del jugador al que va el misil |
+| `tools/red_repro.py` con una grabación de la Retroid | 100 huellas iguales; la misma partida desde el 1 y desde el 2 |
+| `tools/red.py`, `tools/coop_vista.py` | igual |
+
