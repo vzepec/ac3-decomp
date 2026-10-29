@@ -335,3 +335,337 @@ no se puede dejar de reproducir en un aparato. Lo que se hace es no
 | `tools/red.py sonido`: tono de fijado del 1 (misión 5), en el aparato del 2 | 8 peticiones, del jugador 1, sin oír |
 | `tools/red.py se_va`: el invitado se cierra en el VBlank 3100 | el anfitrión lo quita en el 3104; el punto azul del radar, 4 px antes y 0 después |
 | El resto de `tools/red.py` | igual |
+
+## El mensaje de derribo de cada uno (rama `etapa-10-paso-8-derribos`)
+
+El dueño vio que al derribar con el 2 no salía nada en su pantalla
+(BULL'S-EYE...), y con el 1 sí.
+
+- **Por qué:** `FUN_80045be0` procesa los enemigos derribados y saca el
+  mensaje con `FUN_8004b980(6 o 7)` solo si la ranura del atacante
+  (`+0x50 & 0x3F` del enemigo) es la 0. Medido con `AC3_WATCHWRITE`:
+  `FUN_80045118` escribe la vida igual para los dos, y en ella el atacante
+  es la 1 para los misiles del 2.
+- **El mensaje** está en la estructura de `*DAT_800BB9BC` (el actual en
+  `+0x11C`, 0xFF sin mensaje). Se avanza y se dibuja en el dibujo de la
+  misión: `FUN_80033910` → `FUN_800336ec` → `FUN_8004b468`.
+- **Arreglo, sin tocar la partida:**
+  - en la simulación, al entrar en `FUN_80047c2c` (el registro del derribo,
+    justo después) se comprueban las mismas condiciones con el atacante en
+    la 1; el mensaje solo se anota;
+  - el 2 tiene su copia de la estructura: en su redibujo, el mensaje nuevo
+    se arranca allí con `FUN_8004b980` y se avanza con el código del juego;
+  - el mensaje de un derribo del 1 (`FUN_8004b980` llamado desde
+    `FUN_80045be0`) no sale en el redibujo del 2.
+- **La voz del mensaje** (bandera 1 de su tabla, `DAT_800B0534 + n*0x1C`:
+  los sonidos 75 y 76) va a la cola de sonidos con espera (`DAT_800C4E70`,
+  30 pasos):
+  - la del 2 se encola en la simulación de los dos aparatos, como hace el
+    juego con la del 1;
+  - cada hueco de la cola recuerda su dueño, y al pedirse (`FUN_8002ef8c` →
+    `FUN_8002d8e4`) la voz queda con él, así que solo se oye en el aparato
+    de quien derribó.
+- Lo que seguía tratando al 2 como un atacante cualquiera se iguala en la
+  sección siguiente.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red.py derribo`: derriba el 1 y, aparte, el 2 (enemigo con 50 de vida, `AC3_COOP_VIDA`) | el rótulo (≈450 px) solo en la vista de quien derriba; su voz se oye en su aparato y no en el otro; la misma partida desde las dos vistas |
+| El resto de `tools/red.py` y `tools/coop_vista.py huella autoprueba` | igual |
+
+## El 2 como el 1 ante los enemigos (misma rama)
+
+El dueño pidió que los dos jugadores se comporten igual, y vio que los
+enemigos no parecían ir a por el 2.
+
+### Su daño y sus derribos
+
+- **El daño** (`FUN_80045118`) sale de la tabla del jugador solo con el
+  atacante en la ranura 0; con otra, de la tabla de armas por ranura
+  (`DAT_800BB8C0 + ranura*0x40`), sin doblar en fácil. Medido: el misil
+  del 2 quitaba 110 y el del 1, 160.
+  - **Arreglo:** al entrar en `FUN_80045118`, los enemigos tocados por el 2
+    tienen el atacante en la 0. Al entrar en lo siguiente de
+    `FUN_80044f70` (`FUN_8004ae94`) vuelve a ser la 1, para que la IA y los
+    derribos sigan sabiendo quién fue.
+  - Medido con `tools/coop_vista.py misil`: el misil del 2 deja al enemigo
+    2 en -20, como el del 1.
+- **El informe** (`FUN_80047c2c`) cuenta como del jugador solo el atacante
+  0. El derribo del 2 se anota ahora con el atacante 0: un registro de tipo
+  0 y el contador de derribos del jugador (`DAT_800BB87C+0x2e`) en 1, como
+  el del 1.
+
+### Los enemigos y el 2
+
+- **Le persiguen:** en las 41 misiones (`AC3_COOP_DBGIA`, 173 muestras),
+  105 veces al 2 y 80 al 1. La elección de objetivo (`FUN_8004570c`) ya lo
+  incluía desde el paso 6.
+- **Le disparan:** el disparo de la IA es `FUN_80047344(k)`, con el blanco
+  en `*DAT_800BB888 + k*0xB8 + 0x60`. Con el blanco en la 0 espera antes de
+  disparar y avisa al jugador (`DAT_800C57EC | 1`). Con otro blanco
+  disparaba enseguida: medido, misión 25, 8 misiles al 2 y ninguno al 1.
+  - **Arreglo:** con el blanco en la 1, la llamada se hace con el contexto
+    del 2 (`p2_begin`: su entidad en la 0, su copia del aviso de amenaza) y
+    el blanco en la 0, y la original no se ejecuta. Para eso, un gancho de
+    entrada puede saltarse la llamada (`mipsi_skip_call`, nuevo en el
+    intérprete).
+  - Igual con la IA de tierra (`FUN_80052184`, blanco en `+0x5B`), que
+    ponía el aviso de fijado siempre en el del 1.
+  - El bit de fijado del 2 se quita en el mismo sitio que el del 1
+    (`FUN_80037fc8`). Los sonidos de esa IA siguen siendo comunes.
+  - **Medido** (`AC3_COOP_MISIL`): misiles al 1 en las misiones 0, 18, 22,
+    27, 30, 35 y 37; al 2, con su contexto, en la 26 y la 31. En la 25 ya
+    no le disparan, como al 1. La partida, igual desde las dos vistas.
+  - El 1 casi no tiene aviso de fijado (una vez, de tierra, en la misión
+    22): los aviones disparan sin él.
+- **`SIN RESOLVER`:** las órdenes del guion de «atacar al jugador»
+  (`FUN_8004f77c`, blanco del guion `+0x1F` = 0, comportamientos 9 y 10)
+  son siempre contra el 1.
+  - Ejemplo: el enemigo 2 de la misión 37 ataca al 1 aunque el 2 esté
+    detrás de él.
+  - Se probó elegir al jugador más cercano y hacer la orden con el contexto
+    del 2. No basta: el resto del paso del enemigo (`FUN_80045fc8`: giros y
+    acercamiento) también usa la entidad 0, y el enemigo iba hacia el 1
+    apuntando al 2. No disparaba a ninguno, y al 1 le llegó 1 misil en vez
+    de 6. Se quitó. Hace falta ejecutar todo el paso de esos enemigos con
+    el contexto del 2.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/coop_vista.py misil` | el misil del 2 con su vista: 140 → -20, como el del 1 (antes 30) |
+| Informe tras el derribo de cada uno | igual: registro de tipo 0, 1 derribo del jugador |
+| 41 misiones con `AC3_COOP_DBGIA` | perseguidores: 105 al 2, 80 al 1 |
+| Misiones 22, 26, 31 y 37 (`AC3_COOP_MISIL`) | misiles al 1 (22, 37) y al 2 con su contexto (26, 31) |
+| `tools/red.py`, `tools/coop_vista.py`, `tools/coop.py --vista2` | igual |
+
+## Lo que vio el dueño en la misión 2 (misma rama)
+
+La misión 2 (objetivos de tierra, algunos con torretas), en red Retroid↔S24.
+Hubo cuatro cosas, más una separación de las partidas.
+
+### Los derribos de tierra
+
+- El mensaje de los de tierra lo saca otra función: `FUN_80050c80(j)` (la
+  entidad `j + 0x20`), con el mensaje 7, o el `0x2E` en la misión `0x16`.
+  El arreglo anterior solo cubría los aviones (`FUN_80045be0`).
+- **Efectos:** el derribo de tierra del 1 salía en las dos pantallas, y el
+  del 2 en ninguna.
+- **Ahora:** la detección del derribo del 2 y la ocultación del mensaje del
+  1 cubren las dos funciones.
+- Medido con una opción de prueba, `AC3_COOP_MATA=k,v,j` (en el VBlank v la
+  entidad k derribada por el jugador j), sobre la torreta 38: el rótulo
+  (678 px) sale solo en la vista de quien la derriba, y la partida es la
+  misma desde las dos vistas.
+
+### Las unidades de tierra (torretas, tanques, barcos, lanzamisiles)
+
+Todas van por la lista de tierra (`*DAT_800BB814`, entidades `0x20`-`0x3F`).
+
+- **Solo tenían IA las cercanas al 1:**
+  - el bucle de tierra (`FUN_8004ffd8` → `FUN_80050610` → `FUN_80051b5c`)
+    exige la bandera `0x8000` de la entidad;
+  - esa bandera la pone en cada paso `FUN_80050058`, y para los aviones
+    `FUN_80038024`, si su registro de puntería del 1
+    (`DAT_800C57F0[k]`) tiene `0x80`, cerca de él (`FUN_80044950`);
+  - medido con `AC3_TRACE`: con el 1 lejos y el 2 junto a las torretas,
+    `FUN_80050610` no se llamaba para ellas.
+  - **Arreglo:** durante esas dos activaciones, los registros del 1 tienen
+    también la cercanía de los del 2 (su copia de su paso) y después
+    quedan como estaban.
+- **Y apuntaban siempre al 1:**
+  - sin blanco, `FUN_8004570c` atiende a una entidad por paso; si no
+    hay, ponen la ranura 0;
+  - el blanco se suelta tras cada disparo o fuera de alcance, en la misma
+    llamada.
+  - **Arreglo:** al entrar en `FUN_80051b5c`, sin blanco o con el 1, el
+    jugador vivo más cercano. Su disparo de misiles (`FUN_80052184`) ya va
+    con el contexto del 2.
+- **Medido** con otra opción de prueba, `AC3_COOP_AQUI1/2=x,y,z` (cada
+  jugador en un punto), y `AC3_TRACE` de los disparos
+  (`FUN_80051dc4`, `FUN_80052184`), con uno a 1.500 de altura junto a las
+  torretas y el otro lejos:
+  - disparos con el 1 cerca: 135, 158 y 197 en tres sitios;
+  - con el 2 cerca: antes 0; ahora 34, 119 y 151 (al 2 la distancia se
+    mide de otra forma, por los tres ejes);
+  - vida tras pasar junto a ellas: 88 el 1 y 88 el 2.
+
+### La alerta de misil del 1 en la pantalla del 2
+
+- El aviso de misil en camino (`FUN_8003a81c`, desde el paso de la cámara)
+  mira el misil que va a la ranura 0 de la tabla de misiles:
+  `*DAT_800BBA60`, con el bit k de la palabra 0, el número del misil en
+  `+8+k` y la cuenta en `+0x88+k` (lo escribe `FUN_80067094`, desde cada
+  lanzamiento).
+  - Como el 2, en su vista, medía la distancia del misil que iba al 1 a su
+    avión: volando cerca del 1 veía su alerta.
+  - El 2 nunca tenía la suya.
+- **Arreglo:**
+  - como el 2, y en su redibujo, esa tabla tiene las ranuras 0 y 1
+    intercambiadas;
+  - los sonidos que pide el aviso de cada uno (la alarma) van con su
+    dueño.
+- **Medido:**
+  - misión 37, misil hacia el 1 con el 2 al lado: el HUD rojo de la alerta
+    (unos 1.300 px) solo en la vista del 1;
+  - misión 26, misil hacia el 2: solo en la del 2 (unos 970 px);
+  - la partida, igual.
+
+### La separación de las partidas (`SIN RESOLVER`)
+
+- **Qué pasó:**
+  - en el VBlank 28380, a los 8 minutos, con combate de tierra y 4
+    reapariciones del 2;
+  - desde ahí, las 37 huellas siguientes fueron distintas (los dos
+    aparatos lo vieron igual).
+- **Por qué no se sabe todavía:** sin los mandos no se puede repetir.
+- **Para la próxima:** el APK graba cada partida del menú Cooperativo en la
+  carpeta de la app (`red_partida_*`):
+  - la misión y las opciones;
+  - la tarjeta;
+  - los mandos de los dos puertos de cada VBlank;
+  - la huella de cada 60.
+- **`tools/red_repro.py`** la repite en el PC (`AC3_REPRO`) desde el 1 y
+  desde el 2. Compara las huellas de cada aparato con la repetición, y las
+  dos repeticiones entre sí, y dice el primer VBlank distinto y en qué
+  bloques de la RAM.
+- **Validado:** la Retroid crea la misión 2 y el PC se une, con los menús a
+  mano y 6.001 VBlank. Las 100 huellas de la Retroid coinciden con la
+  repetición, y las dos repeticiones dan la misma partida.
+
+| Prueba | Resultado |
+|---|---|
+| Derribo de tierra (`AC3_COOP_MATA=38,3200,j`) del 1 y del 2 | el rótulo solo en la vista de quien derriba; la misma partida |
+| Torretas de la misión 2 con cada jugador cerca | disparan a los dos (135-197 al 1; 34-151 al 2, antes 0); el mismo daño |
+| Alerta de misil (misiones 37 y 26) | solo en la vista del jugador al que va el misil |
+| `tools/red_repro.py` con una grabación de la Retroid | 100 huellas iguales; la misma partida desde el 1 y desde el 2 |
+| `tools/red.py`, `tools/coop_vista.py` | igual |
+
+## La misión 1 del dueño (Retroid↔S24, misma rama)
+
+### La separación de las partidas, encontrada
+
+- **Cómo se encontró:** con las dos grabaciones (`red_partida_*` de cada
+  aparato) y `tools/red_repro.py`:
+  - la Retroid coincide con la repetición desde el 1 en sus 728 huellas;
+  - el S24, con la del 2;
+  - las dos repeticiones se separan en el VBlank 10825, igual que los
+    aparatos (3 huellas distintas, desde la 10860).
+- **Dónde:**
+  - con `AC3_DUMPMEM`, en el VBlank 10825 la RAM es igual, y en el 10826
+    solo difiere una palabra de la pila (`0x801FFE10`);
+  - con `AC3_WATCHWRITE` (y `AC3_WATCHWRITE_N`, nuevo: cuántas escrituras
+    se imprimen), la escribe el bucle de `FUN_8007d870`, desde
+    `FUN_8007e064` (el estado `0x80`, al acabar la misión). Desde el 1 da
+    más vueltas antes del VBlank que desde el 2.
+- **Por qué:** el reloj del modo nativo avanza un VBlank por cada 25.000
+  entradas a función y saltos hacia atrás (`rc_budget`) cuando el juego no
+  espera a VSync.
+  - El redibujo desde el 2 ejecuta código del juego y gastaba de ese
+    presupuesto, pero solo en el aparato que dibuja al 2.
+  - En los bucles largos sin espera, su VBlank llegaba antes.
+- **Arreglo:** el redibujo no gasta presupuesto (lo guarda y lo repone).
+  Con él, las dos repeticiones dan la misma partida en los 43.713 VBlank.
+- Probablemente es también la separación de la misión 2 (VBlank 28380), que
+  no tenía grabación.
+
+### Los sonidos que se oían en los dos aparatos
+
+Medido repitiendo la grabación como el 2 con `AC3_COOP_DBGVOCES=1`, y
+`AC3_TRACE` de `FUN_8002d8e4`, `FUN_8002d978`, `FUN_8002da14` y
+`FUN_8002da48` para ver quién pide cada uno.
+
+- **El pitido de «fijando» del 1** (0x2d) lo pide `FUN_8004038c`, la misma
+  función que el tono de fijado (0x32), desde el HUD del dibujo, fuera de su
+  paso de vuelo. Ahora es del 1, como el 0x32.
+- **El aviso de que fijan al 1** (`FUN_80041c88` → `FUN_800417f8`: los
+  sonidos de la tabla `DAT_800B0068`, 0x42, 0x40, 0x41...). Lo calcula la
+  lógica del HUD de cada imagen (`FUN_80040c44`), también fuera de su paso:
+  - **antes:** comunes, sonaban en los dos aparatos;
+  - **ahora:** esa función se llama como el juego (los mismos registros y
+    la misma pila, sin cambiar la huella) con sus sonidos del 1, o del 2
+    en su contexto.
+- **Las explosiones, los impactos y los aviones que caen** son sonidos con
+  posición:
+  - `FUN_8002f16c` (desde el daño, los derribos y los misiles) y el grupo
+    de `FUN_8002f758`;
+  - su volumen lo da `FUN_8002e5f8` con la distancia al oyente,
+    `(0x3fff - (d << desp))²`;
+  - el oyente de la partida es el jugador más cercano, y la partida es la
+    misma en los dos aparatos.
+  - **Ahora:** al pedir la posición (`FUN_8002e488`) se anotan la distancia
+    al oyente y la distancia al avión de este aparato. La diferencia de
+    volumen se quita solo en la salida de este aparato (`out_quiet` de la
+    SPU, como `mute_out`).
+  - **Medido:** un impacto a 994 del oyente y a 9.781 del 2 queda en el 18 %
+    en el aparato del 2.
+  - **Lo que no cambia:** el panorama sigue siendo el del oyente de la
+    partida.
+- **`SIN RESOLVER`:** el aviso de que fijan al 2 solo se calcula en su
+  redibujo, que no deja sonidos, así que el 2 no lo oye. Su alerta de misil
+  en camino sí suena.
+
+### Los enemigos y el 2
+
+- **Medido** en la partida del dueño (`AC3_COOP_DBGIA`, 47 medidas): 56
+  perseguidores del 1 y 39 del 2. Le persiguen, algo menos que al 1.
+- En la misión 1 no se llama `FUN_8004570c`, la elección de blanco que ya
+  miraba al 2.
+- **Las órdenes del guion de atacar al jugador** (9 y 10, `FUN_8004f77c`)
+  son contra la entidad 0: ponen ese blanco y copian su posición.
+  - Se probó hacerlas con el contexto del 2 cuando está más cerca. En la
+    misión 37 el enemigo 2 cambia de blanco, pero no se demostró que llegue
+    a perseguir al 2, y no se ha dejado.
+  - Sigue `SIN RESOLVER`.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red_repro.py` con las dos grabaciones de la misión 1 | la Retroid igual a la repetición; las dos repeticiones, la misma partida (antes, separadas en el VBlank 10825) |
+| Sonidos de la partida repetida como el 2 | 0x2d del 1, avisos del HUD del 1; los sonidos con posición, desde el avión de cada uno |
+
+## Las misiones 1 y 2 del dueño, otra vez: los ganchos que no cabían
+
+- **Lo que vio el dueño** (Retroid el 1, S24 el 2; 59.057 VBlank y 984
+  huellas, todas iguales):
+  - en el aparato del 2 se oían el autopiloto del 1, su voz de BINGO y los
+    sonidos con posición del 1 aunque estuviera lejos;
+  - las torretas no le disparaban, y no sabía si el misil del lanzamisiles
+    iba a por él.
+- **La causa de los sonidos: la tabla de ganchos del intérprete** (`NHOOK`,
+  `psx/recomp/mipsi.c`) era de 40.
+  - El aparato con la vista del 2 registra 43 (medido: `coop: ... (N
+    ganchos)`, nuevo en el registro):
+    - quien crea, 39;
+    - quien se une, más los del redibujo.
+  - Los últimos no se registraban. Son los de los sonidos de cada aparato
+    (el aviso del HUD, el volumen por distancia), que no cambian la
+    partida, y por eso no se separaba.
+  - El aviso de «sin sitio» iba a `stderr` y en el APK no se veía.
+- **Arreglo:** la tabla es de 64, y el aviso va al registro.
+- **Comprobado con la repetición de su partida como el 2**, con los mismos
+  ganchos que el aparato (`AC3_RR=1`, `AC3_COOP_DBGVOCES=1`):
+  - **del 1, no suenan en el aparato del 2:** el autopiloto (0x37, 4 de 4),
+    su voz de BINGO (0x4c, 4 de 4), la metralleta (0x11, 54), el misil
+    (0x0e, 11) y los tonos de fijado (0x2d, 0x32);
+  - **del 2, sí:** su metralleta, sus misiles, sus tonos y su voz de BINGO;
+  - **los sonidos con posición:** un evento a 2.985 del oyente y a 10.291
+    del 2 no suena en el aparato del 2.
+- **Las torretas sí le disparaban** (la misma repetición, con
+  `AC3_COOP_DBGIA` y `AC3_TRACE=80051dc4`):
+  - entre los VBlank 26.000 y 27.600 el 1 estaba a más de 70.000 y el
+    antiaéreo (tipo 0x40) disparó unas 400 veces;
+  - al 2 le dio una vez (vida 30 → 28).
+- **El lanzamisiles** (unidad 6, tipo 0x41) tenía al 2 de blanco a 1.400.
+  Lanzó en el VBlank 24.349 (`FUN_80067094`). Que saliera su alerta en el
+  aparato del 2 dice que el misil iba a él: la alerta mira la ranura del
+  misil.
+- **Nuevo en `depurar.txt`:** `voces=1`, el dueño de cada sonido al
+  registro (`AC3_COOP_DBGVOCES`).
+- **Ojo con las pruebas:**
+  - `AC3_TRACE` sobre una función con gancho lo sustituye (en
+    `FUN_8002d8e4`, el de la cola de sonidos);
+  - `tools/movil_red.sh` sin `MENU=1` ya no da la misma partida (VBlank 120,
+    también con el commit anterior): con `depurar.txt` no se pasa la tarjeta
+    de quien crea.
+- **`SIN RESOLVER`:** el autopiloto del 2 (0x37) solo se pide en su
+  redibujo y no suena en ningún aparato.
+

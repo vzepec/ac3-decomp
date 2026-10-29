@@ -30,7 +30,8 @@ uint64_t mipsi_steps;
 
 /* enganches: se llama a fn al entrar en la funcion `addr` (p. ej. forzar la mision que carga el
  * juego: AC3_MISSION en native_main; la pantalla ancha del terreno). Hasta NHOOK; fn NULL lo quita */
-#define NHOOK 32   /* (etapa 9) los del cooperativo (paso 6: en el APK con la vista del 2, 23) */
+#define NHOOK 64   /* (etapa 9) los del cooperativo (paso 6: en el APK con la vista del 2, 23; etapa 10, en red, 32; paso 8,
+                    * mas de 40: los ultimos se perdian sin aviso en el APK, ver mipsi_hooks_used) */
 static uint32_t g_hook_addr[NHOOK];
 static void (*g_hook_fn[NHOOK])(RCpu *);
 static int g_hook;
@@ -38,11 +39,13 @@ void mipsi_set_hook(uint32_t addr, void (*fn)(RCpu *)) {
     int k = -1;
     for (int i = 0; i < NHOOK; i++) if (g_hook_fn[i] && g_hook_addr[i] == addr) k = i;
     for (int i = 0; i < NHOOK && k < 0; i++) if (!g_hook_fn[i]) k = i;
-    if (k < 0) { fprintf(stderr, "mipsi: sin sitio para el gancho de %08x (NHOOK %d)\n", addr, NHOOK); return; }
+    if (k < 0) { printf("mipsi: sin sitio para el gancho de %08x (NHOOK %d)\n", addr, NHOOK); return; }   /* (al registro del APK) */
     g_hook_addr[k] = addr; g_hook_fn[k] = fn;
     g_hook = 0;
     for (int i = 0; i < NHOOK; i++) g_hook |= g_hook_fn[i] != NULL;
 }
+
+int mipsi_hooks_used(void) { int n = 0; for (int i = 0; i < NHOOK; i++) n += g_hook_fn[i] != NULL; return n; }
 
 /* medicion (etapa 6, paso 12): funciones en las que se entra (un bit por palabra de la RAM) y
  * vigilancia de una lista de entradas (captura de estados reales para el comparador) */
@@ -101,7 +104,12 @@ static inline uint32_t fetch(uint32_t pc) {
  * LWC2); asi se sabe que datos usa una funcion */
 uint8_t *mipsi_rtrace, *mipsi_wtrace;   /* con mipsi_wtrace: solo lo leido antes de escribirlo */
 uint32_t mipsi_watch_write;              /* depuracion: imprime desde donde se escribe esta direccion */
-void (*mipsi_watch_write_fn)(uint32_t pc);   /* (etapa 10, paso 8) si esta: se le avisa (antes de escribir) en vez de imprimir */
+/* (etapa 10) un gancho de entrada que ya hizo la llamada el mismo (con otro contexto) pone mipsi_skip_call: la original
+ * no se ejecuta y devuelve mipsi_skip_ret en v0 */
+int mipsi_skip_call;
+uint32_t mipsi_skip_ret;
+uint32_t mipsi_watch2;                   /* (etapa 10, paso 8) otra direccion vigilada, para el programa: */
+void (*mipsi_watch_write_fn)(uint32_t pc);   /* se le avisa antes de escribirla (la depuracion de arriba sigue aparte) */
 uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
 
 static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
@@ -117,9 +125,13 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     if (mipsi_watch_write && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_write & 0x1FFFFFFCu)) {
         static int nw;
         int VSync(int);
-        if (mipsi_watch_write_fn) mipsi_watch_write_fn(pc);
-        else if (nw++ < 64) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
+        static int lim = -1;
+        if (lim < 0) lim = getenv("AC3_WATCHWRITE_N") ? atoi(getenv("AC3_WATCHWRITE_N")) : 64;   /* (cuantas, 64) */
+        if (nw++ < lim) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
     }
+    if (mipsi_watch2 && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch2 & 0x1FFFFFFCu) &&
+        mipsi_watch_write_fn)
+        mipsi_watch_write_fn(pc);
     if (mipsi_rtrace || mipsi_wtrace) {
         uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;
         if (a < 0x200000) {
@@ -200,6 +212,7 @@ static inline uint32_t call_to(RCpu *c, uint32_t tgt, uint32_t link) {
     void (*fn)(RCpu *) = rc_find(tgt);
     if (fn) { rc_ret = link; fn(c); c->r[0] = 0; return link; }
     if (g_entered || g_watched || g_hook) on_entry(c, tgt);
+    if (mipsi_skip_call) { mipsi_skip_call = 0; c->r[2] = mipsi_skip_ret; return link; }
     RC_BUDGET(tgt);
     return tgt;
 }
@@ -210,6 +223,7 @@ void mipsi_call(RCpu *c, uint32_t addr) {
     /* entrar en la funcion: como un salto a ella (libreria, traducida o interpretada) */
     if (rc_is_lib(pc)) { rc_libcall(c, pc); return; }
     if (g_entered || g_watched || g_hook) on_entry(c, pc);
+    if (mipsi_skip_call) { mipsi_skip_call = 0; c->r[2] = mipsi_skip_ret; return; }
     RC_BUDGET(pc);
     while (pc != ret) {
         uint32_t w = fetch(pc);

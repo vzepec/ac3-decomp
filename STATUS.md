@@ -220,6 +220,34 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   audio; la partida igual); si el que se une se va, su avión desaparece; si
   se va quien creó la partida, el otro vuelve al menú. El dueño lo probó
   Retroid↔S24: funciona bien (0 distintas; el 2 desaparece al irse).
+- **Mensaje de derribo** (rama `etapa-10-paso-8-derribos`): el BULL'S-EYE
+  y su voz salen en la pantalla y el aparato de quien derriba (antes el 2
+  no tenía). Y el 2 como el 1 ante los enemigos: el mismo daño, sus
+  derribos en el informe, y la IA le dispara con la misma espera y su
+  aviso. `SIN RESOLVER`: las órdenes del guion de «atacar al jugador» siguen
+  siendo contra el 1.
+- **Tierra y alerta de misil** (misma rama):
+  - las unidades de tierra (torretas, tanques, barcos, lanzamisiles) se
+    activan y disparan también cerca del 2;
+  - sus derribos de tierra tienen su mensaje, y el del 1 ya no sale en la
+    pantalla del 2;
+  - la alerta de misil, solo para el jugador al que va el misil.
+- **`SIN RESOLVER`:** las partidas se separaron una vez (misión 2, VBlank
+  28380, tras 8 minutos). El APK graba ya cada partida en red
+  (`red_partida_*`) y `tools/red_repro.py` la repite en el PC. Si vuelve a
+  pasar, traer las grabaciones de los dos aparatos y repetirlas.
+- **La separación, encontrada y arreglada** (misión 1, VBlank 10825): el
+  redibujo desde el 2 gastaba del presupuesto del reloj, solo en ese
+  aparato. Los sonidos del 1 ya no suenan en el aparato del 2 (el pitido de
+  «fijando», el aviso de que le fijan), y las explosiones y los impactos se
+  oyen según la distancia al avión de cada uno.
+- **La tabla de ganchos del intérprete** era de 40, y el aparato del 2
+  registra 43: perdía los de sus sonidos (oía el autopiloto, el BINGO y los
+  sonidos lejanos del 1). Ahora es de 64, y el número de ganchos sale en el
+  registro.
+- **`SIN RESOLVER`:**
+  - el 2 no oye el aviso de que le fijan, ni su autopiloto;
+  - las órdenes del guion de atacar al jugador siguen siendo contra el 1.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

@@ -194,6 +194,7 @@ static void dbg_read(void) {
             /* (etapa 8, paso 10) pruebas de la pantalla ancha, antes de entrar en la mision: sin la
              * correccion de las lineas del cielo / sin el cono del terreno ensanchado */
             else if (!strcmp(k, "cielo") && v == 0) setenv("AC3_WIDE_NOSKY", "1", 1);
+            else if (!strcmp(k, "voces") && v == 1) setenv("AC3_COOP_DBGVOCES", "1", 1);   /* (etapa 10) de quien es cada sonido, al registro */
             else if (!strcmp(k, "cono") && v == 0) setenv("AC3_WIDE_NOCONO", "1", 1);
             else if (!strcmp(k, "rrserie") && v == 1) setenv("PSX_INTERP_RRSERIE", "1", 1);   /* (paso 12) las fases en serie, como antes */
             else if (!strcmp(k, "estela") && v == 1) setenv("PSX_INTERP_FBSKIP", "1", 1);   /* (paso 10) la estela, sin intermedias */
@@ -416,6 +417,38 @@ static void dev_show_list(void) {
     (*env)->DeleteLocalRef(env, cl);
     (*vm)->DetachCurrentThread(vm);
 }
+/* (etapa 10) la grabacion de la partida en red, para repetirla en el PC (tools/red_repro.py): en la carpeta de la app,
+ * red_partida_info.txt (mision, opciones, papel), red_partida_tarjeta.mcd (la tarjeta con la que se juega) y
+ * red_partida_mandos.bin (por VBlank: v y los mandos que se ponen en los dos puertos, 16 bytes). Cada partida la pisa */
+static FILE *g_net_rec, *g_net_hrec;   /* (y red_partida_huellas.bin: v y la huella de 64 bits de cada 60 VBlank) */
+static void net_rec_open(int host, int mission, uint32_t opts) {
+    const char *dir = G.app->activity->externalDataPath;
+    char p[600];
+    if (!dir) return;
+    snprintf(p, sizeof p, "%s/red_partida_info.txt", dir);
+    FILE *f = fopen(p, "w");
+    if (f) { fprintf(f, "mision=%d\nopciones=%u\nanfitrion=%d\n", mission, opts, host); fclose(f); }
+    snprintf(p, sizeof p, "%s/red_partida_tarjeta.mcd", dir);
+    if ((f = fopen(p, "wb"))) { fwrite(psx_card_image(0), 1, 128 * 1024, f); fclose(f); }
+    snprintf(p, sizeof p, "%s/red_partida_mandos.bin", dir);
+    g_net_rec = fopen(p, "wb");
+    snprintf(p, sizeof p, "%s/red_partida_huellas.bin", dir);
+    g_net_hrec = fopen(p, "wb");
+    LOG("red: se graba la partida en %s", dir);
+}
+static void net_rec_frame(int v, const NetPad *p1, const NetPad *p2) {
+    if (!g_net_rec) return;
+    uint8_t r[16] = {0};
+    const NetPad *q[2] = {p1, p2};
+    memcpy(r, &v, 4);
+    for (int i = 0; i < 2; i++) {
+        memcpy(r + 4 + 6 * i, &q[i]->buttons, 2);
+        r[6 + 6 * i] = q[i]->lx; r[7 + 6 * i] = q[i]->ly; r[8 + 6 * i] = q[i]->rx; r[9 + 6 * i] = q[i]->ry;
+    }
+    fwrite(r, 1, sizeof r, g_net_rec);
+    if (v % 600 == 0) fflush(g_net_rec);
+}
+
 /* (etapa 10, paso 8) MainActivity.<metodo>(String) desde cualquier hilo (los dialogos de la red) */
 static void java_str(const char *method, const char *arg) {
     JavaVM *vm = G.app->activity->vm;
@@ -708,7 +741,12 @@ pad_done:
         p1.buttons |= ac3_coop_p1_extra(p2.buttons);   /* (menus e introducciones: tambien los del 2) */
         psx_pad_set(0, p1.buttons, p1.lx, p1.ly, p1.rx, p1.ry);
         psx_pad_set(1, p2.buttons, p2.lx, p2.ly, p2.rx, p2.ry);
-        if (ac3_net_hash_due(VSync(-1))) ac3_net_hash(VSync(-1), ac3_net_ram_hash());
+        net_rec_frame(VSync(-1), &p1, &p2);
+        if (ac3_net_hash_due(VSync(-1))) {
+            uint64_t h = ac3_net_ram_hash();
+            ac3_net_hash(VSync(-1), h);
+            if (g_net_hrec) { int v = VSync(-1); fwrite(&v, 4, 1, g_net_hrec); fwrite(&h, 8, 1, g_net_hrec); fflush(g_net_hrec); }
+        }
         static int last_log;
         if (VSync(-1) - last_log >= 1800) {   /* cada 30 s: como va */
             int cmp, dif, first, waits;
@@ -892,6 +930,7 @@ static void *game_thread(void *arg) {
                 ac3_coop_newgame(g_dev_mission);
                 LOG("red: menus sin guion, la tarjeta de %s; la mision %d en la partida nueva", host ? "este aparato" : "quien crea",
                     g_dev_mission);
+                net_rec_open(host, g_dev_mission, (mine.opts & ~AC3_NET_OPT_WIDE) | (MODE_WIDE(G.gfx_mode) ? AC3_NET_OPT_WIDE : 0));
                 g_dev_mission = -1;
             }
         }

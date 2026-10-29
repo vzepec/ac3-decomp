@@ -5,6 +5,111 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-29 — Etapa 10: la tabla de ganchos era pequeña para el aparato del 2 (sus sonidos)
+
+- **Lo que vio el dueño:** en el S24 (el 2) se oían el autopiloto, el BINGO
+  y los sonidos lejanos del 1.
+- **Lo que se midió:** en la repetición del PC todo salía bien, y en el
+  aparato no. El registro nuevo de ganchos lo explica: como el 2, el
+  aparato registra 43, y `NHOOK` era 40.
+  - Se perdían los de los sonidos de cada aparato, que no cambian la
+    partida.
+- **Arreglo:** `NHOOK` 64, y el aviso de «sin sitio» al registro.
+- **Comprobado:**
+  - con su partida repetida como el 2 y los ganchos del aparato, los
+    sonidos del 1 no suenan;
+  - las torretas de la misión 2 sí le dispararon (unas 400 veces, una le
+    dio), y el lanzamisiles lanzó con él de blanco.
+- **Herramientas:** `voces=1` en `depurar.txt`; `AC3_WATCHWRITE_N`.
+
+---
+
+## 2026-10-29 — Etapa 10: la separación de las partidas (el presupuesto del redibujo) y los sonidos del 1 en el aparato del 2
+
+- **La separación, encontrada** con las grabaciones de los dos aparatos y
+  `tools/red_repro.py`:
+  - cada aparato coincide con su repetición, y las dos repeticiones se
+    separan donde ellos (misión 1, VBlank 10825);
+  - con `AC3_DUMPMEM` y `AC3_WATCHWRITE`: un bucle largo sin VSync
+    (`FUN_8007d870`, al acabar la misión) da distintas vueltas antes del
+    VBlank.
+  - **La causa:** el redibujo desde el 2 gastaba del presupuesto del reloj
+    (`rc_budget`), solo en ese aparato.
+  - **Arreglo:** lo guarda y lo repone. Repetición: la misma partida en
+    43.713 VBlank.
+  - `AC3_WATCHWRITE_N`: cuántas escrituras imprime la vigilancia. La
+    vigilancia del programa (la partida nueva) va aparte, en `mipsi_watch2`.
+- **Sonidos** (`AC3_COOP_DBGVOCES` + `AC3_TRACE` de las funciones de sonido
+  sobre la repetición):
+  - el 0x2d («fijando») es del 1, como el 0x32;
+  - la lógica del HUD (`FUN_80040c44`: el aviso de que le fijan) con el
+    dueño de su contexto;
+  - los sonidos con posición, bajados solo en la salida de cada aparato
+    según su distancia (`out_quiet`).
+- **IA:** en la partida del dueño, 56 perseguidores del 1 y 39 del 2. Las
+  órdenes del guion de atacar al jugador (`FUN_8004f77c`) siguen `SIN
+  RESOLVER`: probarlas con el contexto del 2 no demostró persecución.
+
+---
+
+## 2026-10-29 — Etapa 10: tierra (derribos, torretas que solo veían al 1), la alerta de misil de cada uno, y grabar las partidas
+
+- **Lo vio el dueño en la misión 2:**
+  - las torretas no disparaban al 2;
+  - sus derribos de tierra no tenían mensaje;
+  - el BINGO del 1 y su alerta de misil salían en las dos pantallas.
+- **Causas, medidas con `AC3_TRACE`, `AC3_WATCHWRITE` y volcados:**
+  - **los derribos de tierra** van por `FUN_80050c80`, no por la función de
+    los aviones;
+  - **las unidades de tierra** solo tienen IA si están cerca del 1: la
+    bandera `0x8000` la ponen `FUN_80050058` y, para los aviones,
+    `FUN_80038024`, por el registro de puntería del 1;
+  - **las torretas sin blanco** se quedan con la ranura 0;
+  - **la alerta de misil** (`FUN_8003a81c`) mira el misil que va a la
+    ranura 0 de `*DAT_800BBA60`.
+- **Arreglos:**
+  - cercanía del 2 durante la activación;
+  - el jugador más cercano para las de tierra;
+  - las ranuras 0 y 1 de la tabla de misiles intercambiadas en su aviso y
+    en su redibujo;
+  - la detección del derribo también en tierra.
+  - Opciones de prueba: `AC3_COOP_AQUI1/2`, `AC3_COOP_MATA`.
+- **Las partidas se separaron** en el VBlank 28380, `SIN RESOLVER`. Desde
+  ahora el APK graba cada partida en red y `tools/red_repro.py` la repite
+  en el PC.
+  - Validado con una grabación de la Retroid: 100 huellas iguales.
+
+---
+
+## 2026-10-29 — Etapa 10: el mensaje de derribo (BULL'S-EYE) y su voz, de quien derriba
+
+- **El 2 no tenía mensaje al derribar:** `FUN_80045be0` lo saca
+  (`FUN_8004b980(6/7)`) solo con el atacante en la ranura 0. La vida la
+  escribe `FUN_80045118` igual para los dos (`AC3_WATCHWRITE`).
+- **Arreglo:**
+  - en la simulación se detecta el derribo del 2 (entrada de `FUN_80047c2c`,
+    mismas condiciones con el atacante en la 1);
+  - el mensaje se arranca y avanza en una copia del 2, dentro de su
+    redibujo; el del 1 no sale en la pantalla del 2;
+  - la voz va a la cola con espera, cada hueco con su dueño.
+- **Además, el 2 ya es como el 1 ante los enemigos:**
+  - **daño:** su misil quitaba 110 y el del 1, 160. Durante el cálculo, el
+    atacante 2 cuenta como el jugador, y luego se devuelve;
+  - **informe:** sus derribos cuentan como del jugador;
+  - **disparos de la IA contra él:** se ejecutan con su contexto (gancho
+    que se salta la llamada, `mipsi_skip_call`). Antes le disparaban sin
+    la espera que tienen con el 1, y el aviso de fijado de tierra le salía
+    al 1;
+  - le persiguen tanto como al 1 (41 misiones: 105 frente a 80).
+  - **`SIN RESOLVER`:** las órdenes del guion de «atacar al jugador»
+    (`FUN_8004f77c`) siguen siendo contra el 1. Hacerlas con su contexto
+    no basta (se probó y se quitó): hay que llevar todo el paso del
+    enemigo (`FUN_80045fc8`).
+- **Reproducir:** `python3 tools/red.py "<US>" <dir> derribo`
+  (`AC3_COOP_VIDA=k,v`).
+
+---
+
 ## 2026-10-28 — Etapa 10, tras el paso 8: los disparos del otro no se oyen; el avión de quien se va desaparece
 
 - **Los disparos del otro se oían en los dos:**
