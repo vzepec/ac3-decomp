@@ -540,3 +540,85 @@ Todas van por la lista de tierra (`*DAT_800BB814`, entidades `0x20`-`0x3F`).
 | `tools/red_repro.py` con una grabación de la Retroid | 100 huellas iguales; la misma partida desde el 1 y desde el 2 |
 | `tools/red.py`, `tools/coop_vista.py` | igual |
 
+## La misión 1 del dueño (Retroid↔S24, misma rama)
+
+### La separación de las partidas, encontrada
+
+- **Cómo se encontró:** con las dos grabaciones (`red_partida_*` de cada
+  aparato) y `tools/red_repro.py`:
+  - la Retroid coincide con la repetición desde el 1 en sus 728 huellas;
+  - el S24, con la del 2;
+  - las dos repeticiones se separan en el VBlank 10825, igual que los
+    aparatos (3 huellas distintas, desde la 10860).
+- **Dónde:**
+  - con `AC3_DUMPMEM`, en el VBlank 10825 la RAM es igual, y en el 10826
+    solo difiere una palabra de la pila (`0x801FFE10`);
+  - con `AC3_WATCHWRITE` (y `AC3_WATCHWRITE_N`, nuevo: cuántas escrituras
+    se imprimen), la escribe el bucle de `FUN_8007d870`, desde
+    `FUN_8007e064` (el estado `0x80`, al acabar la misión). Desde el 1 da
+    más vueltas antes del VBlank que desde el 2.
+- **Por qué:** el reloj del modo nativo avanza un VBlank por cada 25.000
+  entradas a función y saltos hacia atrás (`rc_budget`) cuando el juego no
+  espera a VSync.
+  - El redibujo desde el 2 ejecuta código del juego y gastaba de ese
+    presupuesto, pero solo en el aparato que dibuja al 2.
+  - En los bucles largos sin espera, su VBlank llegaba antes.
+- **Arreglo:** el redibujo no gasta presupuesto (lo guarda y lo repone).
+  Con él, las dos repeticiones dan la misma partida en los 43.713 VBlank.
+- Probablemente es también la separación de la misión 2 (VBlank 28380), que
+  no tenía grabación.
+
+### Los sonidos que se oían en los dos aparatos
+
+Medido repitiendo la grabación como el 2 con `AC3_COOP_DBGVOCES=1`, y
+`AC3_TRACE` de `FUN_8002d8e4`, `FUN_8002d978`, `FUN_8002da14` y
+`FUN_8002da48` para ver quién pide cada uno.
+
+- **El pitido de «fijando» del 1** (0x2d) lo pide `FUN_8004038c`, la misma
+  función que el tono de fijado (0x32), desde el HUD del dibujo, fuera de su
+  paso de vuelo. Ahora es del 1, como el 0x32.
+- **El aviso de que fijan al 1** (`FUN_80041c88` → `FUN_800417f8`: los
+  sonidos de la tabla `DAT_800B0068`, 0x42, 0x40, 0x41...). Lo calcula la
+  lógica del HUD de cada imagen (`FUN_80040c44`), también fuera de su paso:
+  - **antes:** comunes, sonaban en los dos aparatos;
+  - **ahora:** esa función se llama como el juego (los mismos registros y
+    la misma pila, sin cambiar la huella) con sus sonidos del 1, o del 2
+    en su contexto.
+- **Las explosiones, los impactos y los aviones que caen** son sonidos con
+  posición:
+  - `FUN_8002f16c` (desde el daño, los derribos y los misiles) y el grupo
+    de `FUN_8002f758`;
+  - su volumen lo da `FUN_8002e5f8` con la distancia al oyente,
+    `(0x3fff - (d << desp))²`;
+  - el oyente de la partida es el jugador más cercano, y la partida es la
+    misma en los dos aparatos.
+  - **Ahora:** al pedir la posición (`FUN_8002e488`) se anotan la distancia
+    al oyente y la distancia al avión de este aparato. La diferencia de
+    volumen se quita solo en la salida de este aparato (`out_quiet` de la
+    SPU, como `mute_out`).
+  - **Medido:** un impacto a 994 del oyente y a 9.781 del 2 queda en el 18 %
+    en el aparato del 2.
+  - **Lo que no cambia:** el panorama sigue siendo el del oyente de la
+    partida.
+- **`SIN RESOLVER`:** el aviso de que fijan al 2 solo se calcula en su
+  redibujo, que no deja sonidos, así que el 2 no lo oye. Su alerta de misil
+  en camino sí suena.
+
+### Los enemigos y el 2
+
+- **Medido** en la partida del dueño (`AC3_COOP_DBGIA`, 47 medidas): 56
+  perseguidores del 1 y 39 del 2. Le persiguen, algo menos que al 1.
+- En la misión 1 no se llama `FUN_8004570c`, la elección de blanco que ya
+  miraba al 2.
+- **Las órdenes del guion de atacar al jugador** (9 y 10, `FUN_8004f77c`)
+  son contra la entidad 0: ponen ese blanco y copian su posición.
+  - Se probó hacerlas con el contexto del 2 cuando está más cerca. En la
+    misión 37 el enemigo 2 cambia de blanco, pero no se demostró que llegue
+    a perseguir al 2, y no se ha dejado.
+  - Sigue `SIN RESOLVER`.
+
+| Prueba | Resultado |
+|---|---|
+| `tools/red_repro.py` con las dos grabaciones de la misión 1 | la Retroid igual a la repetición; las dos repeticiones, la misma partida (antes, separadas en el VBlank 10825) |
+| Sonidos de la partida repetida como el 2 | 0x2d del 1, avisos del HUD del 1; los sonidos con posición, desde el avión de cada uno |
+

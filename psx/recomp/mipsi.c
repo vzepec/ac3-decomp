@@ -105,7 +105,8 @@ uint32_t mipsi_watch_write;              /* depuracion: imprime desde donde se e
  * no se ejecuta y devuelve mipsi_skip_ret en v0 */
 int mipsi_skip_call;
 uint32_t mipsi_skip_ret;
-void (*mipsi_watch_write_fn)(uint32_t pc);   /* (etapa 10, paso 8) si esta: se le avisa (antes de escribir) en vez de imprimir */
+uint32_t mipsi_watch2;                   /* (etapa 10, paso 8) otra direccion vigilada, para el programa: */
+void (*mipsi_watch_write_fn)(uint32_t pc);   /* se le avisa antes de escribirla (la depuracion de arriba sigue aparte) */
 uint32_t mipsi_watch_read;               /* depuracion: imprime desde donde se lee esta direccion */
 
 static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
@@ -121,9 +122,13 @@ static inline void exec(RCpu *c, uint32_t w, uint32_t pc) {
     if (mipsi_watch_write && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch_write & 0x1FFFFFFCu)) {
         static int nw;
         int VSync(int);
-        if (mipsi_watch_write_fn) mipsi_watch_write_fn(pc);
-        else if (nw++ < 64) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
+        static int lim = -1;
+        if (lim < 0) lim = getenv("AC3_WATCHWRITE_N") ? atoi(getenv("AC3_WATCHWRITE_N")) : 64;   /* (cuantas, 64) */
+        if (nw++ < lim) fprintf(stderr, "vigia: VBlank %d, escritura de %08x desde %08x (ra %08x) valor %08x\n", VSync(-1), mipsi_watch_write, pc, r[31], r[rt]);
     }
+    if (mipsi_watch2 && ((op >= 0x28 && op <= 0x2E) || op == 0x3A) && ((r[rs] + simm) & 0x1FFFFFFCu) == (mipsi_watch2 & 0x1FFFFFFCu) &&
+        mipsi_watch_write_fn)
+        mipsi_watch_write_fn(pc);
     if (mipsi_rtrace || mipsi_wtrace) {
         uint32_t a = (r[rs] + simm) & 0x1FFFFFFCu;
         if (a < 0x200000) {

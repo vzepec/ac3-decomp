@@ -47,6 +47,8 @@ typedef struct {
     uint32_t cap;           /* posicion de captura (0..0x1FF) en los 4 KB iniciales de la RAM */
     uint32_t mute_out;      /* (etapa 10) voces que no van a la salida (siguen sonando para el programa: envolvente,
                              * fin, captura): en red, los sonidos del otro jugador */
+    uint16_t out_quiet[24]; /* (etapa 10) lo que se quita a cada voz solo en la salida (Q12: 0 entera, 4096 nada): en
+                             * red, un sonido con posicion se oye desde el avion de este aparato */
 } PsxSpu;
 
 void psx_spu_reset(PsxSpu *s);

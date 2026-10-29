@@ -236,6 +236,14 @@ al jugador (cámara, HUD, puntería, dibujo, guion).
   28380, tras 8 minutos). El APK graba ya cada partida en red
   (`red_partida_*`) y `tools/red_repro.py` la repite en el PC. Si vuelve a
   pasar, traer las grabaciones de los dos aparatos y repetirlas.
+- **La separación, encontrada y arreglada** (misión 1, VBlank 10825): el
+  redibujo desde el 2 gastaba del presupuesto del reloj, solo en ese
+  aparato. Los sonidos del 1 ya no suenan en el aparato del 2 (el pitido de
+  «fijando», el aviso de que le fijan), y las explosiones y los impactos se
+  oyen según la distancia al avión de cada uno.
+- **`SIN RESOLVER`:**
+  - el 2 no oye el aviso de que le fijan;
+  - las órdenes del guion de atacar al jugador siguen siendo contra el 1.
 - **Siguiente:** el dueño quiere probar más el cooperativo antes de llevarlo
   al APK publicable (de momento, solo en «AC3 Dev»). Después: la etapa 11
   (Internet; las 36 misiones en cooperativo).

@@ -5,6 +5,34 @@ Registro append-only. Entrada nueva **arriba**. Cada hallazgo debe decir
 
 ---
 
+## 2026-10-29 — Etapa 10: la separación de las partidas (el presupuesto del redibujo) y los sonidos del 1 en el aparato del 2
+
+- **La separación, encontrada** con las grabaciones de los dos aparatos y
+  `tools/red_repro.py`:
+  - cada aparato coincide con su repetición, y las dos repeticiones se
+    separan donde ellos (misión 1, VBlank 10825);
+  - con `AC3_DUMPMEM` y `AC3_WATCHWRITE`: un bucle largo sin VSync
+    (`FUN_8007d870`, al acabar la misión) da distintas vueltas antes del
+    VBlank.
+  - **La causa:** el redibujo desde el 2 gastaba del presupuesto del reloj
+    (`rc_budget`), solo en ese aparato.
+  - **Arreglo:** lo guarda y lo repone. Repetición: la misma partida en
+    43.713 VBlank.
+  - `AC3_WATCHWRITE_N`: cuántas escrituras imprime la vigilancia. La
+    vigilancia del programa (la partida nueva) va aparte, en `mipsi_watch2`.
+- **Sonidos** (`AC3_COOP_DBGVOCES` + `AC3_TRACE` de las funciones de sonido
+  sobre la repetición):
+  - el 0x2d («fijando») es del 1, como el 0x32;
+  - la lógica del HUD (`FUN_80040c44`: el aviso de que le fijan) con el
+    dueño de su contexto;
+  - los sonidos con posición, bajados solo en la salida de cada aparato
+    según su distancia (`out_quiet`).
+- **IA:** en la partida del dueño, 56 perseguidores del 1 y 39 del 2. Las
+  órdenes del guion de atacar al jugador (`FUN_8004f77c`) siguen `SIN
+  RESOLVER`: probarlas con el contexto del 2 no demostró persecución.
+
+---
+
 ## 2026-10-29 — Etapa 10: tierra (derribos, torretas que solo veían al 1), la alerta de misil de cada uno, y grabar las partidas
 
 - **Lo vio el dueño en la misión 2:**

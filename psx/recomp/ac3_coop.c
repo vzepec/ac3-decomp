@@ -96,6 +96,10 @@ typedef struct {
     uint32_t hud_msg[2][2];  /* (paso 8) el aviso del HUD del jugador (direccion, bytes): FUN_80041c88 (desde el HUD de cada
                               * imagen, FUN_80040c44) lo elige por su estado y su entrada (9, el autopiloto; fuera de zona,
                               * altura...) y lo guarda en DAT_800C5AA0..AF (aviso y tiempos) y DAT_800BB988 (su cuenta) */
+    uint32_t hud_logic;      /* la logica del HUD de cada imagen (FUN_80040c44, desde FUN_80039d88): el aviso y su sonido
+                              * (FUN_800417f8: la tabla DAT_800B0068), y el fijado (FUN_8004038c: 0x2d fijando, 0x32 fijado) */
+    uint32_t snd_att;        /* el volumen de un sonido por su distancia al oyente (FUN_8002e5f8(canal, salida de
+                              * FUN_8002e488, desplazamiento): (0x3fff - (d << desp))^2) */
 } CoopAddr;
 #define NORDERS 5
 
@@ -129,7 +133,7 @@ static const CoopAddr ADDR[] = {
      {0x80050C80u, 0x80050E6Cu}, 0x800BBA0Cu, {0x80045BE0u, 0x80045E30u}, 0x80047C2Cu, 0x8004B980u, 0x800BB9BCu, 0x80045118u, 0x8004AE94u,
      0x80051B5Cu, 0x80047344u, 0x800BB888u, 0x80052184u, 0x800BB814u, {0x80038024u, 0x80050058u}, 0x8003A81Cu, 0x800C57ECu, 0x80037FC8u, 0x800C4E70u,
      {0x8002EF8Cu, 0x8002F000u}, 0x8002D8E4u,
-     {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}},
+     {{0x800C5AA0u, 0x10}, {0x800BB988u, 4}}, 0x80040C44u, 0x8002E5F8u},
 };
 
 static const CoopAddr *A;
@@ -740,13 +744,30 @@ static int64_t dist2(uint32_t a, uint32_t b) {
     for (int i = 0; i < 3; i++) { int64_t d = ((int32_t)rd32(a + 4 * i) >> 12) - ((int32_t)rd32(b + 4 * i) >> 12); s += d * d; }
     return s;
 }
+/* (etapa 10) cada salida de FUN_8002e488 de este paso: su distancia al oyente que usa la partida (el mas cercano) y al
+ * avion de este aparato. Con ellas, FUN_8002e5f8 (snd_att_hook) baja el sonido solo en la salida de este aparato: la
+ * partida (la SPU) es la misma en los dos, pero el 2 oia las explosiones del 1 como el 1 aunque estuviera lejos (lo vio
+ * el dueno en la mision 1). El panorama sigue siendo el del oyente de la partida */
+#define NREL 16
+static struct { uint32_t out; double used, here; } g_rel[NREL];
+static int g_rel_n;
+static void rel_note(uint32_t out, int64_t d1, int64_t d2, int two) {
+    if (!g_local) return;
+    double used = sqrt((double)(two ? d2 : d1)), here = sqrt((double)(g_local == 2 ? d2 : d1));
+    int k;
+    for (k = 0; k < NREL && g_rel[k].out != out; k++) {}
+    if (k == NREL) { k = g_rel_n; g_rel_n = (g_rel_n + 1) % NREL; }
+    g_rel[k].out = out; g_rel[k].used = used; g_rel[k].here = here;
+}
 static void listener_hook(RCpu *c) {
     if (g_busy || !p2_active()) return;
     static int on = -1;
     if (on < 0) on = !getenv("AC3_COOP_OYENTE") || atoi(getenv("AC3_COOP_OYENTE")) != 0;
     uint32_t l1 = rd32(rd32(G_RENDER) + 0x28) + 4, l2 = g_cam2 + 4, src = c->r[6];
     if (!on || c->r[5] != l1 || src < 0x80000000u) return;
-    if (dist2(src, l2) < dist2(src, l1)) {
+    int64_t d1 = dist2(src, l1), d2 = dist2(src, l2);
+    rel_note(c->r[4], d1, d2, d2 < d1);
+    if (d2 < d1) {
         c->r[5] = l2;
         if (getenv("AC3_COOP_DBGOYENTE"))   /* depuracion: los sonidos que se oyen desde el 2, y desde donde se piden */
             printf("coop: VBlank %d sonido desde la camara del 2 (a %lld; de la del 1, %lld) pedido desde %08x\n", VSync(-1),
@@ -1017,6 +1038,12 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     static uint8_t ram[PSX_RAM_SIZE], scr[0x400];
     PsxGte *gc = (PsxGte *)psx_gte_get_context(), gte = *gc;
     unsigned int seed = psx_rand_seed();
+    /* (etapa 10, paso 8) el redibujo no gasta del presupuesto del fotograma (las entradas a funcion y saltos hacia atras
+     * que hacen avanzar el reloj sin VSync, recomp_rt.h): lo gastaba solo el aparato que dibuja al 2, y en un bucle largo
+     * sin espera (el de FUN_8007d870 al acabar la mision, FUN_8007e064) su VBlank llegaba antes. Las partidas se separaban
+     * (el dueno, en la mision 1: VBlank 10825; tools/red_repro.py con las dos grabaciones) */
+    int64_t budget = rc_budget;
+    rc_budget = INT64_MAX;
     struct timespec t0, t1, t2, t3;
     clock_gettime(CLOCK_MONOTONIC, &t0);
     memcpy(ram, psx_ram, PSX_RAM_SIZE); memcpy(scr, psx_scratch, sizeof scr);
@@ -1102,6 +1129,7 @@ int ac3_coop_draw_p2(uint32_t ot, void (*draw)(uint32_t ot, void *u), void *u) {
     memcpy(psx_ram, ram, PSX_RAM_SIZE); memcpy(psx_scratch, scr, sizeof scr);
     *gc = gte;
     psx_srand(seed);
+    rc_budget = budget;
     clock_gettime(CLOCK_MONOTONIC, &t3);
 #define MS(a, b) ((b.tv_sec - a.tv_sec) * 1e3 + (b.tv_nsec - a.tv_nsec) * 1e-6)
     if (getenv("AC3_COOP_TIEMPOS"))   /* medicion: ms en reconstruir, dibujar y restaurar */
@@ -1184,16 +1212,17 @@ int ac3_coop_steps(void) { return g_steps; }
  * de vuelo; tono de fijado 0x32, el del 2 desde su vista y el del 1 desde el HUD del dibujo */
 #define SND_REQ 0x8002E2C0u
 #define SND_LOCK 0x32u
+#define SND_LOCKING 0x2Du   /* (el pitido mientras fija, de la misma funcion: tambien se pide desde el HUD del dibujo) */
 static uint8_t g_voice_req[24];   /* 0x80 | dueno (0 comun, 1, 2) de la peticion pendiente */
 static void p1_step_hook(RCpu *c) { (void)c; if (!g_busy) g_p1_window = 1; }
 static void voice_req_hook(RCpu *c) {
     uint32_t v = c->r[5];
     /* el tono de fijado (0x32) es siempre de un jugador: el del 1 se pide desde el HUD del dibujo, fuera de su paso; un
      * sonido de la cola con espera, el de quien lo encolo */
-    int owner = g_wrap ? 0 : g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK ? 1 : 0;   /* (la IA como el 2: comunes) */
+    int owner = g_wrap ? 0 : g_busy ? 2 : g_p1_window || c->r[4] == SND_LOCK || c->r[4] == SND_LOCKING ? 1 : 0;   /* (la IA como el 2: comunes) */
     if (g_req_owner) { owner = g_req_owner & 3; g_req_owner = 0; }
     if (g_snd_force) owner = g_snd_force;
-    if (v < 24) g_voice_req[v] = (uint8_t)(0x80 | owner);
+    if (v < 24) { g_voice_req[v] = (uint8_t)(0x80 | owner); psx_spu()->out_quiet[v] = 0; }
     if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d peticion: sonido %x en la voz %u (%s) desde %08x\n", VSync(-1), c->r[4], v,
                                             owner == 2 ? "jugador 2" : owner == 1 ? "jugador 1" : "comun", c->r[31]);
 }
@@ -1209,6 +1238,25 @@ static void voice_on_hook(uint32_t voices) {
         else s->mute_out &= ~(1u << i);
         if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d voz %d del %s%s\n", VSync(-1), i, owner == 1 ? "jugador 1" : owner == 2 ? "jugador 2" : "comun",
                                                   s->mute_out >> i & 1 ? " (no se oye aqui)" : "");
+    }
+}
+/* (etapa 10) el volumen por distancia de cada aparato (ver rel_note): lo que la partida da con el oyente mas cercano y lo
+ * que daria con el avion de este, con la formula de FUN_8002e5f8; la diferencia se quita solo en la salida */
+static double att_of(double d, uint32_t shift) {
+    double a = 16383.0 - d * (double)(1u << (shift & 31));
+    return a < 0 ? 0 : a * a;
+}
+static void snd_att_hook(RCpu *c) {
+    uint32_t ch = c->r[4], out = c->r[5];
+    if (!g_local || ch >= 24) return;
+    for (int k = 0; k < NREL; k++) {
+        if (g_rel[k].out != out || !out) continue;
+        double gu = att_of(g_rel[k].used, c->r[6]), gh = att_of(g_rel[k].here, c->r[6]);
+        double q = gu > 0 ? 4096.0 * (1.0 - gh / gu) : 0;
+        psx_spu()->out_quiet[ch] = (uint16_t)(q < 0 ? 0 : q > 4096 ? 4096 : q);
+        if (getenv("AC3_COOP_DBGVOCES")) printf("coop: VBlank %d canal %u a %.0f del oyente y a %.0f de este avion: se quita %u/4096\n",
+                                                VSync(-1), ch, g_rel[k].used, g_rel[k].here, psx_spu()->out_quiet[ch]);
+        return;
     }
 }
 /* (etapa 10) el jugador 2 se fue: su entidad, inactiva (solo los bits de la ranura, como antes de crearla), con la vida a
@@ -1307,6 +1355,17 @@ static uint32_t guest_call_v0(const RCpu *c, uint32_t addr, uint32_t a0) {
     rc_ret = ret;
     return cb.r[2];
 }
+/* la misma llamada que iba a hacer el juego (gancho de entrada: los registros, la pila y la vuelta de quien llama), hecha
+ * desde aqui: deja la RAM como la original (guest_call_v0 usa otra pila y otra vuelta, y su rastro en la pila cambia la
+ * huella). Los registros al volver, en c */
+static void guest_call_same(RCpu *c, uint32_t addr) {
+    RCpu cb = *c;
+    uint32_t ret = rc_ret;
+    rc_ret = cb.r[31];
+    rc_call(&cb, addr);
+    rc_ret = ret;
+    *c = cb;
+}
 static void fire_as_p2(RCpu *c, uint32_t fn, uint32_t target) {
     Swap s;
     p2_begin(&s);
@@ -1386,6 +1445,20 @@ static void alert_hook(RCpu *c) {
     g_alert_in = 0;
     mipsi_skip_call = 1;
     mipsi_skip_ret = r;
+}
+/* (etapa 10) la logica del HUD de cada imagen (FUN_80040c44) es del 1 fuera de su paso de vuelo: el aviso de que le fijan
+ * y los demas avisos, con su sonido, se oian en los dos aparatos (lo vio el dueno en la mision 1). Sus sonidos, del 1 (o
+ * del 2, si es su contexto) */
+static int g_hud_in;
+static void hud_logic_hook(RCpu *c) {
+    if (g_hud_in || g_wrap || g_snd_force || !p2_active() || !g_local) return;
+    g_hud_in = 1;
+    g_snd_force = g_busy ? 2 : 1;
+    guest_call_same(c, A->hud_logic);
+    g_snd_force = 0;
+    g_hud_in = 0;
+    mipsi_skip_call = 1;
+    mipsi_skip_ret = c->r[2];
 }
 
 /* (etapa 10) las unidades de tierra (torretas, tanques, barcos, lanzamisiles: la lista de tierra): sin blanco o con el 1
@@ -1519,13 +1592,15 @@ void ac3_coop_set_local(int player) {
     mipsi_set_hook(SND_REQ, voice_req_hook);
     mipsi_set_hook(A->bigmsg, bigmsg_hook);
     mipsi_set_hook(A->snd_play, snd_play_hook);
+    mipsi_set_hook(A->hud_logic, hud_logic_hook);
+    mipsi_set_hook(A->snd_att, snd_att_hook);
     psx_spu_keyon_hook = voice_on_hook;
 }
 
 /* (etapa 10, paso 8) la mision elegida, en la partida nueva: se vigila la escritura de la mision actual (g_state +
  * 0x390, mipsi_watch_write) y solo cuenta la del sh de la partida nueva; en la siguiente espera del VBlank (la misma en
  * los dos aparatos) se pone la elegida. Medido: en la US, el menu de mision ya muestra la elegida (Scramble con la 5) */
-extern uint32_t mipsi_watch_write;
+extern uint32_t mipsi_watch2;
 extern void (*mipsi_watch_write_fn)(uint32_t pc);
 static int g_ng_mission = -1, g_ng_hit;
 static void newgame_write(uint32_t pc) {
@@ -1535,7 +1610,7 @@ void ac3_coop_newgame(int mission) { g_ng_mission = A ? mission : -1; }
 void ac3_coop_frame(void) {
     if (g_ng_mission < 0) return;
     uint32_t st = rd32(g_state_ptr);
-    if (!mipsi_watch_write && st) { mipsi_watch_write_fn = newgame_write; mipsi_watch_write = st + 0x390; }
+    if (!mipsi_watch2 && st) { mipsi_watch_write_fn = newgame_write; mipsi_watch2 = st + 0x390; }
     if (g_ng_hit) {
         g_ng_hit = 0;
         printf("coop: partida nueva en el VBlank %d: la mision %d\n", VSync(-1), g_ng_mission);
